@@ -1,0 +1,702 @@
+// VILNYI RIVER CITY — app shell: wires i18n, sections, finder (plan/list/filters), unit panel, booking,
+// hero 3D (lazy) and the walkthrough overlay (lazy import of ./three/walk.js).
+import { PROJECT, TYPES, UNITS, LEVELS, TOP_FLOOR, ROOF_Y, BUILDINGS, CONTEXT_BLOCKS, LAKE, FOOTPRINT, PRICE_PER_M2,
+  floorY, unitsOn, unitById, localToWorld, money } from './data.js';
+import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, applyDom, i18nApi, LANGS, langInfo, unitLabelL } from './i18n.js';
+import { createPlan, keyPlanSVG, statusClass } from './plan.js';
+import { openBooking, loadReservations, planBreakdown, bindCopy, esc } from './booking.js';
+import { createHero3D } from './hero3d.js';
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const lsGet = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } };
+const roomsText = n => (n === 1 ? t('rooms.1') : t('rooms.n', { n }));
+const floorText = f => (f === 0 ? t('unit.ground') : t('unit.floor', { n: f === TOP_FLOOR ? '10 / 10D' : f }));
+const area = n => n.toFixed(2).replace(/\.00$/, '');
+
+// ---------------------------------------------------------------- state
+const reserved = new Set();
+const S = {
+  b: 'C3', f: 5, view: 'plan', sort: 'price', limit: 30,
+  flt: { rooms: '', facing: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR },
+  styleId: lsGet('vrc.style', 'milano'),
+  unit: null, calcPlan: 'standard', timeMode: 'dusk',
+};
+const statusOf = u => (reserved.has(u.id) ? 'reserved' : u.status);
+const STYLES = ['milano', 'nordic', 'riviera'];
+
+// ---------------------------------------------------------------- static-ish sections
+const ICON = {
+  green: '<path d="M12 21v-7M12 14c-3.5 0-6-2.3-6-5.3C6 5.5 8.7 3 12 3s6 2.5 6 5.7c0 3-2.5 5.3-6 5.3zM9 10.5l3 2.2 3-3.2M4 21h16"/>',
+  shops: '<path d="M5 8h14l-1.2 12.5H6.2zM9 8V6.5a3 3 0 0 1 6 0V8"/>',
+  parking: '<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 17V7.5h3.3a2.8 2.8 0 0 1 0 5.6H9.5"/>',
+  kinder: '<path d="M4 20V10l8-6 8 6v10zM9.5 20v-5h5v5M12 8.3v.2"/><circle cx="12" cy="11" r="1.2"/>',
+  lake: '<path d="M3 17c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M3 20.5c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M12 14V4M12 4c-1 1.5-1.2 3-.6 4.5M12 4c1 1.5 1.2 3 .6 4.5"/>',
+};
+function renderStatic() {
+  const P = PROJECT.permit;
+  $('#heroStats').innerHTML = [
+    [P.totalApartments, 'hero.stat.units'], [P.parkingPlaces, 'hero.stat.parking'],
+    [PROJECT.deliveryMonths, 'hero.stat.delivery'], [money(PRICE_PER_M2), 'hero.stat.price'],
+  ].map(([v, k]) => `<div class="stat"><b dir="ltr">${v}</b><span>${esc(t(k))}</span></div>`).join('');
+
+  $('#amenities').innerHTML = [
+    ['green', 'life.green'], ['shops', 'life.shops'], ['parking', 'life.parking'], ['kinder', 'life.kinder'], ['lake', 'life.lake'],
+  ].map(([ic, k], i) => `<li class="am"><svg class="am-ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[ic]}</svg><span class="am-n" aria-hidden="true">0${i + 1}</span><h3 class="h5">${esc(t(k + '.t'))}</h3><p>${esc(t(k + '.d', { n: P.parkingPlaces }))}</p></li>`).join('');
+
+  const T = PROJECT.terms;
+  $('#termsGrid').innerHTML = [
+    ['terms.price', t('terms.priceD', { v: money(PRICE_PER_M2) }), money(PRICE_PER_M2) + '<small>/m²</small>'],
+    ['terms.depositT', t('terms.depositD', { v: money(T.reservationDeposit) }), money(T.reservationDeposit)],
+    ['terms.guarantee', t('terms.guaranteeD', { p: T.rentGuarantee.minYield, y: T.rentGuarantee.years }), `${T.rentGuarantee.minYield}%<small>× ${T.rentGuarantee.years}</small>`],
+    ['terms.delivery', t('terms.deliveryD', { n: PROJECT.deliveryMonths }), `${PROJECT.deliveryMonths}<small>${esc(t('terms.mo'))}</small>`],
+  ].map(([k, d, v]) => `<div class="tile"><p class="tile-k">${esc(t(k))}</p><p class="tile-v" dir="ltr">${v}</p><p class="tile-d">${esc(d)}</p></div>`).join('');
+  $('#plansRow').innerHTML = T.plans.map((p, i) => `<article class="plan-card"><span class="pc-idx">0${i + 1}</span><h3 class="h4">${esc(planText(p))}</h3>
+      <div class="split" dir="ltr" aria-hidden="true">${p.split[0] ? `<i style="flex:${p.split[0]}"><span>${p.split[0]}%</span></i>` : ''}<i class="b" style="flex:${p.split[1]}"><span>${p.split[1]}%</span></i></div>
+      <p>${esc(planText(p, 'desc'))}</p></article>`).join('') +
+    `<article class="plan-card contract"><span class="pc-idx">§</span><h3 class="h4">${esc(t('terms.contract'))}</h3><p>${esc(t('terms.contract.text'))}</p></article>`;
+
+  // facts
+  const facts = [
+    ['facts.permit', t('facts.permitV', { n: P.number, d: P.date })], ['facts.issuer', P.issuer],
+    ['facts.applicant', P.applicant], ['facts.designer', P.designer], ['facts.cadastral', P.cadastral],
+    ['facts.apartments', P.totalApartments], ['facts.parking', P.parkingPlaces], ['facts.regime', P.regime],
+    ['facts.pot', P.pot], ['facts.cut', P.cut], ['facts.phase', t('facts.phaseV')],
+    ['terms.delivery', t('terms.deliveryD', { n: PROJECT.deliveryMonths })],
+  ];
+  $('#partnerCard').innerHTML = `<img src="assets/bird.png" alt="" width="54" height="48"><div><p class="eyebrow">${esc(t('facts.partner'))}</p>
+    <p class="pc-name" dir="ltr">${esc(PROJECT.partner?.name || 'VILNYI')}</p><p class="pc-role">${esc(t('terms.partner.role'))}</p></div>`;
+  $('#locPts').innerHTML = ['loc.pt1', 'loc.pt2', 'loc.pt3', 'loc.pt4'].map(k => `<li>${esc(t(k, { n: num(P.parkingPlaces) }))}</li>`).join('');
+  $('#factsGrid').innerHTML = facts.map(([k, v]) => `<div class="fact"><dt>${esc(t(k))}</dt><dd dir="auto">${esc(v)}</dd></div>`).join('');
+
+  // address + contact (copyable text; links are conveniences only)
+  const addrBlock = `<p class="addr-k">${esc(t('loc.address'))}</p><p class="addr-v" id="addrV" dir="ltr">${esc(PROJECT.address)}</p><button type="button" class="copy" data-copy="addrV"><span class="copy-l">${esc(t('bk.copy'))}</span></button>`;
+  $('#addr').innerHTML = addrBlock;
+  const C = PROJECT.contact || {};
+  const items = [];
+  if (C.phone) items.push(['bk.phone', C.phone, `tel:${C.phone.replace(/[^\d+]/g, '')}`]);
+  if (C.whatsapp) items.push(['bk.c.whatsapp', C.whatsapp, `https://wa.me/${C.whatsapp.replace(/\D/g, '')}`]);
+  if (C.email) items.push(['bk.email', C.email, `mailto:${C.email}`]);
+  $('#contactList').innerHTML = (items.length ? items.map(([k, v, href], i) => `<div class="ct"><span class="ct-k">${esc(t(k))}</span><a class="ct-v" id="ct${i}" href="${esc(href)}" dir="ltr" target="_blank" rel="noopener">${esc(v)}</a><button type="button" class="copy" data-copy="ct${i}"><span class="copy-l">${esc(t('bk.copy'))}</span></button></div>`).join('')
+    : `<p class="muted small">${esc(t('foot.noContact'))}</p>`) +
+    `<div class="ct"><span class="ct-k">${esc(t('loc.address'))}</span><span class="ct-v" id="ctAddr" dir="ltr">${esc(PROJECT.address)}</span><button type="button" class="copy" data-copy="ctAddr"><span class="copy-l">${esc(t('bk.copy'))}</span></button></div>`;
+  $('#copyright').textContent = t('foot.rights', { y: new Date().getFullYear() });
+  renderMap();
+  bindCopy(document);
+}
+
+// ---------------------------------------------------------------- location map (schematic SVG from LAKE + site data)
+function renderMap() {
+  const siteC = localToWorld('C3', 42, -47);
+  // nearest lake-shore point to the site (sampled ellipse)
+  let best = null;
+  for (let i = 0; i < 360; i++) {
+    const a = i / 360 * Math.PI * 2; const x = LAKE.center[0] + Math.cos(a) * LAKE.rx, z = LAKE.center[1] + Math.sin(a) * LAKE.rz;
+    const d = Math.hypot(x - siteC[0], z - siteC[1]); if (!best || d < best.d) best = { x, z, d };
+  }
+  // Phones get a tighter crop (site, shore, island, fountain) so labels stay legible
+  const narrow = mqMap.matches;
+  const vb = narrow ? [-760, -1060, 1060, 1200] : [-1330, -1360, 1800, 1540];
+  const rtl = dir === 'rtl';
+  // text that mixes scripts follows the page direction; `end` = the side the label grows toward
+  const lbl = (x, y, cls, txt, anchor = 'middle') => `<text x="${x}" y="${y}" class="m-lbl ${cls}" direction="${dir}" text-anchor="${anchor === 'middle' ? 'middle' : (anchor === 'end') !== rtl ? 'end' : 'start'}">${esc(txt)}</text>`;
+  // soft, generic street grid (schematic texture only — no named streets beyond the project address)
+  let grid = '';
+  for (let x = -1300; x <= 460; x += 130) grid += `M${x} ${vb[1]}V${vb[1] + vb[3]}`;
+  for (let z = -1340; z <= 180; z += 130) grid += `M${vb[0]} ${z}H${vb[0] + vb[2]}`;
+  const blocks = [];
+  for (const id of Object.keys(BUILDINGS)) blocks.push(`<polygon class="m-site" points="${FOOTPRINT.map(([x, z]) => localToWorld(id, x, z).join(',')).join(' ')}"/>`);
+  const ctx = CONTEXT_BLOCKS.map(c => `<rect class="m-ctx${c.delivered ? ' del' : ''}" x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}"/>`).join('');
+  const [fx, fz] = LAKE.fountain;
+  const I = LAKE.island;
+  const mid = [(best.x + siteC[0]) / 2 + 40, (best.z + siteC[1]) / 2 + 30];
+  const lakeL = narrow ? [-455, -790] : [LAKE.center[0], LAKE.center[1] - 210];
+  $('#map').innerHTML = `<svg viewBox="${vb.join(' ')}" role="img" aria-label="${esc(t('loc.title'))}" direction="ltr" class="${narrow ? 'is-narrow' : ''}">
+    <defs>
+      <radialGradient id="mLake" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#1c2a31"/><stop offset="1" stop-color="#101a1f"/></radialGradient>
+      <radialGradient id="mGlow"><stop offset="0" stop-color="#E8CC91" stop-opacity=".55"/><stop offset="1" stop-color="#E8CC91" stop-opacity="0"/></radialGradient>
+      <clipPath id="mClip"><rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" rx="0"/></clipPath>
+    </defs>
+    <g clip-path="url(#mClip)">
+      <rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" class="m-land"/>
+      <path d="${grid}" class="m-grid"/>
+      <ellipse cx="${LAKE.center[0]}" cy="${LAKE.center[1]}" rx="${LAKE.rx + 34}" ry="${LAKE.rz + 34}" class="m-prom"/>
+      <ellipse cx="${LAKE.center[0]}" cy="${LAKE.center[1]}" rx="${LAKE.rx}" ry="${LAKE.rz}" fill="url(#mLake)" class="m-lake"/>
+      <ellipse cx="${LAKE.center[0]}" cy="${LAKE.center[1]}" rx="${LAKE.rx - 60}" ry="${LAKE.rz - 60}" class="m-ripple"/>
+      <ellipse cx="${LAKE.center[0]}" cy="${LAKE.center[1]}" rx="${LAKE.rx - 150}" ry="${LAKE.rz - 150}" class="m-ripple"/>
+      <circle cx="${I.center[0]}" cy="${I.center[1]}" r="${I.r}" class="m-island"/>
+      <circle cx="${fx}" cy="${fz}" r="10" class="m-fountain"/><circle cx="${fx}" cy="${fz}" r="10" class="m-fountain-pulse"/>
+      ${ctx}
+      <circle cx="${siteC[0]}" cy="${siteC[1]}" r="190" fill="url(#mGlow)"/>
+      ${blocks.join('')}
+      <path d="M${siteC[0] - 20} ${siteC[1]}L${best.x} ${best.z}" class="m-walk"/>
+      <text x="${mid[0]}" y="${mid[1]}" class="m-min">3′</text>
+      ${lbl(lakeL[0], lakeL[1], 'lake', t('loc.lake'))}
+      ${lbl(I.center[0], I.center[1] + I.r + 56, 'sm', t('loc.island'))}
+      ${lbl(fx + 26, fz - 20, 'sm', t('loc.fountain'), 'start')}
+      <text x="-24" y="4" class="m-lbl site" text-anchor="end">VILNYI RIVER CITY</text>
+      <text x="-24" y="48" class="m-lbl sm" text-anchor="end">C3 · C4</text>
+      ${lbl(190, 104, 'sm', t('loc.delivered'), 'end')}
+      ${narrow ? '' : `<g class="m-centre" transform="translate(360 -560)"><path d="M-70 0H40M18 -16L42 0 18 16"/>${lbl(-12, -30, 'sm', t('loc.centre'))}</g>`}
+      <g class="m-north" transform="translate(${vb[0] + 100} ${vb[1] + 110})"><circle r="44"/><path d="M0 -58L14 8 0 0-14 8Z"/><text y="-72" text-anchor="middle">${esc(t('plan.north'))}</text></g>
+      <g class="m-scale" transform="translate(${vb[0] + 80} ${vb[1] + vb[3] - 50})"><path d="M0 0H200M0 -12V12M200 -12V12"/><text x="100" y="-24" text-anchor="middle">${esc(t('loc.scale'))}</text></g>
+    </g></svg><figcaption>${esc(t('loc.mapNote'))}</figcaption>`;
+}
+const mqMap = matchMedia('(max-width: 600px)');
+mqMap.addEventListener?.('change', () => renderMap());
+
+// ---------------------------------------------------------------- finder
+let plan = null;
+function priceSteps() {
+  const ps = UNITS.map(u => u.price); const lo = Math.floor(Math.min(...ps) / 25000) * 25000, hi = Math.ceil(Math.max(...ps) / 25000) * 25000;
+  const out = []; for (let v = lo; v <= hi; v += 25000) out.push(v); return out;
+}
+function matches(u, withFloors = false) {
+  const F = S.flt;
+  if (F.rooms && (F.rooms === '4' ? u.rooms < 4 : u.rooms !== +F.rooms)) return false;
+  if (F.facing && u.facing !== F.facing) return false;
+  if (F.pmin && u.price < F.pmin) return false;
+  if (F.pmax && u.price > F.pmax) return false;
+  if (withFloors && (u.floor < F.fmin || u.floor > F.fmax)) return false;
+  return true;
+}
+function activeFilters() { const F = S.flt; return [F.rooms, F.facing, F.pmin, F.pmax, F.fmin > 0 || F.fmax < TOP_FLOOR].filter(Boolean).length; }
+
+function renderFilters() {
+  const F = S.flt; const steps = priceSteps();
+  const chip = (name, v, label, cur) => `<label class="chip"><input type="radio" name="${name}" value="${v}" ${String(cur) === String(v) ? 'checked' : ''}><span>${esc(label)}</span></label>`;
+  const opt = (v, label, cur) => `<option value="${v}" ${+cur === v ? 'selected' : ''}>${esc(label)}</option>`;
+  const fl = f => (f === 0 ? t('finder.parter') : String(f));
+  $('#filters').innerHTML = `
+    <fieldset class="fg"><legend>${esc(t('finder.rooms'))}</legend><div class="chips">${chip('rooms', '', t('finder.any'), F.rooms)}${['1', '2', '3', '4'].map(r => chip('rooms', r, r === '4' ? '4' : r, F.rooms)).join('')}</div></fieldset>
+    <fieldset class="fg"><legend>${esc(t('finder.facing'))}</legend><div class="chips">${chip('facing', '', t('finder.any'), F.facing)}${['N', 'E', 'S', 'W'].map(c => chip('facing', c, t('face.' + c), F.facing)).join('')}</div></fieldset>
+    <fieldset class="fg"><legend>${esc(t('finder.price'))}</legend><div class="sel2">
+      <select name="pmin" aria-label="${esc(t('finder.minPrice'))}">${opt(0, t('finder.minPrice'), F.pmin)}${steps.slice(0, -1).map(v => opt(v, money(v), F.pmin)).join('')}</select>
+      <span aria-hidden="true">–</span>
+      <select name="pmax" aria-label="${esc(t('finder.maxPrice'))}">${opt(0, t('finder.maxPrice'), F.pmax)}${steps.slice(1).map(v => opt(v, money(v), F.pmax)).join('')}</select></div></fieldset>
+    <fieldset class="fg fg-floors" ${S.view === 'list' ? '' : 'hidden'}><legend>${esc(t('finder.floorRange'))}</legend><div class="sel2">
+      <select name="fmin" aria-label="${esc(t('finder.floorRange'))} min">${Array.from({ length: TOP_FLOOR + 1 }, (_, f) => opt(f, fl(f), F.fmin)).join('')}</select>
+      <span aria-hidden="true">–</span>
+      <select name="fmax" aria-label="${esc(t('finder.floorRange'))} max">${Array.from({ length: TOP_FLOOR + 1 }, (_, f) => opt(f, fl(f), F.fmax)).join('')}</select></div></fieldset>
+    <button type="button" class="btn link sm" id="fltReset">${esc(t('finder.reset'))}</button>`;
+  const n = activeFilters(); const b = $('#filtN'); b.hidden = !n; b.textContent = n;
+}
+
+function bindFilters() {
+  const form = $('#filters');
+  form.addEventListener('submit', e => e.preventDefault());
+  form.addEventListener('change', e => {
+    const el = e.target; const F = S.flt;
+    if (el.name === 'rooms') F.rooms = el.value; else if (el.name === 'facing') F.facing = el.value;
+    else if (el.name in F) F[el.name] = +el.value;
+    if (F.fmin > F.fmax) [F.fmin, F.fmax] = [F.fmax, F.fmin];
+    if (F.pmin && F.pmax && F.pmin > F.pmax) [F.pmin, F.pmax] = [F.pmax, F.pmin];
+    S.limit = 30; afterFilter();
+    const n = activeFilters(); $('#filtN').hidden = !n; $('#filtN').textContent = n;
+  });
+  form.addEventListener('click', e => {
+    if (e.target.id !== 'fltReset') return;
+    S.flt = { rooms: '', facing: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR }; renderFilters(); afterFilter();
+  });
+  $('#filtBtn').addEventListener('click', () => {
+    const open = !form.classList.contains('open'); form.classList.toggle('open', open); $('#filtBtn').setAttribute('aria-expanded', open);
+  });
+}
+function afterFilter() { plan.applyMatches(); renderStack(); renderCount(); if (S.view === 'list') renderList(); }
+
+function renderCount() {
+  const all = UNITS.filter(u => u.building === S.b && matches(u, S.view === 'list'));
+  $('#fdCount').textContent = t('finder.results', { n: all.length });
+}
+
+function renderTabs() {
+  $('#bldTabs').innerHTML = Object.keys(BUILDINGS).map(b => `<button type="button" role="tab" data-b="${b}" aria-selected="${b === S.b}" class="${b === S.b ? 'on' : ''}"><span class="tb-b">${b}</span><span class="tb-s">${esc(t('finder.building'))}</span></button>`).join('');
+  $$('#viewTabs button').forEach(bt => { const on = bt.dataset.view === S.view; bt.classList.toggle('on', on); bt.setAttribute('aria-selected', on); });
+}
+
+function renderStack() {
+  let h = '';
+  for (let f = TOP_FLOOR; f >= 0; f--) {
+    const us = unitsOn(S.b, f); const av = us.filter(u => statusOf(u) === 'available' && matches(u)).length;
+    const on = f === S.f;
+    h += `<button type="button" role="option" aria-selected="${on}" class="fl${on ? ' on' : ''}${f === TOP_FLOOR ? ' top' : ''}" data-f="${f}">
+      <span class="fl-n" dir="ltr">${f === 0 ? esc(t('finder.parterShort')) : f}${f === TOP_FLOOR ? '<sup>D</sup>' : ''}</span>
+      <span class="fl-bar" aria-hidden="true"><i style="width:${us.length ? Math.round(av / us.length * 100) : 0}%"></i></span>
+      <span class="fl-c">${av}</span></button>`;
+  }
+  $('#floorStack').innerHTML = h;
+}
+
+// Elevation (south facade of the chosen building) from LEVELS/floorY — also the no-WebGL "floor highlight"
+function renderElev() {
+  const W = 84, top = ROOF_Y;
+  let s = `<svg viewBox="-6 ${-top - 5} ${W + 12} ${top + 10}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" direction="ltr">`;
+  s += `<rect x="-6" y="0" width="${W + 12}" height="5" class="ev-ground"/><line x1="-6" x2="${W + 6}" y1="0" y2="0" class="ev-gl"/>`;
+  for (let f = 0; f <= TOP_FLOOR; f++) {
+    const y0 = floorY(f), y1 = f === TOP_FLOOR ? ROOF_Y : floorY(f + 1);
+    const on = f === S.f;
+    s += `<g class="ev-fl${on ? ' on' : ''}" data-f="${f}"><rect x="0" y="${-y1}" width="${W}" height="${y1 - y0}" class="ev-band"/>`;
+    const us = unitsOn(S.b, f).filter(u => u.seg === 'S1');
+    if (f === 0) s += `<rect x="1" y="${-y1 + 0.6}" width="${W - 2}" height="${y1 - y0 - 1}" class="ev-glaze"/>`;
+    else for (const u of us) {
+      const x0 = u.frame.o[0];
+      const levels = f === TOP_FLOOR ? [floorY(10), floorY(11)] : [y0];
+      for (const ly of levels) {
+        s += `<rect x="${(x0 + 0.5).toFixed(2)}" y="${(-ly - 2.45).toFixed(2)}" width="${(u.width - 1).toFixed(2)}" height="2.05" class="ev-win"/>`;
+        s += `<line x1="${(x0 + u.width * 0.18).toFixed(2)}" x2="${(x0 + u.width * 0.82).toFixed(2)}" y1="${(-ly - 0.95).toFixed(2)}" y2="${(-ly - 0.95).toFixed(2)}" class="ev-rail"/>`;
+      }
+    }
+    s += `</g>`;
+  }
+  s += `<rect x="0" y="${-top}" width="${W}" height="${top}" class="ev-out"/>`;
+  s += `<text x="0" y="${-top - 1.6}" class="ev-t" ${dir === 'rtl' ? 'direction="rtl" text-anchor="end"' : ''}>${S.b} · ${esc(floorText(S.f))}</text></svg>`;
+  $('#elev').innerHTML = s;
+}
+
+function setFloor(b, f, { scroll = false, focusPlan = false } = {}) {
+  S.b = b; S.f = f;
+  renderTabs(); renderStack(); renderElev();
+  plan.show(b, f);
+  const note = f === 0 ? t('finder.ground') : f === TOP_FLOOR ? t('finder.duplexNote') : '';
+  $('#planNote').textContent = note; $('#planNote').hidden = !note;
+  renderCount();
+  if (S.view === 'list') renderList();
+  hero?.focusFloor(b, f);
+  $('#announce').textContent = `${b} · ${floorText(f)}`;
+  if (scroll) $('#finder').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  if (focusPlan) setTimeout(() => $('#plan .pl-unit')?.focus({ preventScroll: true }), 400);
+}
+
+function renderLegend() {
+  $('#legend').innerHTML = [1, 2, 3, 4].map(r => `<span class="lg"><i class="dot r${r}"></i>${esc(roomsText(r))}</span>`).join('') +
+    `<span class="lg"><i class="dot res"></i>${esc(t('status.reserved'))}</span>` +
+    `<span class="lg hint">${esc(matchMedia('(pointer: coarse)').matches ? t('finder.planHint') : t('finder.keyboardHint'))}</span>`;
+}
+
+function renderList() {
+  const rows = UNITS.filter(u => u.building === S.b && matches(u, true));
+  const key = { price: u => u.price, floor: u => u.floor * 100 + u.index, area: u => TYPES[u.type].total }[S.sort];
+  rows.sort((a, b) => key(a) - key(b));
+  const shown = rows.slice(0, S.limit);
+  $('#listWrap').innerHTML = `<div class="ls-head"><label>${esc(t('finder.sort'))} <select id="lsSort">${['price', 'floor', 'area'].map(k => `<option value="${k}" ${k === S.sort ? 'selected' : ''}>${esc(t('finder.sort.' + k))}</option>`).join('')}</select></label></div>` +
+    (rows.length ? `<ul class="ls">${shown.map(u => { const T = TYPES[u.type]; const st = statusOf(u); return `<li><button type="button" class="ls-row ${statusClass(st)}" data-id="${u.id}">
+      <span class="ls-id"><i class="dot r${u.rooms}"></i><b dir="ltr">${u.building}-${u.floor === 0 ? 'P' : u.floor}-${String(u.index).padStart(2, '0')}</b><small>${esc(floorText(u.floor))}</small></span>
+      <span class="ls-r">${esc(roomsText(u.rooms))}${T.duplex ? ' · ' + esc(t('rooms.duplex')) : ''}</span>
+      <span class="ls-a" dir="ltr">${area(T.total)} m²</span>
+      <span class="ls-f">${esc(t('face.' + u.facing))}</span>
+      <span class="ls-p" dir="ltr">${money(u.price)}</span>
+      <span class="ls-s">${esc(t('status.' + st))}</span></button></li>`; }).join('')}</ul>` +
+      (rows.length > S.limit ? `<button type="button" class="btn ghost wide" id="lsMore">${esc(t('finder.more'))} (${rows.length - S.limit})</button>` : '')
+      : `<p class="empty">${esc(t('finder.noResults'))}</p>`);
+}
+
+function bindFinder() {
+  $('#bldTabs').addEventListener('click', e => { const b = e.target.closest('[data-b]')?.dataset.b; if (b && b !== S.b) setFloor(b, S.f); });
+  $('#floorStack').addEventListener('click', e => { const f = e.target.closest('[data-f]')?.dataset.f; if (f != null) setFloor(S.b, +f); });
+  $('#floorStack').addEventListener('keydown', e => {
+    if (!['ArrowUp', 'ArrowDown'].includes(e.key)) return; e.preventDefault();
+    const f = Math.max(0, Math.min(TOP_FLOOR, S.f + (e.key === 'ArrowUp' ? 1 : -1))); setFloor(S.b, f);
+    $(`#floorStack [data-f="${f}"]`)?.focus();
+  });
+  $('#elev').addEventListener('click', e => { const f = e.target.closest('[data-f]')?.dataset.f; if (f != null) setFloor(S.b, +f); });
+  $('#viewTabs').addEventListener('click', e => {
+    const v = e.target.closest('[data-view]')?.dataset.view; if (!v) return;
+    S.view = v; renderTabs(); $('#planWrap').hidden = v !== 'plan'; $('#listWrap').hidden = v !== 'list';
+    $('.fg-floors').hidden = v !== 'list'; renderCount(); if (v === 'list') renderList();
+  });
+  $('#listWrap').addEventListener('click', e => {
+    const r = e.target.closest('.ls-row'); if (r) return openUnit(unitById(r.dataset.id));
+    if (e.target.closest('#lsMore')) { S.limit += 30; renderList(); }
+  });
+  $('#listWrap').addEventListener('change', e => { if (e.target.id === 'lsSort') { S.sort = e.target.value; renderList(); } });
+}
+
+// ---------------------------------------------------------------- unit panel
+function roomName(r) {
+  const special = { 'Living + kitchenette': 'room.livingKitchenette', 'Baie oaspeți': 'room.guestBath', 'Hol etaj': 'room.upperHall', 'Dormitor master': 'room.master' };
+  if (special[r.name]) return t(special[r.name]);
+  const n = r.name.match(/\s(\d+)$/); return t('room.' + r.kind) + (n ? ' ' + n[1] : '');
+}
+function viewText(u) {
+  const parts = [t('view.' + u.facing)];
+  if (u.floor === TOP_FLOOR) parts.push(t('view.top')); else if (u.floor >= 6) parts.push(t('view.high')); else if (u.floor <= 2) parts.push(t('view.low'));
+  return parts.join(' ');
+}
+const dlgU = () => $('#unitDlg');
+
+function calcHTML(u) {
+  const plans = PROJECT.terms.plans; const p = plans.find(x => x.id === S.calcPlan) || plans[0];
+  const r = planBreakdown(u.price, p); const T = PROJECT.terms;
+  const row = (k, v, cls = '') => `<div class="cr ${cls}"><span>${k}</span><b dir="ltr">${v}</b></div>`;
+  let rows = row(esc(t('calc.deposit')) + `<small>${esc(t('calc.depositNote'))}</small>`, money(r.deposit));
+  if (p.split[0]) rows += row(esc(t('calc.atSigning')) + ` · ${p.split[0]}%`, money(r.signing));
+  if (r.balloon) rows += row(esc(t('calc.balloon')) + `<small>${esc(t('calc.interestByCo'))}</small>`, money(r.balloon));
+  rows += row(esc(t('calc.onDelivery')) + ` · ${p.split[1]}%`, money(r.delivery));
+  if (r.mortgage) rows += row(esc(t('calc.mortgage', { p: p.mortgage })), money(r.mortgage), 'soft');
+  return `<div class="calc-tabs chips" role="radiogroup" aria-label="${esc(t('calc.plan'))}">${plans.map(x => `<label class="chip"><input type="radio" name="calcPlan" value="${x.id}" ${x.id === p.id ? 'checked' : ''}><span>${esc(planText(x))}</span></label>`).join('')}</div>
+    <p class="calc-desc">${esc(planText(p, 'desc'))}</p>
+    <div class="calc-rows">${rows}</div>
+    <div class="rent"><p class="rent-k">${esc(t('calc.rent'))} · ${esc(t('calc.rentLine', { p: T.rentGuarantee.minYield, y: T.rentGuarantee.years }))}</p>
+      <div class="rent-g"><div><b dir="ltr">${money(r.rentYear)}</b><span>${esc(t('calc.rentYear'))}</span></div><div><b dir="ltr">${money(r.rentMonth)}</b><span>${esc(t('calc.rentMonth'))}</span></div><div><b dir="ltr">${money(r.rentTotal)}</b><span>${esc(t('calc.rentTotal', { y: T.rentGuarantee.years }))}</span></div></div>
+      ${u.rooms === 2 && T.marketRent2c ? `<p class="fine">${esc(t('calc.market', { v: money(T.marketRent2c) }))}</p>` : ''}</div>
+    <p class="fine">${esc(t('calc.delivery', { n: PROJECT.deliveryMonths }))} · ${esc(t('calc.disclaimer'))}</p>`;
+}
+
+function renderUnit() {
+  const u = S.unit; if (!u) return;
+  const T = TYPES[u.type]; const st = statusOf(u);
+  const lv = l => T.list.filter(r => r.level === l);
+  const rowsFor = list => list.map(r => `<tr><th scope="row"><i class="rk rk-${r.kind}"></i>${esc(roomName(r))}</th><td dir="ltr">${area(r.area)} m²</td></tr>`).join('');
+  const tbl = T.duplex
+    ? `<tbody><tr class="lvl"><th colspan="2">${esc(t('unit.main'))}</th></tr>${rowsFor(lv(0))}<tr class="lvl"><th colspan="2">${esc(t('unit.upper'))}</th></tr>${rowsFor(lv(1))}</tbody>`
+    : `<tbody>${rowsFor(T.list)}</tbody>`;
+  const sw = { milano: ['#3b2a1f', '#121212', '#b08a4e', '#3a3a3f'], nordic: ['#d9c6a4', '#f3f1ec', '#d8d2c4', '#1c1c1c'], riviera: ['#d8c4a6', '#e9dcc6', '#7c8455', '#b5654a'] };
+  dlgU().innerHTML = `<div class="sheet-card">
+    <header class="sh-head">
+      <div><p class="eyebrow">${esc(unitLabelL(u))}</p>
+      <h2 id="ud-title" class="h3">${esc(roomsText(u.rooms))}${T.duplex ? ` <em>${esc(t('rooms.duplex'))}</em>` : ''}</h2>
+      <p class="sh-type">${esc(t('unit.type'))} ${esc(u.type)} · <span dir="ltr">${esc(T.label)}</span></p></div>
+      <button type="button" class="icon-btn" data-act="close" aria-label="${esc(t('unit.close'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6"/></svg></button>
+    </header>
+    <div class="sh-body">
+      <div class="sh-price">
+        <div><p class="k">${esc(t('unit.price'))}</p><p class="price" dir="ltr">${money(u.price)}</p><p class="ppm"><b dir="ltr">${money(PRICE_PER_M2)}</b> ${esc(t('unit.perM2'))}</p><p class="ppm-note">${esc(t('unit.perM2Note', { p: money(PRICE_PER_M2) }))}</p></div>
+        <span class="pill ${statusClass(st)}">${esc(t('status.' + st))}</span>
+      </div>
+      <div class="sh-key">${keyPlanSVG(u)}
+        <dl class="sh-facts">
+          <div><dt>${esc(t('unit.total'))}</dt><dd dir="ltr">${area(T.total)} m²</dd></div>
+          <div><dt>${esc(t('unit.facing'))}</dt><dd>${esc(t('face.' + u.facing))}</dd></div>
+          <div><dt>${esc(t('finder.floor'))}</dt><dd>${esc(u.floor === 0 ? t('finder.parter') : u.floor === TOP_FLOOR ? '10 / 10D' : String(u.floor))}</dd></div>
+          <div><dt>${esc(t('unit.stair'))}</dt><dd>${esc(t('ul.stair'))} ${u.stair} · ${esc(t('ul.apt'))} ${u.apNo}</dd></div>
+        </dl>
+      </div>
+      <div class="sh-acts">
+        <button type="button" class="act" data-act="walk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><span>${esc(t('unit.walk'))}</span></button>
+        <button type="button" class="act" data-act="tour"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3v18M16.5 7.5l2 1.5-2 1.5"/></svg><span>${esc(t('unit.tour'))}</span></button>
+        <button type="button" class="act" data-act="balcony"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M5 20v-7h14v7M9 13v7M15 13v7M12 13v7M4 9l8-5 8 5"/></svg><span>${esc(t('unit.balcony'))}</span></button>
+        <button type="button" class="act" data-act="lobby"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5l8-3 8 3v16M4 21h16M9 21v-5h6v5M8 8h2M14 8h2M8 12h2M14 12h2"/></svg><span>${esc(t('unit.lobby'))}</span></button>
+      </div>
+      ${st !== 'available' ? `<p class="notice-in">${esc(t('unit.reservedMsg'))}</p>` : ''}
+      <section class="sh-sec"><h3 class="h5">${esc(t('unit.areas'))}</h3>
+        <table class="areas">${tbl}<tfoot>
+          <tr><th scope="row">${esc(t('unit.util'))}</th><td dir="ltr">${area(T.util)} m²</td></tr>
+          <tr><th scope="row">${esc(t('unit.outdoor'))}</th><td dir="ltr">${area(T.outdoor)} m²</td></tr>
+          <tr class="strong"><th scope="row">${esc(t('unit.total'))}</th><td dir="ltr">${area(T.total)} m²</td></tr>
+          <tr><th scope="row">${esc(t('unit.built'))}</th><td dir="ltr">${area(T.built)} m²</td></tr></tfoot></table>
+        ${T.est ? `<p class="est">${esc(t('unit.est'))}</p>` : ''}
+      </section>
+      <section class="sh-sec"><h3 class="h5">${esc(t('unit.view'))}</h3><p class="muted">${esc(viewText(u))}</p></section>
+      <section class="sh-sec"><h3 class="h5">${esc(t('unit.design'))}</h3>
+        <div class="styles" role="radiogroup" aria-label="${esc(t('unit.design'))}">${STYLES.map(id => `<label class="style-card"><input type="radio" name="style" value="${id}" ${id === S.styleId ? 'checked' : ''}>
+          <span class="sw" aria-hidden="true">${sw[id].map(c => `<i style="background:${c}"></i>`).join('')}</span>
+          <span class="st-n">${esc(t('style.' + id + '.n'))}</span><span class="st-d">${esc(t('style.' + id + '.d'))}</span></label>`).join('')}</div>
+        <p class="fine">${esc(t('unit.designNote'))}</p></section>
+      <section class="sh-sec ug" id="unitGal" hidden></section>
+      <section class="sh-sec calc" id="calc"><h3 class="h5">${esc(t('calc.title'))}</h3><div id="calcBody">${calcHTML(u)}</div></section>
+      <button type="button" class="btn link sm" data-act="share"><span class="copy-l">${esc(t('unit.share'))}</span></button>
+      <p class="fine">${esc(t('facts.disclaimer'))}</p>
+    </div>
+    <footer class="sh-foot"><div class="sh-foot-p"><b dir="ltr">${money(u.price)}</b><span dir="ltr">${area(T.total)} m²</span></div>
+      <button type="button" class="btn primary" data-act="reserve" ${st !== 'available' ? 'disabled' : ''}>${esc(t('unit.reserve'))}</button></footer>
+  </div>`;
+  renderUnitGallery();
+}
+
+function openUnit(u) {
+  if (!u) return;
+  S.unit = u; plan?.select(u.id); hero?.highlightUnits([u.id]);
+  renderUnit();
+  const d = dlgU();
+  if (!d.open) { S.unitReturn = document.activeElement; d.showModal(); document.documentElement.classList.add('modal-open'); }
+  d.querySelector('.sh-body').scrollTop = 0;
+  try { history.replaceState(null, '', '#u=' + u.id); } catch (e) { /* sandboxed */ }
+  setTimeout(() => d.querySelector('[data-act="close"]')?.focus(), 20);
+}
+function closeUnit() {
+  const d = dlgU(); if (!d.open) return;
+  d.classList.add('is-closing');
+  setTimeout(() => { d.classList.remove('is-closing'); d.close(); document.documentElement.classList.remove('modal-open'); S.unitReturn?.focus?.({ preventScroll: true }); }, 200);
+  hero?.highlightUnits(null);
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sandboxed */ }
+}
+function bindUnit() {
+  const d = dlgU();
+  d.addEventListener('cancel', e => { e.preventDefault(); closeUnit(); });
+  d.addEventListener('click', async e => {
+    if (e.target === d) return closeUnit();
+    const a = e.target.closest('[data-act]')?.dataset.act; const u = S.unit;
+    if (!u || (!a && !e.target.closest('[data-ui]'))) return;
+    const ug = e.target.closest('[data-ui]'); if (ug) return lbOpen($('#unitGal')._list || [], +ug.dataset.ui);
+    if (a === 'close') closeUnit();
+    else if (a === 'walk') openWalk(u.id, 'apartment', 'walk');
+    else if (a === 'tour') openWalk(u.id, 'apartment', '360');
+    else if (a === 'balcony') openWalk(u.id, 'balcony', '360');
+    else if (a === 'lobby') openWalk(u.id, 'lobby', 'walk');
+    else if (a === 'reserve') reserve(u);
+    else if (a === 'share') {
+      const btn = e.target.closest('[data-act]'); let url = location.href.split('#')[0] + '#u=' + u.id;
+      const { copyText } = await import('./booking.js'); const ok = await copyText(url);
+      const l = btn.querySelector('.copy-l'); const old = l.textContent; l.textContent = ok ? t('unit.copied') : url; setTimeout(() => (l.textContent = old), 1800);
+    }
+  });
+  d.addEventListener('change', e => {
+    if (e.target.name === 'style') { S.styleId = e.target.value; lsSet('vrc.style', S.styleId); renderUnitGallery(); }
+    if (e.target.name === 'calcPlan') { S.calcPlan = e.target.value; $('#calcBody').innerHTML = calcHTML(S.unit); $(`#calcBody input[value="${S.calcPlan}"]`)?.focus(); }
+  });
+}
+
+function reserve(u) {
+  if (statusOf(u) !== 'available') return;
+  openBooking({
+    unit: u, planId: S.calcPlan,
+    onReserved: id => { reserved.add(id); plan.refresh(); renderStack(); if (S.unit?.id === id) renderUnit(); if (S.view === 'list') renderList(); },
+  });
+}
+
+// ---------------------------------------------------------------- walkthrough overlay (Agent E)
+let walk = null; let walkArgs = null; let walkFromUnit = false;
+async function openWalk(unitId, start, mode) {
+  walkArgs = { unitId, start, mode };
+  const W = $('#walk'); W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
+  // A modal <dialog> sits in the top layer above any z-index, so step out of the unit sheet while walking
+  if (dlgU().open) { walkFromUnit = true; dlgU().close(); }
+  $('#walkVeil').hidden = false; $('#walkVeil').classList.remove('failed');
+  $('#walkT').textContent = t('walk.loading'); $('#walkS').textContent = t('walk.loadingSub'); $('#walkRetry').hidden = true;
+  $('#walkX').focus();
+  hero?.pause();
+  try {
+    const mod = await import('./three/walk.js');
+    if (W.hidden) return;
+    if (walk) { try { walk.dispose(); } catch (e) {} walk = null; }
+    walk = new mod.Walkthrough($('#walkStage'), {
+      i18n: i18nApi, styleId: S.styleId, timeMode: S.timeMode,
+      onExit: () => closeWalk(),
+      onReserve: id => { closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
+    });
+    await walk.enter({ unitId, start, mode });
+    $('#walkVeil').hidden = true; W.classList.add('is-ready'); // the HUD has its own Exit button
+  } catch (e) {
+    console.warn('[walk] unavailable:', e);
+    $('#walkVeil').classList.add('failed');
+    $('#walkT').textContent = t('walk.unavailable'); $('#walkS').textContent = '';
+    const r = $('#walkRetry'); r.hidden = false; r.textContent = t('walk.retry');
+  }
+}
+function closeWalk() {
+  const W = $('#walk'); if (W.hidden) return;
+  try { walk?.dispose(); } catch (e) { /* ignore */ }
+  walk = null; $('#walkStage').innerHTML = ''; W.hidden = true;
+  document.documentElement.classList.remove('walk-open');
+  hero?.resume();
+  if (walkFromUnit && S.unit) { walkFromUnit = false; renderUnit(); dlgU().showModal(); }
+  (dlgU().open ? dlgU().querySelector('[data-act="walk"]') : $('#heroTour'))?.focus?.();
+}
+function bindWalk() {
+  $('#walkX').addEventListener('click', closeWalk);
+  $('#walkRetry').addEventListener('click', () => walkArgs && openWalk(walkArgs.unitId, walkArgs.start, walkArgs.mode));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#walk').hidden && !$('#walkVeil').hidden) closeWalk(); });
+  $('#heroTour').addEventListener('click', () => {
+    // Building tour: start in the ground-floor lobby; the target flat is an available 3-room on C3 floor 7
+    const u = unitsOn('C3', 7).find(x => x.rooms === 3 && statusOf(x) === 'available') || unitsOn('C3', 7)[0];
+    openWalk(u.id, 'lobby', 'walk');
+  });
+}
+
+// ---------------------------------------------------------------- gallery (assets/gallery/manifest.json, filled by the lead)
+const GAL_TYPES = ['exterior', 'interior', 'lobby', 'amenity'];
+const G = { items: [], tab: 'all', lb: { list: [], i: 0 } };
+const capOf = it => (it.caption ? (typeof it.caption === 'string' ? it.caption : (it.caption[lang] ?? it.caption.en ?? Object.values(it.caption)[0] ?? '')) : '');
+const safeSrc = s => typeof s === 'string' && s && !/^[a-z][\w+.-]*:|^\/\//i.test(s) && !s.includes('..'); // local, relative only
+
+async function loadGallery() {
+  let url = 'assets/gallery/manifest.json';
+  try { const q = new URLSearchParams(location.search).get('gallery'); if (q && safeSrc(q)) url = q; } catch (e) { /* ignore */ }
+  let list = [];
+  try {
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (r.ok) list = await r.json();
+  } catch (e) { list = []; }
+  const base = url.slice(0, url.lastIndexOf('/') + 1);
+  G.items = (Array.isArray(list) ? list : []).filter(it => it && safeSrc(it.src) && GAL_TYPES.includes(it.type))
+    .map(it => ({ ...it, url: it.src.startsWith('assets/') ? it.src : base + it.src.replace(/^\.\//, '') }));
+  renderGallery();
+  if (dlgU().open) renderUnitGallery();
+}
+
+function galList() { return G.tab === 'all' ? G.items : G.items.filter(i => i.type === G.tab); }
+function renderGallery() {
+  const has = G.items.length > 0;
+  $('#gallery').hidden = !has; $$('.nav-gal').forEach(a => { a.hidden = !has; });
+  if (!has) return;
+  const types = GAL_TYPES.filter(ty => G.items.some(i => i.type === ty));
+  if (!types.includes(G.tab)) G.tab = 'all';
+  $('#galTabs').innerHTML = types.length > 1 ? ['all', ...types].map(ty => `<button type="button" role="tab" data-gt="${ty}" aria-selected="${ty === G.tab}" class="${ty === G.tab ? 'on' : ''}">${esc(t('gal.' + ty))}</button>`).join('') : '';
+  const list = galList();
+  $('#galGrid').innerHTML = list.map((it, i) => `<button type="button" class="gal-item${i === 0 ? ' feat' : ''}" data-gi="${i}" aria-label="${esc(t('gal.open'))}: ${esc(capOf(it) || t('gal.' + it.type))}">
+      <img src="${esc(it.url)}" alt="" loading="${i < 3 ? 'eager' : 'lazy'}" decoding="async">
+      <span class="gal-cap"><span class="gal-k">${esc(t('gal.' + it.type))}${it.style ? ' · ' + esc(t('style.' + it.style + '.n')) : ''}</span>${capOf(it) ? `<span class="gal-t">${esc(capOf(it))}</span>` : ''}</span></button>`).join('');
+  $$('#galGrid img').forEach(img => img.addEventListener('error', () => img.closest('.gal-item')?.remove(), { once: true }));
+}
+
+// Images for the open unit: same type first, then interiors in the chosen style, then other interiors.
+function unitGalleryList(u) {
+  const score = it => (it.unitType === u.type ? 3 : 0) + (it.style === S.styleId ? 2 : 0) + (it.type === 'interior' ? 1 : 0);
+  return G.items.filter(it => it.type === 'interior' || it.unitType === u.type)
+    .filter(it => !it.unitType || it.unitType === u.type)
+    .sort((a, b) => score(b) - score(a)).slice(0, 10);
+}
+function renderUnitGallery() {
+  const host = dlgU().querySelector('#unitGal'); if (!host || !S.unit) return;
+  const list = unitGalleryList(S.unit);
+  host.hidden = !list.length;
+  host.innerHTML = list.length ? `<h3 class="h5">${esc(t('unit.gallery'))}</h3><div class="ug-strip">${list.map((it, i) => `<button type="button" class="ug-item" data-ui="${i}" aria-label="${esc(t('gal.open'))}: ${esc(capOf(it) || t('gal.' + it.type))}"><img src="${esc(it.url)}" alt="" loading="lazy" decoding="async"></button>`).join('')}</div>` : '';
+  host._list = list;
+  host.querySelectorAll('img').forEach(img => img.addEventListener('error', () => img.closest('.ug-item')?.remove(), { once: true }));
+}
+
+// ---- lightbox (keyboard ←/→, swipe on touch, focus returns to the opener)
+function lbShow(i) {
+  const L = G.lb.list; if (!L.length) return;
+  G.lb.i = (i + L.length) % L.length; const it = L[G.lb.i];
+  const img = $('#lbImg'); img.classList.remove('in'); img.src = it.url; img.alt = capOf(it) || t('gal.' + it.type);
+  img.decode?.().catch(() => {}).finally(() => requestAnimationFrame(() => img.classList.add('in')));
+  $('#lbCap').textContent = [t('gal.' + it.type), it.style ? t('style.' + it.style + '.n') : '', capOf(it)].filter(Boolean).join(' · ');
+  $('#lbN').textContent = `${G.lb.i + 1} / ${L.length}`;
+  const multi = L.length > 1; $('#lightbox .lb-prev').hidden = !multi; $('#lightbox .lb-next').hidden = !multi;
+}
+function lbOpen(list, i) {
+  G.lb.list = list; G.lb.ret = document.activeElement;
+  const d = $('#lightbox'); if (!d.open) d.showModal(); document.documentElement.classList.add('modal-open');
+  lbShow(i); d.querySelector('.lb-x').focus();
+}
+function lbClose() {
+  const d = $('#lightbox'); if (!d.open) return; d.close();
+  if (!dlgU().open) document.documentElement.classList.remove('modal-open');
+  G.lb.ret?.focus?.({ preventScroll: true });
+}
+function bindGallery() {
+  $('#galTabs').addEventListener('click', e => { const ty = e.target.closest('[data-gt]')?.dataset.gt; if (ty) { G.tab = ty; renderGallery(); $(`#galTabs [data-gt="${ty}"]`)?.focus(); } });
+  $('#galGrid').addEventListener('click', e => { const b = e.target.closest('[data-gi]'); if (b) lbOpen(galList(), +b.dataset.gi); });
+  const d = $('#lightbox');
+  const rtlStep = k => (dir === 'rtl' ? -k : k);
+  d.addEventListener('cancel', e => { e.preventDefault(); lbClose(); });
+  d.addEventListener('click', e => {
+    const a = e.target.closest('[data-lb]')?.dataset.lb;
+    if (a === 'close') lbClose(); else if (a === 'prev') lbShow(G.lb.i - 1); else if (a === 'next') lbShow(G.lb.i + 1);
+    else if (e.target === d || e.target.id === 'lbStage') lbClose();
+  });
+  d.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); lbShow(G.lb.i + rtlStep(-1)); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); lbShow(G.lb.i + rtlStep(1)); }
+  });
+  let sw = null; const stage = $('#lbStage');
+  stage.addEventListener('pointerdown', e => { sw = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+  stage.addEventListener('pointerup', e => {
+    if (!sw || sw.id !== e.pointerId) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y; sw = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) { lbShow(G.lb.i + (dx < 0 ? rtlStep(1) : rtlStep(-1))); }
+  });
+  stage.addEventListener('pointercancel', () => { sw = null; });
+}
+
+// ---------------------------------------------------------------- hero 3D (lazy)
+let hero = null;
+function startHero() {
+  if (hero) return;
+  let save = false; try { save = !!navigator.connection?.saveData; } catch (e) {}
+  if (save) return;
+  hero = createHero3D({
+    heroHost: $('#heroHost'), finderHost: $('#finderHost'), reducedMotion: reduced,
+    onFloor: (b, f) => setFloor(b, f, { scroll: true }),
+    onState: (s) => {
+      if (s === 'ready') {
+        document.body.classList.add('has-3d');
+        $('#modeCtl').hidden = false; $('#heroHint').hidden = false; markMode('dusk');
+        hero.focusFloor(S.b, S.f);
+      } else if (s === 'failed') { document.body.classList.add('no-3d'); hero = null; }
+    },
+  });
+  hero.init();
+}
+function markMode(m) { S.timeMode = m; $$('#modeCtl button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m)); }
+
+// ---------------------------------------------------------------- header / nav / language
+function bindHeader() {
+  const head = $('#head');
+  const onScroll = () => head.classList.toggle('scrolled', scrollY > 24);
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  const nav = $('#nav'), mb = $('#menuBtn');
+  mb.addEventListener('click', () => { const o = !nav.classList.contains('open'); nav.classList.toggle('open', o); mb.setAttribute('aria-expanded', o); head.classList.toggle('menu-open', o); });
+  nav.addEventListener('click', e => { if (e.target.closest('a')) { nav.classList.remove('open'); mb.setAttribute('aria-expanded', false); head.classList.remove('menu-open'); } });
+  bindLangMenu();
+  $('#modeCtl').addEventListener('click', e => { const m = e.target.closest('[data-mode]')?.dataset.mode; if (m) { hero?.setMode(m); markMode(m); } });
+}
+// Language dropdown: flag + native name, keyboard navigable (listbox pattern)
+function markLang() {
+  const L = langInfo(lang);
+  $('#langBtn').innerHTML = `${L.flagSvg}<span class="lang-code">${L.short}</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>`;
+  $('#langBtn').setAttribute('aria-label', `${t('lang.menu')}: ${L.name}`);
+  $('#langMenu').setAttribute('aria-label', t('lang.menu'));
+  $('#langMenu').innerHTML = LANGS.map(l => `<li role="option" id="lo-${l.code}" tabindex="-1" data-lang="${l.code}" lang="${l.code}" dir="${l.dir}" aria-selected="${l.code === lang}">${l.flagSvg}<span>${l.name}</span>${l.code === lang ? '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : ''}</li>`).join('');
+}
+function bindLangMenu() {
+  const btn = $('#langBtn'), menu = $('#langMenu');
+  const items = () => $$('#langMenu [role="option"]');
+  const open = () => { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); (menu.querySelector('[aria-selected="true"]') || items()[0]).focus(); };
+  const close = (focusBtn = true) => { if (menu.hidden) return; menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); if (focusBtn) btn.focus(); };
+  btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+  btn.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); } });
+  menu.addEventListener('click', e => { const li = e.target.closest('[data-lang]'); if (!li) return; close(); if (li.dataset.lang !== lang) setLang(li.dataset.lang); });
+  menu.addEventListener('keydown', e => {
+    const list = items(); const i = list.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); list[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); list[list.length - 1].focus(); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); document.activeElement?.click(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Tab') close(false);
+  });
+  document.addEventListener('pointerdown', e => { if (!menu.hidden && !e.target.closest('#lang')) close(false); });
+}
+
+function rerenderAll() {
+  markLang(); renderStatic(); renderFilters(); renderTabs(); renderStack(); renderElev(); renderLegend(); renderCount();
+  plan.refresh();
+  const note = S.f === 0 ? t('finder.ground') : S.f === TOP_FLOOR ? t('finder.duplexNote') : ''; $('#planNote').textContent = note; $('#planNote').hidden = !note;
+  if (S.view === 'list') renderList();
+  if (dlgU().open) renderUnit();
+  renderGallery();
+  if ($('#lightbox').open) lbShow(G.lb.i);
+  try { walk?.refreshTexts?.(); } catch (e) { /* HUD keeps previous texts */ }
+  hero?.relayout?.();
+  if (!$('#walkVeil').hidden) { $('#walkT').textContent = t($('#walkVeil').classList.contains('failed') ? 'walk.unavailable' : 'walk.loading'); }
+}
+
+// ---------------------------------------------------------------- boot
+function boot() {
+  setLang(initialLang());
+  plan = createPlan($('#plan'), {
+    statusOf, matches: u => matches(u),
+    onSelect: u => openUnit(u),
+    onHover: u => hero?.highlightUnits(u ? [u.id] : (S.unit && dlgU().open ? [S.unit.id] : null)),
+  });
+  bindHeader(); bindFilters(); bindFinder(); bindUnit(); bindWalk(); bindGallery();
+  rerenderAll();
+  setFloor(S.b, S.f);
+  onLangChange(rerenderAll);
+
+  // deep link #u=C3-5-07
+  const m = location.hash.match(/^#u=([\w-]+)/);
+  if (m && unitById(m[1])) { const u = unitById(m[1]); setFloor(u.building, u.floor); openUnit(u); }
+
+  loadGallery();
+  // Reservations are read only in the CRM; reading the db on page load made claude.ai show a sign-in prompt to every visitor.
+  if (false) loadReservations().then(ids => { if (!ids.size) return; ids.forEach(id => reserved.add(id)); plan.refresh(); renderStack(); if (S.view === 'list') renderList(); if (dlgU().open) renderUnit(); }).catch(() => {});
+
+  const kick = () => (window.requestIdleCallback ? requestIdleCallback(startHero, { timeout: 1500 }) : setTimeout(startHero, 400));
+  if (document.readyState === 'complete') kick(); else addEventListener('load', kick, { once: true });
+}
+boot();

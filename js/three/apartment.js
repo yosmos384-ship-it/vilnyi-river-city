@@ -1,0 +1,1230 @@
+// VILNYI RIVER CITY — procedural, fully furnished apartment interiors (Agent C).
+// buildApartment(unit, styleId) → group in UNIT-LOCAL coords (x = u along the facade 0..width, z = v corridor→facade,
+// y = 0 at the floor surface). Plan is generated from TYPES[unit.type].list and fitted into width × 7.4.
+// Everything static is baked (merged by material) → roughly one draw call per material. Collisions use invisible boxes.
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { TYPES, GEOM, LEVELS } from '../data.js';
+import { getMaterials } from './materials.js';
+import { F, FX } from './furniture.js';
+
+const CH = LEVELS.ceiling;            // clear ceiling height 2.7
+const LH = LEVELS.typicalH;           // storey height 3.0 (duplex upper floor at y = 3.0)
+const BD = GEOM.balconyDepth;         // 1.6
+const PW = 0.1, CW = 0.15, FW = 0.2, TW = 0.1;   // party wall, corridor wall, facade depth, partitions
+const DOOR_W = 0.82, DOOR_H = 2.1, ENTRY_W = 1.0, ENTRY_H = 2.2;
+const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
+const PI = Math.PI, HALF = PI / 2;
+const KEEP_UV = /\.(rug|art\d|leaf2?)$/;
+
+// ------------------------------------------------------------------ baking (merge by material)
+const nonIndexed = new WeakMap();
+function flat(g) { let n = nonIndexed.get(g); if (!n) { n = g.index ? g.toNonIndexed() : g; nonIndexed.set(g, n); } return n; }
+const _n3 = new THREE.Matrix3(), _v = new THREE.Vector3(), _nv = new THREE.Vector3();
+function transformed(g, mtx, worldUV, color) {
+  const s = flat(g), P = s.attributes.position, N = s.attributes.normal, U = s.attributes.uv, C = s.attributes.color;
+  const n = P.count, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+  _n3.getNormalMatrix(mtx);
+  for (let i = 0; i < n; i++) {
+    _v.fromBufferAttribute(P, i).applyMatrix4(mtx);
+    pos[i * 3] = _v.x; pos[i * 3 + 1] = _v.y; pos[i * 3 + 2] = _v.z;
+    if (N) _nv.fromBufferAttribute(N, i).applyMatrix3(_n3).normalize(); else _nv.set(0, 1, 0);
+    nor[i * 3] = _nv.x; nor[i * 3 + 1] = _nv.y; nor[i * 3 + 2] = _nv.z;
+    if (worldUV) {
+      const ax = Math.abs(_nv.x), ay = Math.abs(_nv.y), az = Math.abs(_nv.z);
+      if (ay >= ax && ay >= az) { uv[i * 2] = _v.x; uv[i * 2 + 1] = _v.z; }
+      else if (ax >= az) { uv[i * 2] = _v.z; uv[i * 2 + 1] = _v.y; }
+      else { uv[i * 2] = _v.x; uv[i * 2 + 1] = _v.y; }
+    } else if (U) { uv[i * 2] = U.getX(i); uv[i * 2 + 1] = U.getY(i); }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (color) {
+    const col = new Float32Array(n * 3).fill(1);
+    if (C) for (let i = 0; i < n; i++) { col[i * 3] = C.getX(i); col[i * 3 + 1] = C.getY(i); col[i * 3 + 2] = C.getZ(i); }
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+  return out;
+}
+// Merge every static mesh under `src` into one mesh per material (added to `dst`). Meshes flagged userData.keep
+// (colliders, the entrance door) are re-parented to `dst` with their transform preserved.
+function bake(src, dst) {
+  src.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(src.matrixWorld).invert();
+  const buckets = new Map(), keep = [];
+  src.traverse(o => {
+    if (o.userData.keep) { keep.push(o); return; }
+    if (!o.isMesh || !o.visible) return;
+    let skip = false; for (let p = o.parent; p && p !== src; p = p.parent) if (p.userData.keep) skip = true;
+    if (skip) return;
+    let b = buckets.get(o.material); if (!b) buckets.set(o.material, b = []);
+    b.push(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), o.geometry);
+  });
+  const meshes = [];
+  for (const [mat, list] of buckets) {
+    const worldUV = !KEEP_UV.test(mat.name || ''), color = !!mat.vertexColors;
+    const geos = [];
+    for (let i = 0; i < list.length; i += 2) geos.push(transformed(list[i + 1], list[i], worldUV, color));
+    // split very large buckets so no single buffer gets unwieldy
+    const CHUNK = 400;
+    for (let i = 0; i < geos.length; i += CHUNK) {
+      const part = geos.slice(i, i + CHUNK);
+      const merged = part.length === 1 ? part[0] : mergeGeometries(part, false);
+      if (part.length > 1) part.forEach(g => g.dispose());
+      merged.computeBoundingSphere(); merged.computeBoundingBox();
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.name = 'baked:' + (mat.name || '?');
+      mesh.matrixAutoUpdate = false;
+      if (mat.transparent) mesh.renderOrder = 2;
+      dst.add(mesh); meshes.push(mesh);
+    }
+  }
+  for (const o of keep) {
+    o.updateMatrixWorld(true);
+    const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    o.parent && o.parent.remove(o);
+    m.decompose(o.position, o.quaternion, o.scale);
+    dst.add(o);
+  }
+  return meshes;
+}
+
+// ------------------------------------------------------------------ small builders (unit-local)
+const UBOX = new THREE.BoxGeometry(1, 1, 1);
+function box(p, mat, u0, y0, v0, u1, y1, v1) {
+  const o = new THREE.Mesh(UBOX, mat);
+  o.position.set((u0 + u1) / 2, (y0 + y1) / 2, (v0 + v1) / 2);
+  o.scale.set(Math.max(1e-4, u1 - u0), Math.max(1e-4, y1 - y0), Math.max(1e-4, v1 - v0));
+  p.add(o); return o;
+}
+let COLMAT = null;
+function collider(p, u0, y0, v0, u1, y1, v1, kind = 'solid') {
+  if (!COLMAT) { COLMAT = new THREE.MeshBasicMaterial({ visible: false }); COLMAT.name = 'collider'; }
+  const o = new THREE.Mesh(UBOX, COLMAT);
+  o.position.set((u0 + u1) / 2, (y0 + y1) / 2, (v0 + v1) / 2);
+  o.scale.set(u1 - u0, y1 - y0, v1 - v0);
+  o.userData.keep = true; o.userData.collider = true;
+  if (kind === 'floor') o.userData.floor = true; else o.userData.solid = true;
+  o.name = 'col-' + kind;
+  p.add(o); return o;
+}
+const PLANE = new THREE.PlaneGeometry(1, 1);
+// horizontal rectangle at height y, facing up (dir=1) or down (dir=-1)
+function hrect(p, mat, u0, v0, u1, v1, y, dir = 1) {
+  const o = new THREE.Mesh(PLANE, mat);
+  o.rotation.x = dir > 0 ? -HALF : HALF;
+  o.position.set((u0 + u1) / 2, y, (v0 + v1) / 2);
+  o.scale.set(u1 - u0, v1 - v0, 1);
+  p.add(o); return o;
+}
+// place a furniture group: (u, v) position, rotation so that its front (+z) faces `face` ('+v','-v','+u','-u' or radians)
+const FACE = { '+v': 0, '-v': PI, '+u': HALF, '-u': -HALF };
+function put(p, obj, u, v, face = '+v', y = 0) {
+  obj.position.set(u, y, v);
+  obj.rotation.y = typeof face === 'number' ? face : FACE[face];
+  p.add(obj);
+  const sb = obj.userData.solidBox;
+  if (sb && !obj.userData.noSolid) {
+    const c = collider(obj, -sb.w / 2 + (sb.x || 0), 0.02, -sb.d / 2 + (sb.z || 0), sb.w / 2 + (sb.x || 0), Math.min(sb.h, 1.9), sb.d / 2 + (sb.z || 0));
+    c.name = 'col-furniture';
+  }
+  return obj;
+}
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const rectPoly = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+function polyArea(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const [x0, y0] = poly[i], [x1, y1] = poly[(i + 1) % poly.length]; a += x0 * y1 - x1 * y0; } return Math.abs(a) / 2; }
+function polyCentroid(poly) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < poly.length; i++) { const [x0, y0] = poly[i], [x1, y1] = poly[(i + 1) % poly.length]; const f = x0 * y1 - x1 * y0; a += f; cx += (x0 + x1) * f; cy += (y0 + y1) * f; }
+  a /= 2; return a ? [cx / (6 * a), cy / (6 * a)] : poly[0];
+}
+
+// ================================================================== PLAN
+// Coordinates: interior shell faces ul = 0.1 (party), ur = W-0.1, vc = 0.15 (corridor wall), vF = 7.2 (facade inner face).
+// Partition lines are wall CENTRES (walls 0.1 thick). A room rect is given in partition coords; clear() insets it.
+function planUnit(unit) {
+  const T = TYPES[unit.type], W = unit.width, D = unit.depth;
+  const duplex = !!T.duplex;
+  const ul = PW, ur = W - PW, vc = CW, vF = D - FW;
+  const doorU = clamp(unit.door.u, ul + 0.6, ur - 0.6);
+  const vb = duplex ? 1.95 : 2.45;
+  const plan = { W, D, ul, ur, vc, vF, vb, duplex, doorU, levels: [], T };
+  if (duplex) {
+    const s0 = ul + 1.1, run = 4.05;
+    plan.stair = { s0, s1: s0 + run, v0: vb, v1: vb + 1.05, n: 16, rise: LH / 16, tread: run / 15 };
+  }
+  const nLevels = duplex ? 2 : 1;
+  for (let lv = 0; lv < nLevels; lv++) plan.levels.push(planLevel(plan, lv));
+  return plan;
+}
+
+function planLevel(P, lv) {
+  const { ul, ur, vc, vF, vb, doorU, T, stair } = P;
+  const L = { lv, y: lv * LH, rooms: [], wallsU: [], wallsV: [], doors: [], facade: [], zones: {} };
+  const list = T.list.filter(r => (r.level || 0) === lv);
+  const inside = list.filter(r => !OUTDOOR.has(r.kind));
+  const outdoor = list.find(r => OUTDOOR.has(r.kind));
+  const halls = inside.filter(r => r.kind === 'hall');
+  const beds = inside.filter(r => r.kind === 'bedroom');
+  const living = inside.find(r => r.kind === 'living');
+  const kitchen = inside.find(r => r.kind === 'kitchen');
+  const backItems = inside.filter(r => ['bath', 'storage', 'dressing'].includes(r.kind));
+  const bandD = vb - vc;
+  const room = (r, rect, extra = {}) => { const o = { kind: r.kind, name: r.name, area: r.area, level: lv, rect, poly: extra.poly || rectPoly(...rect), ...extra }; L.rooms.push(o); return o; };
+  const wU = (v, u0, u1, gaps = []) => { if (u1 - u0 > 0.02) L.wallsU.push({ v, u0, u1, gaps }); };
+  const wV = (u, v0, v1, gaps = []) => { if (v1 - v0 > 0.02) L.wallsV.push({ u, v0, v1, gaps }); };
+  const hallData = halls[0] || { kind: 'hall', name: 'Hol', area: 4 };
+
+  // ---------------- back band: hall (entry) + service rooms + kitchen
+  const upper = lv === 1;
+  let hR = upper ? Math.max(ul + 1.25, stair.s0 + 0.15) : Math.max(doorU + 0.62, ul + 1.35);
+  const minW = { bath: 1.75, storage: 1.0, dressing: 1.45 };
+  const items = backItems.map(r => ({ r, w: clamp(r.area / bandD, minW[r.kind] || 1, r.kind === 'bath' ? 2.9 : 2.2) }));
+  let kitchenBack = false, kitW = 0, closet = null;
+  const tryKitchen = () => {
+    const rest = ur - hR - items.reduce((s, it) => s + it.w, 0);
+    const opening = P.duplex ? ur - stair.s1 : 99;
+    kitW = rest; return rest >= 2.3 && opening >= 1.25;
+  };
+  if (kitchen && !upper) {
+    kitchenBack = tryKitchen();
+    const si = items.findIndex(it => it.r.kind === 'storage');
+    if (!kitchenBack && si >= 0 && !P.duplex) {
+      // no room for a closed store: it becomes a built-in closet in the entrance hall
+      closet = items.splice(si, 1)[0].r;
+      kitchenBack = tryKitchen();
+    }
+  }
+  if (!kitchenBack) {
+    // no kitchen in the band: distribute the slack (hall grows up to 2.6 wide, then the service rooms)
+    let slack = ur - hR - items.reduce((s, it) => s + it.w, 0);
+    const grow = Math.min(slack, Math.max(0, (upper ? 2.4 : 2.6) - (hR - ul)));
+    if (items.length) { hR += grow; slack -= grow; items[items.length - 1].w += slack; }
+    else hR = ur;
+  }
+  // corridor strip + front band (non-duplex bedrooms, and every duplex upper level)
+  const hasStrip = beds.length > 0;
+  const vs0 = upper ? stair.v1 : vb;          // strip starts after the stair void on the upper level
+  const vs = hasStrip ? vs0 + 1.1 : vb;       // front rooms start here
+  // bedroom widths
+  let cR = ul, bedRects = [];
+  if (beds.length) {
+    const avail = (ur - ul) - (living ? (kitchenBack ? 3.5 : 3.9) : 0);
+    const want = beds.map(b => clamp(b.area / (vF - vs), 2.55, 4.6));
+    const sum = want.reduce((a, b) => a + b, 0);
+    // upper level: bedrooms take the whole facade; otherwise they leave room for the living
+    const ws = fitWidths(want, living ? Math.min(sum, avail) : (ur - ul), 2.55);
+    let u = ul;
+    beds.forEach((b, i) => { const w = ws[i]; bedRects.push([u, vs, i === beds.length - 1 && !living ? ur : u + w, vF]); u += w; });
+    cR = bedRects.length ? bedRects[bedRects.length - 1][2] : ul;
+  }
+  // ---- back band rooms
+  let u = hR;
+  const svc = [];
+  items.forEach((it, i) => { const r = room(it.r, [u, vc, u + it.w, vb]); svc.push(r); u += it.w; });
+  let kitchenRoom = null;
+  if (kitchenBack) kitchenRoom = room(kitchen, [u, vc, ur, vb], { back: true });
+  if (closet) room(closet, [ul, vc, ul + 0.62, Math.min(vb, vc + 2.05)], { closet: true });
+  // hall polygon (entry + strip + upper landing zones)
+  const hallRooms = [];
+  {
+    let poly;
+    if (upper) {
+      // back hall + landing + (strip over full width) + floor right of the void
+      const s = stair;
+      poly = hasStrip
+        ? [[ul, vc], [hR, vc], [hR, vb], [s.s0, vb], [s.s0, s.v1], [s.s1, s.v1], [s.s1, vb], [ur, vb], [ur, vs], [ul, vs]]
+        : [[ul, vc], [hR, vc], [hR, vb], [ul, vb]];
+      // svc rooms left of s1 face the void; the band right of the void is hall floor
+    } else if (hasStrip) poly = [[ul, vc], [hR, vc], [hR, vb], [cR, vb], [cR, vs], [ul, vs]];
+    else poly = rectPoly(ul, vc, hR, vb);
+    hallRooms.push(room(hallData, [ul, vc, hR, vb], { poly, entry: !upper }));
+  }
+  // ---- front band
+  const bedRooms = beds.map((b, i) => room(b, bedRects[i]));
+  let livRoom = null, kitFront = null;
+  if (living) {
+    const lu0 = hasStrip ? cR : ul;
+    if (kitchen && !kitchenBack) {
+      if (!P.duplex) {
+        // kitchenette along the back wall of the living (1-room flats)
+        const k0 = Math.max(hR + 0.12, lu0 + (hasStrip ? 1.0 : 0)), kd = 1.75;
+        kitFront = room(kitchen, [k0, vb, ur, vb + kd], { front: 'back' });
+        livRoom = room(living, [lu0, vb, ur, vF], { poly: [[lu0, vb], [k0, vb], [k0, vb + kd], [ur, vb + kd], [ur, vF], [lu0, vF]] });
+      } else {
+        // duplex: kitchen along the right side wall, after the stair zone
+        const k0 = stair.v1 + 0.7, len = clamp(vF - k0 - 1.9, 2.0, 3.2), kw = 1.8;
+        kitFront = room(kitchen, [ur - kw, k0, ur, k0 + len], { front: 'side' });
+        livRoom = room(living, [lu0, vb, ur, vF], { poly: [[lu0, vb], [ur, vb], [ur, k0], [ur - kw, k0], [ur - kw, k0 + len], [ur, k0 + len], [ur, vF], [lu0, vF]] });
+      }
+    } else livRoom = room(living, [lu0, vb, ur, vF]);
+  }
+  // outdoor
+  if (outdoor) room(outdoor, [0, P.D, P.W, P.D + BD], { outdoor: true });
+
+  // ---------------- walls
+  const gapDoor = (c, w = DOOR_W, h = DOOR_H) => [c - w / 2, c + w / 2, h];
+  // hall | first service room (door on the side wall), further service rooms get doors on the front wall
+  svc.forEach((r, i) => {
+    const [u0, , u1] = r.rect;
+    const leftIsHall = Math.abs(u0 - hR) < 1e-6;
+    if (leftIsHall) {
+      const dv = clamp(vb - 0.62, vc + 0.5, vb - 0.5);
+      wV(u0, vc, vb - 0.05, [gapDoor(dv)]);
+      r.door = { wall: 'left', u: u0, v: dv };
+      L.doors.push({ axis: 'v', c: u0, p: dv, into: +1, hinge: -1 });
+    }
+    // right wall of the service room
+    const next = svc[i + 1] || kitchenRoom;
+    if (next) wV(u1, vc, vb - 0.05);
+    else if (u1 < ur - 1e-6) wV(u1, vc, vb - 0.05);
+    if (!leftIsHall) {
+      // door on the front wall (must not face the stair void on the upper level)
+      let du = u0 + 0.55;
+      if (upper && du - 0.45 < stair.s1) du = Math.max(du, stair.s1 + 0.5);
+      if (du + 0.45 > u1) du = null;
+      r.door = du ? { wall: 'front', u: du, v: vb } : null;
+      if (du) L.doors.push({ axis: 'u', c: vb, p: du, into: -1, hinge: -1 });
+      r.frontDoorU = du;
+    }
+  });
+  // front wall of the back band (v = vb)
+  {
+    const gaps = [];
+    if (upper) {
+      // open along the landing (u < s0) — the stair arrives there
+      gaps.push([ul, stair.s0, 99]);
+      if (hR > stair.s0 + 0.02 && hasStrip) { /* wall from s0 to hR remains (back hall edge over the void) */ }
+      for (const r of svc) if (r.frontDoorU) gaps.push(gapDoor(r.frontDoorU));
+      // hall back part right of the landing: opening if the hall extends beyond s0 and not over the void
+    } else {
+      if (P.duplex) gaps.push([ul, stair.s0, 2.45]);            // pass under the landing
+      else if (hasStrip) gaps.push([ul, Math.min(hR, Math.max(cR, ul + 1.2)) - 0.0, 99]);
+      else gaps.push([ul, hR, 99]);
+      if (!P.duplex && hasStrip && cR < hR) { /* entry wider than strip: part of the entry opens into the living */ gaps.push([cR, hR, 2.45]); }
+      for (const r of svc) if (r.frontDoorU) gaps.push(gapDoor(r.frontDoorU));
+      if (kitchenRoom) {
+        const k0 = kitchenRoom.rect[0];
+        const a = P.duplex ? Math.max(k0, stair.s1 + 0.05) : k0 + 0.05;
+        gaps.push([a, ur, 2.4]);                                   // wide kitchen opening with a bulkhead
+      }
+    }
+    wU(vb, ul, ur, mergeGaps(gaps));
+    L.backWallGaps = mergeGaps(gaps);
+  }
+  // strip front wall with bedroom doors + walls between bedrooms; wall between bedrooms and living
+  if (hasStrip) {
+    const gaps = [];
+    bedRooms.forEach((r, i) => {
+      const [u0, , u1] = r.rect;
+      const du = i === 0 ? u0 + 0.6 : u0 + 0.6;
+      r.doorU = clamp(du, u0 + 0.52, u1 - 0.5);
+      gaps.push(gapDoor(r.doorU));
+      L.doors.push({ axis: 'u', c: vs, p: r.doorU, into: +1, hinge: -1 });
+      if (i > 0) wV(u0, vs + 0.05, vF);
+    });
+    wU(vs, ul, cR + (living ? 0.05 : 0), gaps);
+    if (living) wV(cR, vs - 0.0 + 0.05, vF);      // bedroom | living partition
+  }
+  // hall entry partitions
+  if (!upper && hasStrip && !living) { /* n/a */ }
+  // upper level: the void's railing is handled by the stair builder; the strip is open to the landing.
+
+  // facade segments: one per front room (living / bedrooms / kitchenette-less)
+  const front = [...bedRooms, ...(livRoom ? [livRoom] : [])].sort((a, b) => a.rect[0] - b.rect[0]);
+  if (!front.length) front.push({ rect: [ul, vs, ur, vF], kind: 'hall' });
+  let slideRoom = livRoom || bedRooms.slice().sort((a, b) => b.area - a.area)[0];
+  front.forEach(r => L.facade.push({ u0: r.rect[0], u1: r.rect[2], room: r, slide: r === slideRoom && !!outdoor }));
+  L.hasOutdoor = !!outdoor; L.outdoor = outdoor;
+  Object.assign(L.zones, { hall: hallRooms[0], svc, kitchenRoom, kitFront, livRoom, bedRooms, hR, cR, vs, hasStrip });
+  return L;
+}
+// Scale widths to `total`, keeping each >= min where possible.
+function fitWidths(want, total, min) {
+  let w = want.slice(), fixed = new Set();
+  for (let it = 0; it < 5; it++) {
+    const free = w.reduce((s, x, i) => s + (fixed.has(i) ? 0 : x), 0), rest = total - [...fixed].length * min;
+    w = w.map((x, i) => fixed.has(i) ? min : x * rest / free);
+    const low = w.findIndex((x, i) => x < min - 1e-6 && !fixed.has(i));
+    if (low < 0 || fixed.size >= w.length - 1) break;
+    fixed.add(low);
+  }
+  return w;
+}
+function mergeGaps(g) {
+  g = g.filter(x => x[1] - x[0] > 0.05).sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const x of g) { const l = out[out.length - 1]; if (l && x[0] <= l[1] + 0.02) { l[1] = Math.max(l[1], x[1]); l[2] = Math.max(l[2], x[2]); } else out.push([...x]); }
+  return out;
+}
+function clearRect(P, r) {
+  const [u0, v0, u1, v1] = r.rect, e = 1e-6;
+  return [u0 <= P.ul + e ? P.ul : u0 + TW / 2, v0 <= P.vc + e ? P.vc : v0 + TW / 2, u1 >= P.ur - e ? P.ur : u1 - TW / 2, v1 >= P.vF - e ? P.vF : v1 - TW / 2];
+}
+
+// ================================================================== SHELL
+function buildShell(ctx, L) {
+  const { P, m, sg, cut } = ctx;
+  const y0 = L.y, H = cut ? 1.1 : CH, top = y0 + H;
+  const wallM = m.wall, cap = m.cutCap;
+  const segs = [];      // solid wall pieces for skirting: {axis, c, a0, a1, faces:[-1,+1]}
+  const wallPiece = (axis, c, a0, a1, t, yA, yB, faces, mat = wallM) => {
+    if (a1 - a0 < 0.005 || yB - yA < 0.005) return;
+    if (axis === 'u') box(sg, mat, a0, yA, c - t / 2, a1, yB, c + t / 2); else box(sg, mat, c - t / 2, yA, a0, c + t / 2, yB, a1);
+    if (yA <= y0 + 0.01) {
+      const hC = Math.min(yB, y0 + 2.2);
+      if (axis === 'u') collider(ctx.cg, a0, y0 + 0.02, c - t / 2, a1, hC, c + t / 2); else collider(ctx.cg, c - t / 2, y0 + 0.02, a0, c + t / 2, hC, a1);
+      segs.push({ axis, c, a0, a1, t, faces });
+    }
+    if (cut && yB >= top - 0.001) { if (axis === 'u') box(sg, cap, a0, top, c - t / 2, a1, top + 0.012, c + t / 2); else box(sg, cap, c - t / 2, top, a0, c + t / 2, top + 0.012, a1); }
+  };
+  const wallWithGaps = (axis, c, a0, a1, gaps, t = TW, faces = [-1, 1]) => {
+    let s = a0;
+    for (const [g0, g1, gh] of gaps) {
+      const A = Math.max(a0, g0), B = Math.min(a1, g1);
+      if (B <= A) continue;
+      wallPiece(axis, c, s, A, t, y0, top, faces);
+      if (gh < H) wallPiece(axis, c, A, B, t, y0 + gh, top, faces);     // lintel
+      s = B;
+    }
+    wallPiece(axis, c, s, a1, t, y0, top, faces);
+  };
+  // shell: corridor wall with the entrance, party walls
+  const entryGap = L.lv === 0 ? [[P.doorU - ENTRY_W / 2, P.doorU + ENTRY_W / 2, ENTRY_H]] : [];
+  wallWithGaps('u', CW / 2, 0, P.W, entryGap, CW, [1]);
+  wallPiece('v', PW / 2, P.vc, P.vF, PW, y0, top, [1]);
+  wallPiece('v', P.W - PW / 2, P.vc, P.vF, PW, y0, top, [-1]);
+  // partitions
+  for (const w of L.wallsU) wallWithGaps('u', w.v, w.u0, w.u1, w.gaps);
+  for (const w of L.wallsV) wallWithGaps('v', w.u, w.v0, w.v1, w.gaps);
+  ctx.segs[L.lv] = segs;
+  // entrance door + interior door frames with open leaves (not in the cutaway)
+  if (L.lv === 0 && !cut) buildEntrance(ctx);
+  if (!cut) for (const d of L.doors) buildInteriorDoor(ctx, L, d);
+  // floors (per room, partition coords → seams hide under walls)
+  const flo = { bath: m.floorBath, storage: m.floor, dressing: m.floor };
+  for (const r of L.rooms) {
+    if (r.outdoor || r.closet) continue;
+    const mat = flo[r.kind] || (r.kind === 'hall' && m.styleId === 'milano' ? m.marble : m.floor);
+    floorPoly(sg, mat, r, y0, P);
+  }
+  // floor collider(s)
+  if (L.lv === 0) collider(ctx.cg, 0, -0.2, -0.35, P.W, 0, P.D, 'floor');
+  else for (const [a, b, c, d] of upperFloorRects(P)) collider(ctx.cg, a, y0 - 0.2, b, c, y0, d, 'floor');
+  // ceiling
+  if (!cut) buildCeiling(ctx, L);
+  // skirting + bath tiling + feature walls
+  finishWalls(ctx, L);
+}
+function upperFloorRects(P) {
+  const s = P.stair;
+  return [[0, 0, P.W, s.v0], [0, s.v0, s.s0, s.v1], [s.s1, s.v0, P.W, s.v1], [0, s.v1, P.W, P.D]];
+}
+// Floors: rectangles in partition coords; L-shaped halls are decomposed into rects from their polygon's bounding strips.
+function floorPoly(sg, mat, r, y, P) {
+  const rects = polyRects(r.poly);
+  for (const [u0, v0, u1, v1] of rects) {
+    // extend to shell outer faces so nothing shows under walls
+    const a = u0 <= P.ul + 1e-6 ? 0 : u0, c = u1 >= P.ur - 1e-6 ? P.W : u1, b = v0 <= P.vc + 1e-6 ? 0 : v0, d = v1 >= P.vF - 1e-6 ? P.D : v1;
+    hrect(sg, mat, a, b, c, d, y, 1);
+  }
+}
+// Decompose a rectilinear polygon into rectangles (slab method along v).
+function polyRects(poly) {
+  const vs = [...new Set(poly.map(p => +p[1].toFixed(4)))].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < vs.length - 1; i++) {
+    const vm = (vs[i] + vs[i + 1]) / 2, xs = [];
+    for (let k = 0; k < poly.length; k++) {
+      const [x0, y0] = poly[k], [x1, y1] = poly[(k + 1) % poly.length];
+      if (Math.abs(x0 - x1) < 1e-6 && (y0 - vm) * (y1 - vm) < 0) xs.push(x0);
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) out.push([xs[k], vs[i], xs[k + 1], vs[i + 1]]);
+  }
+  return out;
+}
+
+function buildCeiling(ctx, L) {
+  const { P, m, sg } = ctx;
+  const y = L.y + CH;
+  // ceiling rects (lower duplex level has the stair void)
+  const rects = (P.duplex && L.lv === 0) ? upperFloorRects(P) : [[0, 0, P.W, P.D]];
+  for (const [a, b, c, d] of rects) hrect(sg, m.ceiling, a, b, c, d, y, -1);
+  if (P.duplex && L.lv === 0) {
+    const s = P.stair;
+    // slab edges around the void (between 2.7 and 3.0)
+    box(sg, m.ceiling, s.s0, L.y + CH + 0.005, s.v1, s.s1, L.y + LH - 0.01, s.v1 + 0.04);
+    box(sg, m.ceiling, s.s1, L.y + CH + 0.005, s.v0 + 0.05, s.s1 + 0.04, L.y + LH - 0.01, s.v1);
+    box(sg, m.wall, s.s0, L.y + CH, s.v0 - 0.05, s.s1, L.y + LH, s.v0 + 0.05);
+  }
+  // downlights (recessed): ring + emissive disc, on a ~1.3 m grid per room
+  for (const r of L.rooms) {
+    if (r.outdoor || r.closet) continue;
+    const [a0, b0, a1, b1] = clearRect(P, r);
+    if (r.kind === 'living') { coveCeiling(ctx, L, r, [a0, b0, a1, b1]); continue; }
+    const rects = r.kind === 'hall' ? polyRects(r.poly) : [[a0, b0, a1, b1]];
+    for (const [u0, v0, u1, v1] of rects) {
+      const nu = Math.max(1, Math.round((u1 - u0) / 1.4)), nv = Math.max(1, Math.round((v1 - v0) / 1.5));
+      for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+        const u = u0 + (u1 - u0) * (i + 0.5) / nu, v = v0 + (v1 - v0) * (j + 0.5) / nv;
+        if (P.duplex && L.lv === 0 && u > P.stair.s0 && u < P.stair.s1 && v > P.stair.v0 && v < P.stair.v1) continue;
+        downlight(ctx, u, y, v);
+      }
+    }
+  }
+}
+function downlight(ctx, u, y, v) {
+  const { m, sg } = ctx;
+  FX.cyl(sg, 0.05, 0.05, 0.004, ctx.m.styleId === 'nordic' ? m.blackMetal : m.metal, u, y - 0.006, v, 20);
+  FX.disc(sg, 0.036, m.lightEmit, u, y - 0.0065, v, [HALF, 0, 0], 16);
+}
+// Living: dropped perimeter bulkhead with a hidden LED cove and downlights in the drop.
+function coveCeiling(ctx, L, r, [a0, b0, a1, b1]) {
+  const { m, sg, P } = ctx;
+  const y = L.y + CH, drop = 0.14, band = 0.42, yb = y - drop;
+  const cv0 = P.duplex && L.lv === 0 ? Math.max(b0, P.stair.v1 + 0.05) : b0;
+  // band along the facade (curtain pocket) and along the two sides
+  box(sg, m.ceiling, a0, yb, b1 - band, a1, y - 0.002, b1);
+  box(sg, m.ceiling, a0, yb, cv0, a0 + band, y - 0.002, b1 - band);
+  box(sg, m.ceiling, a1 - band, yb, cv0, a1, y - 0.002, b1 - band);
+  box(sg, m.ceiling, a0 + band, yb, cv0, a1 - band, y - 0.002, cv0 + band);
+  // LED lines on the inner lips (emissive strips just under the ceiling)
+  box(sg, m.led, a0 + band, y - 0.03, b1 - band - 0.012, a1 - band, y - 0.018, b1 - band - 0.002);
+  box(sg, m.led, a0 + band + 0.002, y - 0.03, cv0 + band, a0 + band + 0.012, y - 0.018, b1 - band);
+  box(sg, m.led, a1 - band - 0.012, y - 0.03, cv0 + band, a1 - band - 0.002, y - 0.018, b1 - band);
+  box(sg, m.led, a0 + band, y - 0.03, cv0 + band + 0.002, a1 - band, y - 0.018, cv0 + band + 0.012);
+  // downlights in the bands
+  const n = Math.max(2, Math.round((a1 - a0) / 1.3));
+  for (let i = 0; i < n; i++) downlight(ctx, a0 + (a1 - a0) * (i + 0.5) / n, yb, b1 - band / 2 - 0.05);
+  const k = Math.max(1, Math.round((b1 - band - cv0) / 1.5));
+  for (let j = 0; j < k; j++) { const v = cv0 + band + (b1 - 2 * band - cv0) * (j + 0.5) / k; downlight(ctx, a0 + band / 2, yb, v); downlight(ctx, a1 - band / 2, yb, v); }
+}
+
+// ---------------- doors
+function buildEntrance(ctx) {
+  const { P, m, sg, unit } = ctx;
+  const u0 = P.doorU - ENTRY_W / 2, u1 = P.doorU + ENTRY_W / 2;
+  const fm = m.doorFrame, vIn = CW;
+  // interior casing (architrave) + jamb linings
+  box(sg, fm, u0 - 0.07, 0, vIn, u0, ENTRY_H + 0.07, vIn + 0.015);
+  box(sg, fm, u1, 0, vIn, u1 + 0.07, ENTRY_H + 0.07, vIn + 0.015);
+  box(sg, fm, u0 - 0.07, ENTRY_H, vIn, u1 + 0.07, ENTRY_H + 0.07, vIn + 0.015);
+  box(sg, fm, u0, 0, 0, u0 + 0.015, ENTRY_H, CW); box(sg, fm, u1 - 0.015, 0, 0, u1, ENTRY_H, CW); box(sg, fm, u0, ENTRY_H - 0.015, 0, u1, ENTRY_H, CW);
+  box(sg, m.stone, u0, 0, 0, u1, 0.004, CW);   // threshold
+  // leaf: ONE mesh (two material groups), hinged on the right jamb, swings inward (+v)
+  const lw = ENTRY_W - 0.04, lh = ENTRY_H - 0.02, lt = 0.06;
+  const leafG = new THREE.BoxGeometry(lw, lh, lt).toNonIndexed();
+  leafG.translate(-lw / 2, lh / 2, 0);
+  const parts = [leafG];
+  const hdl = [];
+  for (const side of [1, -1]) {
+    const hz = side * (lt / 2 + 0.035);
+    const g1 = new THREE.BoxGeometry(0.02, 0.02, 0.06).toNonIndexed(); g1.translate(-lw + 0.08, 1.05, side * (lt / 2 + 0.03)); hdl.push(g1);
+    const g2 = new THREE.BoxGeometry(0.16, 0.022, 0.022).toNonIndexed(); g2.translate(-lw + 0.14, 1.05, hz); hdl.push(g2);
+  }
+  const hg = mergeGeometries(hdl);
+  const leafGeo = mergeGeometries([leafG, hg], true);
+  leafG.dispose(); hg.dispose(); hdl.forEach(g => g.dispose());
+  const leaf = new THREE.Mesh(leafGeo, [m.doorLeaf, m.metal]);
+  leaf.name = 'apt-door-leaf';
+  const pivot = new THREE.Group(); pivot.name = 'apt-door-hinge';
+  pivot.position.set(u1 - 0.02, 0.01, CW / 2);
+  pivot.add(leaf);
+  pivot.userData.keep = true;
+  leaf.userData.solid = true; leaf.userData.dynamic = true; leaf.userData.doorLeaf = true; leaf.userData.unitId = unit.id;
+  leaf.userData.action = { type: 'aptDoor', unitId: unit.id };
+  const OPEN = 1.62;
+  let anim = null;
+  leaf.userData.toggle = (open) => {
+    const want = open === undefined ? !leaf.userData._open : !!open;
+    if (want === !!leaf.userData._open && !anim) return Promise.resolve();
+    leaf.userData._open = want; leaf.userData.open = want;
+    const from = pivot.rotation.y, to = want ? OPEN : 0, t0 = performance.now(), dur = 800;
+    if (anim) anim.cancel = true;
+    const me = anim = { cancel: false };
+    leaf.userData._anim = true;
+    return new Promise(res => {
+      const step = () => {
+        if (me.cancel) return res();
+        const k = Math.min(1, (performance.now() - t0) / dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        pivot.rotation.y = from + (to - from) * e; pivot.updateMatrixWorld(true);
+        if (k < 1) requestAnimationFrame(step); else { anim = null; leaf.userData._anim = false; res(); }
+      };
+      step();
+    });
+  };
+  ctx.door = { leaf, pivot };
+  ctx.root.add(pivot);
+}
+function buildInteriorDoor(ctx, L, d) {
+  const { m, sg } = ctx;
+  const y0 = L.y, w = DOOR_W, h = DOOR_H, fm = m.doorFrame, t = TW + 0.012;
+  const g = new THREE.Group();
+  // frame in local coords: opening along x centred at 0, wall thickness along z
+  FX.box(g, 0.06, h + 0.06, 0.012, fm, -w / 2 - 0.03, 0, t / 2);
+  FX.box(g, 0.06, h + 0.06, 0.012, fm, w / 2 + 0.03, 0, t / 2);
+  FX.box(g, w + 0.12, 0.06, 0.012, fm, 0, h, t / 2);
+  FX.box(g, 0.06, h + 0.06, 0.012, fm, -w / 2 - 0.03, 0, -t / 2);
+  FX.box(g, 0.06, h + 0.06, 0.012, fm, w / 2 + 0.03, 0, -t / 2);
+  FX.box(g, w + 0.12, 0.06, 0.012, fm, 0, h, -t / 2);
+  FX.box(g, 0.012, h, TW, fm, -w / 2 + 0.006, 0, 0); FX.box(g, 0.012, h, TW, fm, w / 2 - 0.006, 0, 0); FX.box(g, w, 0.012, TW, fm, 0, h - 0.012, 0);
+  // leaf opened ~95° into the room (+z side), hinge at x = hinge*w/2
+  const lf = FX.grp(g, d.hinge * (w / 2 - 0.02), 0, TW / 2 + 0.02, d.hinge < 0 ? -HALF * 1.02 : HALF * 1.02);
+  FX.box(lf, w - 0.04, h - 0.02, 0.04, m.doorLeaf, -d.hinge * (w - 0.04) / 2, 0.005, 0.02);
+  FX.box(lf, 0.13, 0.018, 0.02, m.metal, -d.hinge * (w - 0.1), 1.02, 0.055);
+  FX.box(lf, 0.13, 0.018, 0.02, m.metal, -d.hinge * (w - 0.1), 1.02, -0.015);
+  if (d.axis === 'u') { g.position.set(d.p, y0, d.c); g.rotation.y = d.into > 0 ? 0 : PI; }
+  else { g.position.set(d.c, y0, d.p); g.rotation.y = d.into > 0 ? HALF : -HALF; }
+  sg.add(g);
+}
+
+// ---------------- facade: piers, floor-to-ceiling glazing, sliding doors, balcony/loggia/terrace
+function buildFacade(ctx, L) {
+  const { P, m, sg, cut } = ctx;
+  const y0 = L.y, head = cut ? 1.1 : 2.45, top = y0 + (cut ? 1.1 : CH);
+  const vF = P.vF, D = P.D, vg = D - 0.11;
+  const piers = [[0, P.ul + 0.12]];
+  for (let i = 1; i < L.facade.length; i++) { const c = L.facade[i].u0; piers.push([c - 0.16, c + 0.16]); }
+  piers.push([P.ur - 0.12, P.W]);
+  const pierBox = (a, b) => {
+    box(sg, m.wall, a, y0, vF, b, top, D - 0.012);
+    box(sg, m.exterior, a, y0, D - 0.012, b, top, D);
+    collider(ctx.cg, a, y0 + 0.02, vF, b, y0 + 2.2, D);
+    if (cut) box(sg, m.cutCap, a, top, vF, b, top + 0.012, D);
+  };
+  piers.forEach(([a, b]) => pierBox(a, b));
+  const fr = m.frame, ft = 0.055;
+  L.facade.forEach((f, i) => {
+    const a = piers[i][1], b = piers[i + 1][0];
+    if (b - a < 0.3) return;
+    const yH = y0 + head;
+    if (!cut) {
+      box(sg, m.wall, a, yH, vF, b, top, D - 0.012);           // head bulkhead
+      box(sg, m.exterior, a, yH, D - 0.012, b, top, D);
+    }
+    // sill / threshold
+    box(sg, m.stone, a, y0, vF, b, y0 + 0.012, D);
+    // panes
+    const n = Math.max(1, Math.round((b - a) / 1.25)), pw = (b - a) / n;
+    let slideI = -1;
+    if (f.slide) {
+      const want = ctx.slideU[L.lv] ?? (a + b) / 2;
+      let best = 1e9;
+      for (let k = 0; k < n; k++) { const c = a + (k + 0.5) * pw, dd = Math.abs(c - want); if (dd < best) { best = dd; slideI = k; } }
+      ctx.doorU[L.lv] = a + (slideI + 0.5) * pw;
+    }
+    const topY = Math.min(yH, top);
+    for (let k = 0; k < n; k++) {
+      const p0 = a + k * pw, p1 = p0 + pw;
+      if (k === slideI) {
+        // sliding panel pushed over its neighbour (outside plane), leaving the opening free
+        const dir = k + 1 < n ? 1 : -1;
+        const q0 = p0 + dir * (pw - 0.06), q1 = q0 + pw;
+        box(sg, m.glass, q0 + 0.03, y0 + 0.06, vg + 0.05, q1 - 0.03, topY - 0.05, vg + 0.062);
+        box(sg, fr, q0, y0 + 0.012, vg + 0.04, q0 + 0.05, topY, vg + 0.072); box(sg, fr, q1 - 0.05, y0 + 0.012, vg + 0.04, q1, topY, vg + 0.072);
+        box(sg, fr, q0, y0 + 0.012, vg + 0.04, q1, y0 + 0.06, vg + 0.072); box(sg, fr, q0, topY - 0.05, vg + 0.04, q1, topY, vg + 0.072);
+        box(sg, m.metal, q0 + (dir > 0 ? 0.06 : pw - 0.08), y0 + 0.9, vg + 0.02, q0 + (dir > 0 ? 0.08 : pw - 0.06), y0 + 1.3, vg + 0.04);
+        f.openU = [p0 + 0.03, p1 - 0.03];
+        continue;
+      }
+      box(sg, m.glass, p0 + 0.02, y0 + 0.05, vg - 0.006, p1 - 0.02, topY - 0.04, vg + 0.006);
+      collider(ctx.cg, p0, y0 + 0.02, vg - 0.05, p1, y0 + 2.2, vg + 0.05);
+    }
+    // frame: mullions + rails
+    for (let k = 0; k <= n; k++) { const x = a + k * pw; box(sg, fr, x - ft / 2, y0 + 0.012, vg - ft / 2, x + ft / 2, topY, vg + ft / 2); }
+    box(sg, fr, a, y0 + 0.012, vg - ft / 2, b, y0 + 0.05, vg + ft / 2);
+    box(sg, fr, a, topY - 0.045, vg - ft / 2, b, topY, vg + ft / 2);
+  });
+  // slab band between the levels (outside view)
+  if (P.duplex && L.lv === 0 && !cut) box(sg, m.exterior, 0, y0 + CH, vF, P.W, y0 + LH, D);
+  if (L.hasOutdoor) buildOutdoor(ctx, L);
+}
+function buildOutdoor(ctx, L) {
+  const { P, m, sg, cut } = ctx;
+  const y0 = L.y, D = P.D, v1 = D + BD, kind = L.outdoor.kind, W = P.W;
+  const fy = y0 + 0.015;
+  hrect(sg, m.floorOut, 0.02, D, W - 0.02, v1 - 0.02, fy, 1);
+  box(sg, m.exterior, 0, y0 - 0.25, D, W, y0, v1);               // slab (edge visible from outside)
+  box(sg, m.exterior, 0.001, y0, v1 - 0.02, W - 0.001, fy + 0.1, v1);    // upstand
+  collider(ctx.cg, 0, y0 - 0.2, D - 0.05, W, fy, v1, 'floor');
+  const railH = 1.05;
+  const railGlass = (a0, b0, a1, b1) => {
+    box(sg, m.glass, a0, fy + 0.1, b0, a1, fy + railH - 0.04, b1);
+    collider(ctx.cg, Math.min(a0, a1) - 0.02, fy, Math.min(b0, b1) - 0.02, Math.max(a0, a1) + 0.02, fy + 1.2, Math.max(b0, b1) + 0.02);
+  };
+  // front railing
+  railGlass(0.04, v1 - 0.05, W - 0.04, v1 - 0.035);
+  box(sg, m.frame, 0.02, fy + railH - 0.04, v1 - 0.07, W - 0.02, fy + railH, v1 - 0.015);
+  if (kind === 'loggia') {
+    // side walls + soffit
+    const h = cut ? 1.1 : CH;
+    for (const [a, b] of [[0, 0.12], [W - 0.12, W]]) { box(sg, m.exterior, a, y0, D, b, y0 + h, v1); collider(ctx.cg, a, y0, D, b, y0 + 2.2, v1); }
+    if (!cut) { box(sg, m.exterior, 0, y0 + CH, D, W, y0 + CH + 0.25, v1); downlight(ctx, W / 2, y0 + CH, D + BD / 2); }
+  } else {
+    for (const u of [0.05, W - 0.05]) { railGlass(u - 0.008, D + 0.02, u + 0.008, v1 - 0.05); box(sg, m.frame, u - 0.02, fy + railH - 0.04, D, u + 0.02, fy + railH, v1 - 0.05); }
+    if (!cut && !(P.duplex && L.lv === 0)) box(sg, m.exterior, 0, y0 + 2.78, D, W, y0 + 2.96, v1);   // soffit (slab above)
+  }
+  // furniture
+  const bp = ctx.doorU[L.lv] ?? W / 2;
+  const cv = D + BD / 2 - 0.05;
+  const rf = F.outdoorTable(m); const tu = bp < W / 2 ? Math.max(bp + 1.55, W - 1.1) : Math.min(bp - 1.55, 1.1);
+  if (W > 4.2 && tu > 0.95 && tu < W - 0.95) put(sg, rf, tu, cv, '+v', fy);
+  const pl = F.planter(m, { len: Math.min(1.2, W * 0.18) }); put(sg, pl, tu < W / 2 ? W - 0.75 : 0.75, v1 - 0.28, '-v', fy);
+  if (kind === 'terrace') {
+    const p2 = F.plant(m, { kind: 'olive', h: 1.6, seed: 9 }); put(sg, p2, tu < W / 2 ? 0.45 : W - 0.45, D + 0.4, '+v', fy);
+  } else {
+    const p3 = F.plant(m, { kind: 'snake', h: 0.8, seed: 21 }); put(sg, p3, tu < W / 2 ? 0.35 : W - 0.35, D + 0.35, '+v', fy);
+  }
+  // exterior wall light next to the door
+  if (!cut) { FX.box(sg, 0.08, 0.2, 0.06, m.frame, 0.3, y0 + 2.0, D + 0.03); FX.box(sg, 0.06, 0.15, 0.005, m.lightEmit, 0.3, y0 + 2.02, D + 0.062); }
+}
+
+// ---------------- skirting, bath tiling, feature walls
+function finishWalls(ctx, L) {
+  const { P, m, sg } = ctx;
+  const y0 = L.y;
+  const baths = L.rooms.filter(r => r.kind === 'bath').map(r => ({ r, c: clearRect(P, r) }));
+  const inBath = (u, v) => baths.find(b => u > b.c[0] - 0.08 && u < b.c[2] + 0.08 && v > b.c[1] - 0.08 && v < b.c[3] + 0.08);
+  const skM = m.skirting, sh = 0.08, st = 0.014;
+  for (const s of ctx.segs[L.lv] || []) {
+    for (const f of s.faces) {
+      const off = s.c + f * s.t / 2;
+      const mid = (s.a0 + s.a1) / 2;
+      const [pu, pv] = s.axis === 'u' ? [mid, off + f * 0.1] : [off + f * 0.1, mid];
+      if (inBath(pu, pv)) continue;
+      if (pv > P.vF + 0.01 || pv < 0) continue;
+      if (s.axis === 'u') box(sg, skM, s.a0, y0, Math.min(off, off + f * st), s.a1, y0 + sh, Math.max(off, off + f * st));
+      else box(sg, skM, Math.min(off, off + f * st), y0, s.a0, Math.max(off, off + f * st), y0 + sh, s.a1);
+    }
+  }
+  // bath cladding: the four inner faces, minus the door opening
+  const H = ctx.cut ? 1.1 : CH;
+  for (const { r, c } of baths) {
+    const [a0, b0, a1, b1] = c, t = 0.008, e = 0.001;
+    const dr = r.door;
+    const clad = (side) => {
+      let gaps = [];
+      if (dr && dr.wall === 'left' && side === 'left') gaps = [[dr.v - DOOR_W / 2 - 0.06, dr.v + DOOR_W / 2 + 0.06]];
+      if (dr && dr.wall === 'front' && side === 'front') gaps = [[dr.u - DOOR_W / 2 - 0.06, dr.u + DOOR_W / 2 + 0.06]];
+      const along = side === 'left' || side === 'right' ? [b0, b1] : [a0, a1];
+      let s0 = along[0];
+      const pieces = [];
+      for (const [g0, g1] of gaps) { pieces.push([s0, g0, H]); pieces.push([g0, g1, DOOR_H + 0.07]); s0 = g1; }
+      pieces.push([s0, along[1], H]);
+      for (const [p0, p1, hFrom] of pieces) {
+        if (p1 - p0 < 0.01) continue;
+        const yA = hFrom === H ? y0 : y0 + hFrom, yB = y0 + H - 0.002;
+        if (yB <= yA) continue;
+        if (side === 'back') box(sg, m.wallBath, p0, yA, b0 + e, p1, yB, b0 + e + t);
+        if (side === 'front') box(sg, m.wallBath, p0, yA, b1 - e - t, p1, yB, b1 - e);
+        if (side === 'left') box(sg, m.wallBath, a0 + e, yA, p0, a0 + e + t, yB, p1);
+        if (side === 'right') box(sg, m.wallBath, a1 - e - t, yA, p0, a1 - e, yB, p1);
+      }
+    };
+    ['back', 'front', 'left', 'right'].forEach(clad);
+  }
+}
+
+// ================================================================== STAIR (duplex)
+function buildStair(ctx) {
+  const { P, m, sg, cg } = ctx;
+  const s = P.stair, v0 = s.v0 + 0.05, v1 = s.v1;
+  const treadM = m.styleId === 'riviera' ? m.stone : m.styleId === 'milano' ? m.woodDark : m.woodLight;
+  for (let i = 1; i < s.n; i++) {
+    const y = i * s.rise, uA = s.s1 - i * s.tread, uB = s.s1 - (i - 1) * s.tread + 0.025;
+    box(sg, treadM, uA, y - 0.05, v0, uB, y, v1 - 0.01);
+    if (m.styleId === 'milano') box(sg, m.led, uA + 0.015, y - 0.054, v0 + 0.03, uA + 0.035, y - 0.05, v1 - 0.04);  // LED line under the nosing
+    collider(cg, uA, y - 0.06, v0, uB, y, v1, 'floor');
+    // side guard (glass balustrade + closed under-stair) for i >= 2
+    if (i >= 2) collider(cg, uA, 0.02, v1 - 0.01, uB, y + 1.0, v1 + 0.05);
+    if (i >= 3) collider(cg, uA, 0.02, v0, uB, y - 0.3, v1 - 0.01);     // closed under-stair (no walking beneath)
+  }
+  // cheeks / stringer on the wall side (visual), glass balustrade + handrail on the open side
+  const len = Math.hypot(s.s1 - s.s0, LH), ang = Math.atan2(LH, s.s1 - s.s0);
+  const midU = (s.s0 + s.s1) / 2, midY = LH / 2;
+  const gl = new THREE.Mesh(UBOX, m.glass); gl.scale.set(len, 0.95, 0.012); gl.position.set(midU, midY + 0.52, v1 + 0.005); gl.rotation.z = -ang; sg.add(gl);
+  const hr = new THREE.Mesh(UBOX, m.metal); hr.scale.set(len, 0.04, 0.05); hr.position.set(midU, midY + 1.0, v1 + 0.005); hr.rotation.z = -ang; sg.add(hr);
+  const st = new THREE.Mesh(UBOX, treadM); st.scale.set(len, 0.22, 0.05); st.position.set(midU, midY - 0.06, s.v0 + 0.03); st.rotation.z = -ang; sg.add(st);
+  // upper level void railings
+  const yU = LH, rh = 1.0;
+  box(sg, m.glass, s.s0 + 0.05, yU + 0.02, v1 - 0.012, s.s1, yU + rh - 0.04, v1);
+  box(sg, m.metal, s.s0 + 0.02, yU + rh - 0.04, v1 - 0.03, s.s1 + 0.02, yU + rh, v1 + 0.01);
+  collider(cg, s.s0 + 0.25, yU, v1 - 0.04, s.s1 + 0.03, yU + 1.2, v1 + 0.02);
+  box(sg, m.glass, s.s1 - 0.012, yU + 0.02, s.v0 + 0.05, s.s1, yU + rh - 0.04, v1);
+  box(sg, m.metal, s.s1 - 0.03, yU + rh - 0.04, s.v0 + 0.05, s.s1 + 0.01, yU + rh, v1);
+  collider(cg, s.s1 - 0.03, yU, s.v0, s.s1 + 0.03, yU + 1.2, v1);
+  // slab edge faces seen from the upper level
+  box(sg, m.floor, s.s0, yU - 0.3, v1, s.s1, yU - 0.001, v1 + 0.0 + 0.001);
+}
+
+// ================================================================== FURNISHING
+function furnish(ctx, L) {
+  const { P, m, sg, cut } = ctx;
+  const Z = L.zones, y = L.y;
+  const lights = ctx.lightSpots;
+  const g = new THREE.Group(); g.position.y = y; sg.add(g);
+  // ---- hall
+  if (Z.hall) furnishHall(ctx, L, g, Z.hall);
+  for (const r of Z.svc) {
+    if (r.kind === 'bath') furnishBath(ctx, L, g, r);
+    else if (r.kind === 'dressing') furnishDressing(ctx, L, g, r);
+    else furnishStorage(ctx, L, g, r);
+  }
+  if (Z.kitchenRoom) furnishKitchenBack(ctx, L, g, Z.kitchenRoom);
+  if (Z.kitFront) furnishKitchenFront(ctx, L, g, Z.kitFront);
+  if (Z.livRoom) furnishLiving(ctx, L, g, Z.livRoom);
+  Z.bedRooms.forEach((r, i) => furnishBedroom(ctx, L, g, r, i));
+}
+
+function hang(ctx, g, obj, u, yTop, v, face) {  // wall items (art / mirrors) — skipped in the cutaway
+  if (ctx.cut) return null;
+  return put(g, obj, u, v, face, yTop);
+}
+function artOn(ctx, g, u, v, face, w, h, i, yc = 1.55) { const a = F.artFrame(ctx.m, { w, h, i }); return hang(ctx, g, a, u, yc + h / 2, v, face); }
+
+function furnishHall(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const rects = polyRects(r.poly);
+  const main = r.rect;                              // back part [ul, vc, hR, vb]
+  const [a0, b0, a1, b1] = [P.ul, P.vc, main[2] - TW / 2, main[3] - (L.lv === 0 ? 0 : 0.05)];
+  const w = a1 - a0;
+  if (L.lv === 0) {
+    // built-in coat wardrobe on the left party wall (if the entrance leaf does not sweep it)
+    if (!P.duplex && P.doorU - ENTRY_W / 2 - a0 >= 0.62 && b1 - b0 > 1.2) {
+      const len = Math.min(b1 - b0 - 0.1, 2.0);
+      put(g, F.wardrobe(m, { len, h: ctx.tallH }), a0 + 0.3, b0 + 0.05 + len / 2, '+u');
+    } else if (w > 1.9) {
+      // bench + hooks on the side wall away from the leaf
+      const bench = new THREE.Group(); FX.box(bench, 0.9, 0.06, 0.36, m.wood, 0, 0.42, 0); for (const sx of [-1, 1]) FX.box(bench, 0.04, 0.42, 0.34, m.metal, sx * 0.42, 0, 0);
+      FX.cyl(bench, 0.12, 0.12, 0.07, m.cushionA, 0.2, 0.48, 0, 14);
+      bench.userData.solidBox = { w: 0.9, d: 0.36, h: 0.5 };
+      put(g, bench, a0 + 0.2, (b0 + b1) / 2 + 0.2, '+u');
+    }
+    else if (!ctx.cut && b1 - b0 > 1.2) { const mir = F.mirror(m, { w: 0.6, h: 0.9 }); hang(ctx, g, mir, a0, 1.15, (b0 + b1) / 2, '+u'); }
+    FX.box(g, Math.max(0.6, w - 0.5), 0.008, Math.max(0.8, b1 - b0 - 0.6), m.rug, (a0 + a1) / 2 + 0.1, 0.0015, (b0 + b1) / 2 + 0.1);
+  } else {
+    // upper hall: art + plant
+    artOn(ctx, g, (a0 + a1) / 2, b0 + 0.001, '+v', 0.6, 0.8, 1);
+  }
+  // strip: runner rug + art on the facade-facing wall between doors
+  if (L.zones.hasStrip) {
+    const vs = L.zones.vs;
+    const s0 = L.lv === 1 ? P.stair.v1 : P.vb;
+    const uEnd = L.lv === 1 ? P.ur : Math.max(L.zones.cR, main[2]);
+    FX.box(g, Math.max(0.5, uEnd - P.ul - 0.5), 0.008, 0.7, m.rug, (P.ul + uEnd) / 2, 0.0015, (s0 + vs) / 2);
+    if (L.lv === 0 && L.zones.bedRooms.length) {
+      const last = L.zones.bedRooms[L.zones.bedRooms.length - 1];
+      const room = last.rect[2] - (last.doorU + 0.5);
+      if (room > 0.9) artOn(ctx, g, (last.doorU + 0.5 + last.rect[2]) / 2, vs - 0.05, '-v', Math.min(0.9, room - 0.2), 0.6, 2);
+    } else if (L.lv === 1) {
+      const p = F.plant(m, { kind: 'snake', h: 0.9, seed: 3 }); put(g, p, P.ur - 0.3, (s0 + vs) / 2, '-u');
+    }
+  }
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.6, pri: 3 });
+}
+
+function furnishBath(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  const w = a1 - a0, d = b1 - b0;
+  const style = m.styleId;
+  const doorLeft = r.door && r.door.wall === 'left';
+  const doorFront = r.door && r.door.wall === 'front';
+  let shelfU = null;
+  if (d >= 2.0) {
+    // wet zone along the back wall
+    let u = a0;
+    if (w >= 2.75) { put(g, F.bathtub(m, { len: 1.7 }), a0 + 0.85, b0, '+v'); u = a0 + 1.72; const sw = a1 - u; put(g, F.shower(m, { w: sw, d: 0.9, h: ctx.cut ? 1.05 : 2.0 }), u + sw / 2, b0, '+v'); ctx.showers.push([g, u, b0, sw, 0.9, L]); }
+    else if (style === 'milano') { put(g, F.shower(m, { w, d: 0.95, h: ctx.cut ? 1.05 : 2.0 }), (a0 + a1) / 2, b0, '+v'); ctx.showers.push([g, a0, b0, w, 0.95, L]); }
+    else put(g, F.bathtub(m, { len: Math.min(1.75, w - 0.04) }), (a0 + a1) / 2, b0, '+v');
+    // vanity on the front wall (or right wall if the door is on the front wall), toilet on the right wall
+    if (!doorFront) {
+      const vl = Math.min(1.4, w - (doorLeft ? 0.95 : 0.7) - 0.0);
+      const vu = a1 - 0.05 - vl / 2 - (w > 2.2 ? 0.0 : 0);
+      if (vl >= 0.6) {
+        put(g, F.vanity(m, { len: vl }), vu, b1, '-v');
+        mirrorAt(ctx, g, vu, b1, '-v', vl);
+      }
+      put(g, F.toilet(m), a1, b0 + 1.35, '-u');
+    } else {
+      const vl = Math.min(1.2, d - 1.0 - 0.1);
+      put(g, F.vanity(m, { len: Math.max(0.6, vl) }), a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u');
+      mirrorAt(ctx, g, a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u', Math.max(0.6, vl));
+      put(g, F.toilet(m), a0, b1 - 0.45, '+u');
+    }
+    shelfU = null;
+  } else {
+    // shallow bath (duplex): fixtures along the back wall: shower | toilet | vanity (+ tub if wide)
+    const wet = w >= 3.3 ? 1.64 : 0.97;
+    const vl = clamp(w - wet - 0.62 - 0.05, 0.55, 1.4);
+    let u = a0 + 0.02;
+    put(g, F.vanity(m, { len: vl }), u + vl / 2, b0, '+v'); mirrorAt(ctx, g, u + vl / 2, b0, '+v', vl); u += vl + 0.04;
+    put(g, F.toilet(m), u + 0.3, b0, '+v'); u += 0.62;
+    const ww = a1 - u;
+    if (w >= 3.3) put(g, F.bathtub(m, { len: Math.min(1.7, ww - 0.02) }), u + ww / 2, b0, '+v');
+    else { put(g, F.shower(m, { w: ww, d: 0.95, h: ctx.cut ? 1.05 : 2.0 }), u + ww / 2, b0, '+v'); ctx.showers.push([g, u, b0, ww, 0.95, L]); }
+  }
+  // towel rail on a free stretch, plant
+  if (!ctx.cut && !(doorLeft && d >= 2.0) && d < 2.0 && r.door && r.door.wall === 'left') put(g, F.towelRail(m), a1, b0 + 1.2, '-u');
+  if (w > 1.8 && d >= 2.0) FX.plantSmall(g, m, a0 + 0.2, 0, b1 - 0.2, 0.35, 0.4);
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.55, pri: 2 });
+}
+function mirrorAt(ctx, g, u, v, face, vl) {
+  const { m } = ctx;
+  if (ctx.cut) return;
+  const mw = Math.min(0.9, vl - 0.1), mh = m.styleId === 'nordic' ? mw : 0.95;
+  put(g, F.mirror(m, { w: mw, h: mh }), u, v, face, m.styleId === 'nordic' ? 1.05 : 1.08);
+  if (m.styleId !== 'nordic') {
+    // pair of sconces left/right of the mirror
+    const off = mw / 2 + 0.12;
+    const s1 = new THREE.Group(); FX.sconce(s1, m, 0, 0, 0); put(g, s1, 0, 0, face); positionAlong(s1, u, v, face, -off, 1.6);
+    const s2 = new THREE.Group(); FX.sconce(s2, m, 0, 0, 0); put(g, s2, 0, 0, face); positionAlong(s2, u, v, face, off, 1.6);
+  } else {
+    // LED halo behind the round mirror
+    const h = new THREE.Group(); FX.torus(h, mw / 2 + 0.01, 0.006, m.led, 0, mh / 2, 0.01, [0, 0, 0], PI * 2, 40); put(g, h, u, v, face, 1.05);
+  }
+}
+function positionAlong(obj, u, v, face, off, y) {
+  const r = FACE[face];
+  obj.position.set(u + Math.cos(r) * off, y, v - Math.sin(r) * off);
+}
+function furnishStorage(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  const w = a1 - a0, d = b1 - b0;
+  // utility: shelving along the back wall, washer + dryer if wide
+  let u = a0 + 0.05;
+  if (w >= 1.5) { put(g, F.washer(m), u + 0.3, b0 + 0.3, '+v'); const dr = F.washer(m); put(g, dr, u + 0.3, b0 + 0.3, '+v', 0.86); dr.userData.solidBox = null; u += 0.65; }
+  const sw = a1 - u - 0.05;
+  if (sw > 0.4) put(g, F.bookshelf(m, { w: sw, h: ctx.cut ? 1.05 : 2.1 }), u + sw / 2, b0 + 0.17, '+v');
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.3, pri: 6 });
+}
+function furnishDressing(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  put(g, F.wardrobe(m, { len: a1 - a0 - 0.02, h: ctx.tallH }), (a0 + a1) / 2, b0 + 0.3, '+v');
+  const ot = new THREE.Group(); FX.cyl(ot, 0.28, 0.28, 0.42, m.fabricAccent, 0, 0, 0, 24); ot.userData.solidBox = { w: 0.56, d: 0.56, h: 0.45 };
+  if (b1 - b0 > 1.5) put(g, ot, (a0 + a1) / 2, (b0 + 0.6 + b1) / 2, '+v');
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.3, pri: 6 });
+}
+
+function furnishKitchenBack(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  const len = a1 - a0;
+  put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !L.zones.svc.some(s => s.kind === 'storage'), uppers: !ctx.cut, hood: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+  ctx.kitchen = { u0: a0, u1: a1, v: b1 };
+  // pendant pair over the counter zone
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2 + 0.2, y: L.y, k: 0.7, pri: 2 });
+}
+function furnishKitchenFront(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  if (r.front === 'back') {
+    const len = a1 - a0;
+    put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'right', ceiling: CH, washer: true, uppers: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+    ctx.kitchen = { u0: a0, u1: a1, v: b0 + 0.62 };
+  } else {
+    // along the right side wall, fronts facing -u
+    const len = b1 - b0;
+    put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !L.zones.svc.some(s => s.kind === 'storage'), uppers: !ctx.cut, cut: ctx.cut }), a1 - 0.31, (b0 + b1) / 2, '-u');
+    ctx.kitchenSide = { u: a1 - 0.62, v0: b0, v1: b1 };
+  }
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.6, pri: 2 });
+}
+
+function furnishLiving(ctx, L, g, r) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  const duplexLow = P.duplex && L.lv === 0;
+  const kf = L.zones.kitFront;
+  const zb0 = duplexLow ? P.stair.v1 + 0.12 : (kf && kf.front === 'back') ? kf.rect[3] + 0.2 : b0;
+  const w = a1 - a0, d = b1 - zb0;
+  const kitSide = ctx.kitchenSide, kitBack = ctx.kitchen && !(kf && kf.front === 'back') ? ctx.kitchen : null;
+  const vEnd = b1 - 0.5;                                   // keep a walking aisle along the windows
+  if (d >= 4.3) {
+    // dining at the back (by the kitchen), lounge by the windows
+    const dd = 2.0;
+    dining(ctx, L, g, [a0, zb0, kitSide ? kitSide.u : a1, zb0 + dd], kitBack);
+    lounge(ctx, L, g, [a0, zb0 + dd + 0.35, a1, vEnd], kitSide ? 'u0' : 'u1', true);
+  } else if (w >= 6.2) {
+    // side by side: lounge on the left (TV on the left wall), dining next to the kitchen on the right
+    const wl = Math.max(3.7, w * 0.54);
+    lounge(ctx, L, g, [a0, zb0 + 0.55, a0 + wl, vEnd], 'u0', false);
+    dining(ctx, L, g, [a0 + wl + 0.2, zb0 + 0.55, kitSide ? kitSide.u : a1, vEnd], null);
+  } else {
+    lounge(ctx, L, g, [a0, Math.max(zb0, vEnd - 3.3), kitSide ? kitSide.u - 0.2 : a1, vEnd], kitSide ? 'u0' : 'u1', true);
+  }
+  if (!ctx.cut) put(g, F.curtains(m, { w: w - 0.2, h: CH - 0.16 }), (a0 + a1) / 2, b1 - 0.2, '-v', CH - 0.15);
+  ctx.balconyU = clamp((a0 + a1) / 2, 1.2, P.W - 1.2);
+}
+// Lounge zone z = [u0, v0, u1, v1]; TV on side tvOn ('u0' | 'u1'); farIsWall: the opposite side is a real wall.
+function lounge(ctx, L, g, z, tvOn, farIsWall) {
+  const { m } = ctx;
+  const [u0, v0, u1, v1] = z, zw = u1 - u0, zd = v1 - v0, s = m.styleId;
+  const t = tvOn === 'u1' ? 1 : -1, tvWall = t > 0 ? u1 : u0, farWall = t > 0 ? u0 : u1;
+  const toTV = t > 0 ? '+u' : '-u', fromTV = t > 0 ? '-u' : '+u';
+  const lc = (v0 + v1) / 2;
+  const sofaLen = clamp(zd - 0.7, 1.9, 2.5);
+  const floating = zw >= 4.6 || !farIsWall;
+  const sofaU = floating ? tvWall - t * Math.min(3.05, zw - 0.55) : farWall + t * 0.52;
+  put(g, F.sofa(m, { len: sofaLen }), sofaU, lc, toTV);
+  const ctU = sofaU + t * 1.0;
+  put(g, F.coffeeTable(m), ctU, lc, s === 'milano' ? '+u' : '+v');
+  const rugU = Math.min(3.0, Math.abs(tvWall - sofaU) + 0.1), rugV = Math.min(sofaLen + 0.9, zd + 0.2);
+  put(g, F.rug(m, { w: rugV, d: rugU }), sofaU + t * (rugU / 2 - 0.35), lc, '+u');
+  const tvLen = Math.min(2.2, zd - 0.45);
+  put(g, F.tvUnit(m, { len: tvLen }), tvWall - t * 0.3, lc, fromTV);
+  if (!ctx.cut) put(g, F.tv(m, { w: 1.45 }), tvWall - t * 0.1, lc, fromTV, 1.0);
+  featureWall(ctx, g, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3));
+  // the lane between the coffee table and the TV leads to the sliding door
+  ctx.slideU[L.lv] = tvWall - t * 1.15;
+  // armchair facing the sofa from the window side (only in deep lounges, keeps the lane free)
+  if (zd >= 3.3) put(g, F.armchair(m), ctU - t * 0.1, v1 - 0.35, PI);
+  // floor lamp at the back end of the sofa, side table at the window end
+  // floor lamp behind the window end of the sofa, side table at the back end against the far wall (off the lanes)
+  if (floating) put(g, F.floorLamp(m), sofaU - t * 0.35, Math.min(v1 - 0.1, lc + sofaLen / 2 + 0.05), s === 'milano' ? '-v' : '+v');
+  else put(g, F.floorLamp(m), sofaU - t * 0.25, Math.min(v1 - 0.1, lc + sofaLen / 2 + 0.3), s === 'milano' ? '-v' : '+v');
+  if (!floating) put(g, F.sideTable(m), sofaU - t * 0.1, lc - sofaLen / 2 - 0.3, '+v');
+  put(g, F.plant(m, { h: 1.7, seed: 4 }), tvWall - t * 0.3, v1 + 0.2, '+v');       // facade corner of the TV wall
+  if (farIsWall && !floating) artOn(ctx, g, farWall, lc, toTV, 1.1, 0.8, 0, 1.7);
+  else if (farIsWall && Math.abs(farWall - sofaU) > 1.1) {
+    put(g, F.sideboard(m, { len: Math.min(1.8, zd - 0.4) }), farWall + t * 0.24, lc, toTV);
+    artOn(ctx, g, farWall, lc, toTV, 1.2, 0.9, 0, 1.8);
+  }
+  ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
+  ctx.livingEye = { u: farWall + t * 0.6, v: v0 };
+}
+function dining(ctx, L, g, z, kitBack) {
+  const { m, P } = ctx;
+  const [u0, v0, u1, v1] = z, zw = u1 - u0, zd = v1 - v0;
+  if (zw < 2.2 || zd < 1.7) return;
+  const along = zw >= zd;                               // table axis along u (usual) or along v
+  const narrow = (along ? zw : zd) < 4.4;
+  const tl = narrow ? clamp((along ? zw : zd) - 1.85, 1.2, 1.6) : clamp((along ? zw : zd) - 1.4, 1.2, 2.0), tw = narrow ? 0.85 : 0.95;
+  let tu = (u0 + u1) / 2, tv = (v0 + v1) / 2;
+  if (kitBack && along) tu = narrow ? u1 - 0.85 - tl / 2 : clamp((Math.max(u0, kitBack.u0) + Math.min(u1, kitBack.u1)) / 2, u0 + tl / 2 + 0.8, u1 - tl / 2 - 0.8);
+  if (along && kitBack) tv = clamp(v0 + 1.2, v0 + 0.95, v1 - 0.8);
+  const grpT = new THREE.Group();
+  put(grpT, F.diningTable(m, { len: tl, width: tw }), 0, 0, '+v');
+  const nC = Math.max(1, Math.floor(tl / 0.6));
+  for (let i = 0; i < nC; i++) {
+    const cu = -tl / 2 + tl / nC * (i + 0.5);
+    for (const side of [-1, 1]) {
+      put(grpT, F.diningChair(m), cu, side * (tw / 2 + 0.12), side < 0 ? '+v' : '-v');
+      put(grpT, F.tableSetting(m, { y: 0.76 }), cu, side * (tw / 2 - 0.2), side < 0 ? '-v' : '+v');
+    }
+  }
+  if (!ctx.cut) put(grpT, F.pendant(m, { kind: 'dining', drop: 0.85, len: Math.min(1.2, tl - 0.3) }), 0, 0, '+v', CH);
+  grpT.userData.solidBox = { w: tl + 0.1, d: tw + 0.25, h: 0.8 };
+  put(g, grpT, tu, tv, along ? '+v' : '+u');
+  ctx.lightSpots.push({ u: tu, v: tv, y: L.y, k: 0.8, pri: 1 });
+  ctx.diningAt = { u: tu, v: tv };
+}
+function featureWall(ctx, g, uWall, vc, face, len) {
+  const { m } = ctx;
+  if (ctx.cut) return;
+  const s = m.styleId, H = CH - 0.02, grp = new THREE.Group();
+  if (s === 'milano') {
+    // fluted walnut panels with a brass shadow gap
+    const n = Math.round(len / 0.06);
+    for (let i = 0; i < n; i++) FX.cyl(grp, 0.028, 0.028, H, m.woodDark, -len / 2 + (i + 0.5) * len / n, 0.0, 0.02, 10);
+    FX.box(grp, len + 0.02, 0.012, 0.05, m.brass, 0, 0.0, 0.025);
+  } else if (s === 'nordic') {
+    const n = Math.round(len / 0.1);
+    FX.box(grp, len, H, 0.012, m.blackMetal, 0, 0, 0.006);
+    for (let i = 0; i < n; i++) FX.box(grp, 0.055, H, 0.03, m.woodLight, -len / 2 + (i + 0.5) * len / n, 0, 0.027);
+  } else {
+    // limewash plaster panel with an arched niche outline
+    FX.box(grp, len, H, 0.02, m.wallAccent, 0, 0, 0.01);
+    const sh = new THREE.Shape(), aw = Math.min(1.1, len * 0.4), ah = 1.9;
+    sh.moveTo(-len / 2, 0); sh.lineTo(len / 2, 0); sh.lineTo(len / 2, H); sh.lineTo(-len / 2, H); sh.lineTo(-len / 2, 0);
+    const hole = new THREE.Path(); hole.moveTo(-aw / 2, 0.55); hole.lineTo(aw / 2, 0.55); hole.lineTo(aw / 2, ah - aw / 2); hole.absarc(0, ah - aw / 2, aw / 2, 0, PI, false); hole.lineTo(-aw / 2, 0.55);
+    sh.holes.push(hole);
+    const eg = new THREE.ExtrudeGeometry(sh, { depth: 0.06, bevelEnabled: false, curveSegments: 18 });
+    const me = new THREE.Mesh(eg, m.wallAccent); me.position.z = 0.02; grp.add(me);
+    ctx.tmpGeos.push(eg);
+  }
+  put(g, grp, uWall, vc, face, 0.0);
+}
+
+function furnishBedroom(ctx, L, g, r, idx) {
+  const { P, m } = ctx;
+  const [a0, b0, a1, b1] = clearRect(P, r);
+  const w = a1 - a0, d = b1 - b0;
+  const beds = L.zones.bedRooms, master = r === beds.slice().sort((x, y) => y.area - x.area)[0];
+  const doorU = r.doorU;
+  let bedC;
+  if (w >= 2.95) {
+    const bw = master || w >= 3.3 ? 1.6 : 1.4;
+    // headboard on the right wall (away from the door), bed along u
+    const wardrobeBack = w >= 3.4 && d >= bw + 0.66 + 0.6 + 0.5;
+    const vmin = wardrobeBack ? b0 + 0.62 : b0;
+    const vcb = clamp((vmin + b1) / 2, vmin + bw / 2 + 0.5, b1 - bw / 2 - 0.45);
+    put(g, F.bed(m, { w: bw }), a1 - 1.08, vcb, '-u');
+    bedC = [a1 - 1.08, vcb];
+    for (const side of [-1, 1]) { const vv = vcb + side * (bw / 2 + 0.33); if (vv - 0.22 > vmin + 0.02 && vv + 0.22 < b1 - 0.05) put(g, F.nightstand(m, { seed: side + idx }), a1 - 0.23, vv, '-u'); }
+    featureWallBed(ctx, g, a1, vcb, '-u', Math.min(bw + 1.2, d - 0.1));
+    artOn(ctx, g, a1, vcb, '-u', Math.min(1.2, bw), 0.7, 1 + idx, 1.55);
+    let leftUsed = false;
+    if (wardrobeBack) { const wu0 = doorU + 0.5, wlen = Math.min(a1 - wu0 - 0.02, 2.4); if (wlen > 0.9) put(g, F.wardrobe(m, { len: wlen, h: ctx.tallH }), wu0 + wlen / 2, b0 + 0.3, '+v'); }
+    else if (a1 - 2.1 - a0 >= 1.3 && d > 2.2) { const wl = Math.min(1.8, d - 1.4); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH }), a0 + 0.3, b0 + 1.0 + wl / 2, '+u'); leftUsed = true; }
+    if (!master && !leftUsed && a1 - 2.1 - a0 >= 1.0) put(g, F.desk(m, { len: 1.0 }), a0 + 0.3, b1 - 0.7, '+u');
+    else if (master && !leftUsed && a1 - 2.1 - a0 >= 2.0) put(g, F.armchair(m), a0 + 0.55, b1 - 0.6, 2.4);
+    if (master && !L.zones.livRoom) ctx.slideU[L.lv] = (a0 + (leftUsed ? 0.95 : a1 - 2.1 - a0 >= 2.0 ? 1.2 : 0.3) + a1 - 2.15) / 2;
+    put(g, F.rug(m, { w: Math.min(2.4, bw + 1.2), d: 2.0 }), a1 - 1.3, vcb, '+u');
+  } else {
+    // narrow room: headboard on the back wall beside the door, bed along v
+    const start = doorU + 0.43, bw = a1 - start >= 1.62 ? 1.6 : a1 - start >= 1.42 ? 1.4 : 1.2;
+    const bu = clamp((start + a1) / 2, a0 + bw / 2 + 0.02, a1 - bw / 2 - 0.02);
+    put(g, F.bed(m, { w: bw }), bu, b0 + 1.08, '+v');
+    bedC = [bu, b0 + 1.08];
+    if (a1 - (bu + bw / 2) > 0.46) put(g, F.nightstand(m, { w: 0.42 }), a1 - 0.22, b0 + 0.22, '+v');
+    featureWallBed(ctx, g, bu, b0, '+v', Math.min(bw + 0.5, a1 - start + 0.2));
+    artOn(ctx, g, bu, b0, '+v', Math.min(1.1, bw), 0.6, 1 + idx, 1.65);
+    const free = d - 2.2;
+    if (free > 1.3 && a1 - a0 > 2.3) { const wl = Math.min(1.6, free - 0.2); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH }), a0 + 0.3, b1 - 0.1 - wl / 2, '+u'); }
+    else put(g, F.plant(m, { kind: 'snake', h: 0.9, seed: 7 + idx }), a1 - 0.3, b1 - 0.3, '+v');
+    if (master && !L.zones.livRoom) ctx.slideU[L.lv] = bu;
+  }
+  if (!ctx.cut) put(g, F.curtains(m, { w: w - 0.2, h: CH - 0.16, drape: 0.5 }), (a0 + a1) / 2, b1 - 0.12, '-v', CH - 0.05);
+  if (!ctx.cut) put(g, F.pendant(m, { kind: 'bed', drop: 0.45 }), bedC[0], bedC[1], '+v', CH);
+  ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.7, pri: 1 });
+}
+function featureWallBed(ctx, g, u, v, face, len) {
+  const { m } = ctx;
+  if (ctx.cut) return;
+  const s = m.styleId, grp = new THREE.Group(), H = CH - 0.02;
+  if (s === 'milano') { FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01); for (let i = 1; i < 4; i++) FX.box(grp, 0.006, H, 0.004, m.brass, -len / 2 + i * len / 4, 0, 0.022); }
+  else if (s === 'nordic') { FX.box(grp, len, 1.2, 0.02, m.wallAccent, 0, 0, 0.01); FX.box(grp, len, 0.02, 0.12, m.woodLight, 0, 1.2, 0.06); FX.vase(grp, m, len / 2 - 0.2, 1.22, 0.06, 0.18, m.ceramic2, false); FX.bookStack(grp, m, 2, -len / 2 + 0.25, 1.22, 0.06, 55, 0.2); }
+  else { FX.box(grp, len, H, 0.02, m.wallAccent, 0, 0, 0.01); }
+  put(g, grp, u, v, face, 0);
+}
+
+// ================================================================== LIGHTS
+function buildLights(ctx) {
+  const S = ctx.m.style, col = new THREE.Color(S.lightColor);
+  const spots = ctx.lightSpots.slice().sort((a, b) => a.pri - b.pri);
+  const MAX = ctx.opts.maxLights ?? 7;
+  const lights = [];
+  for (const s of spots) {
+    if (lights.length >= MAX) break;
+    if (lights.some(l => Math.abs(l.position.y - (s.y + 2.3)) < 1 && Math.hypot(l.position.x - s.u, l.position.z - s.v) < 1.6)) continue;
+    const l = new THREE.PointLight(col, 5.5 * s.k * (ctx.opts.lightScale ?? 1), 7.5, 1.6);
+    l.position.set(s.u, s.y + 2.3, s.v);
+    l.name = 'apt-light';
+    lights.push(l);
+  }
+  return lights;
+}
+
+// ================================================================== MAIN
+function build(unit, styleId, opts = {}) {
+  const T = TYPES[unit.type];
+  if (!T) throw new Error('apartment: unknown type ' + unit.type);
+  const m = getMaterials(styleId);
+  const P = planUnit(unit);
+  const root = new THREE.Group(); root.name = 'apartment-' + unit.id + '-' + m.styleId + (opts.cutaway ? '-cut' : '');
+  const sg = new THREE.Group(); sg.name = 'static-src';
+  const cg = new THREE.Group(); cg.name = 'colliders';
+  const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {} };
+  const onlyLevel = opts.cutaway && P.duplex ? (opts.level ?? 0) : null;
+  for (const L of P.levels) {
+    if (onlyLevel != null && L.lv !== onlyLevel) continue;
+    buildShell(ctx, L);
+    furnish(ctx, L);
+    buildFacade(ctx, L);
+  }
+  if (P.duplex && onlyLevel == null) buildStair(ctx);
+  else if (P.duplex && onlyLevel === 0) buildStairLow(ctx);
+  // outdoor furniture placement uses the living centre found during furnishing → re-run balcony furniture is inside buildOutdoor (already built); fine.
+  // shower glass panels are solid
+  for (const [g, u, v, w, d, L] of ctx.showers) {
+    const gw = Math.min(w - 0.1, 1.0);
+    collider(cg, u + w - gw, L.y + 0.02, v + d - 0.03, u + w, L.y + 2.0, v + d + 0.03);
+  }
+  // bake static geometry
+  const baked = new THREE.Group(); baked.name = 'baked';
+  root.add(baked);
+  bake(sg, baked);
+  // dispose temporary (non-cached) geometries used only as bake sources
+  ctx.tmpGeos.forEach(g => g.dispose());
+  cg.updateMatrixWorld(true);
+  root.add(cg);
+  const lights = opts.cutaway ? [] : buildLights(ctx);
+  lights.forEach(l => root.add(l));
+  // rooms for HUD / minimap
+  const rooms = [];
+  for (const L of P.levels) for (const r of L.rooms) {
+    const poly = r.poly.map(([u, v]) => [+u.toFixed(3), +v.toFixed(3)]);
+    let center = polyCentroid(poly);
+    if (r.kind === 'hall' && r.entry) center = [clamp(P.doorU, P.ul + 0.5, r.rect[2] - 0.4), (P.vc + P.vb) / 2];
+    else if (r.kind === 'hall' && L.lv === 1) center = [(P.ul + P.stair.s0) / 2, (P.stair.v0 + P.stair.v1) / 2 - 0.4];
+    else if (!pointInPoly(center, poly)) center = [(r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2];
+    rooms.push({ kind: r.kind, name: r.name, area: r.area, level: L.lv, y: L.lv * LH, center, poly });
+  }
+  const outRoom = rooms.find(r => OUTDOOR.has(r.kind) && r.level === 0) || rooms.find(r => OUTDOOR.has(r.kind));
+  const balconyPoint = outRoom ? { u: clamp(ctx.doorU[outRoom.level] ?? P.W / 2, 0.6, P.W - 0.6), v: P.D + 0.75, level: outRoom.level } : null;
+  const disposeAll = () => {
+    baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    if (ctx.door) ctx.door.leaf.geometry.dispose();
+  };
+  const views = cameraViews(ctx, P);
+  return {
+    group: root, rooms, entrance: { u: P.doorU, v: 0 }, balconyPoint, lights, plan: P, views,
+    stats: { meshes: baked.children.length + (ctx.door ? 2 : 0), colliders: cg.children.length },
+    doorLeaf: ctx.door ? ctx.door.leaf : null,
+    dispose: disposeAll,
+  };
+}
+// cutaway of a duplex lower level: stair treads only
+function buildStairLow(ctx) {
+  const { P, m, sg } = ctx, s = P.stair;
+  const treadM = m.styleId === 'riviera' ? m.stone : m.styleId === 'milano' ? m.woodDark : m.woodLight;
+  for (let i = 1; i < s.n; i++) { const y = i * s.rise; if (y > 1.2) break; box(sg, treadM, s.s1 - i * s.tread, y - 0.05, s.v0 + 0.05, s.s1 - (i - 1) * s.tread + 0.025, y, s.v1 - 0.01); }
+}
+function pointInPoly([x, y], poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Suggested camera presets (unit-local): used by the dev page and gallery stills.
+function cameraViews(ctx, P) {
+  const E = 1.55, L0 = P.levels[0].zones, v = {};
+  const liv = L0.livRoom;
+  if (liv) {
+    const [a0, b0, a1, b1] = clearRect(P, liv);
+    const vb0 = P.duplex ? P.stair.v1 + 0.3 : b0 + 0.35;
+    v.living = { pos: [a0 + 0.35, E, vb0], target: [a1 - 0.6, 1.1, b1 - 0.4] };
+  }
+  const k = ctx.kitchen || null, ks = ctx.kitchenSide;
+  if (k) v.kitchen = { pos: [clamp((k.u0 + k.u1) / 2 - 0.9, P.ul + 0.4, P.ur - 0.4), E, Math.min(k.v + 2.2, P.vF - 0.5)], target: [(k.u0 + k.u1) / 2 + 0.4, 1.1, P.vc] };
+  else if (ks) v.kitchen = { pos: [P.ul + 1.2, E, (ks.v0 + ks.v1) / 2 + 1.6], target: [P.ur, 1.1, (ks.v0 + ks.v1) / 2 - 0.3] };
+  const bedLv = P.levels.find(L => L.zones.bedRooms.length);
+  if (bedLv) {
+    const r = bedLv.zones.bedRooms.slice().sort((x, z) => z.area - x.area)[0], [a0, b0, a1, b1] = clearRect(P, r), y = bedLv.y;
+    v.bedroom = (a1 - a0) >= 2.95
+      ? { pos: [a0 + Math.min(1.3, (a1 - a0) * 0.35), y + E, b1 - 0.45], target: [a1 - 0.5, y + 0.85, b0 + (b1 - b0) * 0.42], level: bedLv.lv, fov: 68 }
+      : { pos: [(a0 + a1) / 2 - 0.25, y + E, b1 - 0.35], target: [(a0 + a1) / 2 + 0.2, y + 0.8, b0 + 0.3], level: bedLv.lv, fov: 72 };
+  }
+  const bl = P.levels.find(L => L.zones.svc.some(s => s.kind === 'bath'));
+  if (bl) {
+    const r = bl.zones.svc.find(s => s.kind === 'bath'), [a0, b0, a1, b1] = clearRect(P, r), y = bl.y;
+    if (r.door && r.door.wall === 'left') v.bath = { pos: [a0 + 0.12, y + 1.55, r.door.v + 0.25], target: [a1 - 0.2, y + 0.85, b0 + 0.3], level: bl.lv, fov: 80 };
+    else v.bath = { pos: [(a0 + a1) / 2 - 0.2, y + 1.5, b1 + 0.7], target: [(a0 + a1) / 2 + 0.2, y + 1.0, b0], level: bl.lv, fov: 72 };
+  }
+  if (P.levels[0].hasOutdoor) v.balcony = { pos: [P.W * 0.18, E, P.D + 0.3], target: [P.W * 0.8, 1.0, P.D + BD + 3], outside: true };
+  v.top = { pos: [P.W / 2, 40, P.D / 2 + 0.8], target: [P.W / 2, 0, P.D / 2 + 0.8], fov: 17 };
+  v.dollhouse = { pos: [P.W * 1.25 + 2.5, 8.5, P.D + BD + 5.2], target: [P.W / 2, 0.3, P.D / 2 + 0.3], fov: 40 };
+  return v;
+}
+
+export function buildApartment(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, opts); }
+export function buildApartmentCutaway(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, { ...opts, cutaway: true }); }
+export { STYLES } from './materials.js';

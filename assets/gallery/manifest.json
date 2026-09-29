@@ -1,0 +1,444 @@
+[
+ {
+  "src": "ai/exterior-dusk-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Photorealistic visualisation — dusk over the complex",
+   "ro": "Vizualizare fotorealistă — amurg deasupra ansamblului",
+   "he": "הדמיה פוטוריאליסטית — שקיעה מעל המתחם",
+   "ru": "Фотореалистичная визуализация — закат над комплексом",
+   "uk": "Фотореалістична візуалізація — захід над комплексом",
+   "fr": "Visualisation photoréaliste — crépuscule sur la résidence",
+   "it": "Visualizzazione fotorealistica — tramonto sul complesso",
+   "de": "Fotorealistische Visualisierung — Abenddämmerung"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-dusk-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Dusk over the complex and Lacul Morii",
+   "ro": "Amurg deasupra ansamblului și a Lacului Morii",
+   "he": "שקיעה מעל המתחם ואגם מוריי",
+   "ru": "Закат над комплексом и озером Мории",
+   "uk": "Захід сонця над комплексом і озером Морії",
+   "fr": "Crépuscule sur la résidence et le lac Morii",
+   "it": "Tramonto sul complesso e sul lago Morii",
+   "de": "Abenddämmerung über dem Ensemble und dem Morii-See"
+  }
+ },
+ {
+  "src": "assets/gallery/view-lake-floor8.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Lake view from a floor 8 balcony",
+   "ro": "Vedere spre lac de la balconul etajului 8",
+   "he": "נוף לאגם ממרפסת בקומה 8",
+   "ru": "Вид на озеро с балкона 8 этажа",
+   "uk": "Вид на озеро з балкона 8 поверху",
+   "fr": "Vue sur le lac depuis un balcon du 8e étage",
+   "it": "Vista lago da un balcone all'8° piano",
+   "de": "Seeblick vom Balkon im 8. Stock"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-day-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Blocks C3 & C4 by day",
+   "ro": "Blocurile C3 și C4 ziua",
+   "he": "בניינים C3 ו‑C4 באור יום",
+   "ru": "Корпуса C3 и C4 днём",
+   "uk": "Корпуси C3 і C4 вдень",
+   "fr": "Les bâtiments C3 et C4 de jour",
+   "it": "Gli edifici C3 e C4 di giorno",
+   "de": "Die Gebäude C3 und C4 bei Tag"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-night-street.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Evening arrival from the street",
+   "ro": "Sosire seara, dinspre stradă",
+   "he": "הגעה בערב מהרחוב",
+   "ru": "Вечерний подъезд с улицы",
+   "uk": "Вечірній під'їзд з вулиці",
+   "fr": "Arrivée en soirée depuis la rue",
+   "it": "Arrivo serale dalla strada",
+   "de": "Ankunft am Abend von der Straße"
+  }
+ },
+ {
+  "src": "assets/gallery/courtyard-day.jpg",
+  "type": "amenity",
+  "caption": {
+   "en": "Green inner courtyard",
+   "ro": "Curte interioară verde",
+   "he": "החצר הפנימית הירוקה",
+   "ru": "Зелёный внутренний двор",
+   "uk": "Зелене внутрішнє подвір'я",
+   "fr": "Cour intérieure verdoyante",
+   "it": "Corte interna verde",
+   "de": "Grüner Innenhof"
+  }
+ },
+ {
+  "src": "assets/gallery/milano-living.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Living room",
+   "ro": "Milano · Living",
+   "he": "Milano · סלון",
+   "ru": "Milano · Гостиная",
+   "uk": "Milano · Вітальня",
+   "fr": "Milano · Séjour",
+   "it": "Milano · Soggiorno",
+   "de": "Milano · Wohnzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/milano-kitchen.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Kitchen & dining",
+   "ro": "Milano · Bucătărie și dining",
+   "he": "Milano · מטבח ופינת אוכל",
+   "ru": "Milano · Кухня-столовая",
+   "uk": "Milano · Кухня-їдальня",
+   "fr": "Milano · Cuisine et salle à manger",
+   "it": "Milano · Cucina e zona pranzo",
+   "de": "Milano · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "assets/gallery/milano-bedroom.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Bedroom",
+   "ro": "Milano · Dormitor",
+   "he": "Milano · חדר שינה",
+   "ru": "Milano · Спальня",
+   "uk": "Milano · Спальня",
+   "fr": "Milano · Chambre",
+   "it": "Milano · Camera da letto",
+   "de": "Milano · Schlafzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/milano-bath.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Bathroom",
+   "ro": "Milano · Baie",
+   "he": "Milano · חדר רחצה",
+   "ru": "Milano · Ванная",
+   "uk": "Milano · Ванна кімната",
+   "fr": "Milano · Salle de bains",
+   "it": "Milano · Bagno",
+   "de": "Milano · Badezimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/milano-dollhouse.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Apartment overview",
+   "ro": "Milano · Vedere de ansamblu a apartamentului",
+   "he": "Milano · מבט על הדירה",
+   "ru": "Milano · Обзор квартиры",
+   "uk": "Milano · Огляд квартири",
+   "fr": "Milano · Vue d'ensemble de l'appartement",
+   "it": "Milano · Panoramica dell'appartamento",
+   "de": "Milano · Wohnungsübersicht"
+  }
+ },
+ {
+  "src": "assets/gallery/penthouse-milano-living.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "D4",
+  "caption": {
+   "en": "Milano · Duplex penthouse",
+   "ro": "Milano · Penthouse duplex",
+   "he": "Milano · פנטהאוז דופלקס",
+   "ru": "Milano · Двухуровневый пентхаус",
+   "uk": "Milano · Дворівневий пентхаус",
+   "fr": "Milano · Penthouse en duplex",
+   "it": "Milano · Attico duplex",
+   "de": "Milano · Duplex-Penthouse"
+  }
+ },
+ {
+  "src": "assets/gallery/nordic-living.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Living room",
+   "ro": "Nordic · Living",
+   "he": "Nordic · סלון",
+   "ru": "Nordic · Гостиная",
+   "uk": "Nordic · Вітальня",
+   "fr": "Nordic · Séjour",
+   "it": "Nordic · Soggiorno",
+   "de": "Nordic · Wohnzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/nordic-kitchen.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Kitchen & dining",
+   "ro": "Nordic · Bucătărie și dining",
+   "he": "Nordic · מטבח ופינת אוכל",
+   "ru": "Nordic · Кухня-столовая",
+   "uk": "Nordic · Кухня-їдальня",
+   "fr": "Nordic · Cuisine et salle à manger",
+   "it": "Nordic · Cucina e zona pranzo",
+   "de": "Nordic · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "assets/gallery/nordic-bedroom.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Bedroom",
+   "ro": "Nordic · Dormitor",
+   "he": "Nordic · חדר שינה",
+   "ru": "Nordic · Спальня",
+   "uk": "Nordic · Спальня",
+   "fr": "Nordic · Chambre",
+   "it": "Nordic · Camera da letto",
+   "de": "Nordic · Schlafzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/nordic-bath.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Bathroom",
+   "ro": "Nordic · Baie",
+   "he": "Nordic · חדר רחצה",
+   "ru": "Nordic · Ванная",
+   "uk": "Nordic · Ванна кімната",
+   "fr": "Nordic · Salle de bains",
+   "it": "Nordic · Bagno",
+   "de": "Nordic · Badezimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/nordic-dollhouse.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Apartment overview",
+   "ro": "Nordic · Vedere de ansamblu a apartamentului",
+   "he": "Nordic · מבט על הדירה",
+   "ru": "Nordic · Обзор квартиры",
+   "uk": "Nordic · Огляд квартири",
+   "fr": "Nordic · Vue d'ensemble de l'appartement",
+   "it": "Nordic · Panoramica dell'appartamento",
+   "de": "Nordic · Wohnungsübersicht"
+  }
+ },
+ {
+  "src": "assets/gallery/penthouse-nordic-living.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "D4",
+  "caption": {
+   "en": "Nordic · Duplex penthouse",
+   "ro": "Nordic · Penthouse duplex",
+   "he": "Nordic · פנטהאוז דופלקס",
+   "ru": "Nordic · Двухуровневый пентхаус",
+   "uk": "Nordic · Дворівневий пентхаус",
+   "fr": "Nordic · Penthouse en duplex",
+   "it": "Nordic · Attico duplex",
+   "de": "Nordic · Duplex-Penthouse"
+  }
+ },
+ {
+  "src": "assets/gallery/riviera-living.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Living room",
+   "ro": "Riviera · Living",
+   "he": "Riviera · סלון",
+   "ru": "Riviera · Гостиная",
+   "uk": "Riviera · Вітальня",
+   "fr": "Riviera · Séjour",
+   "it": "Riviera · Soggiorno",
+   "de": "Riviera · Wohnzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/riviera-kitchen.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Kitchen & dining",
+   "ro": "Riviera · Bucătărie și dining",
+   "he": "Riviera · מטבח ופינת אוכל",
+   "ru": "Riviera · Кухня-столовая",
+   "uk": "Riviera · Кухня-їдальня",
+   "fr": "Riviera · Cuisine et salle à manger",
+   "it": "Riviera · Cucina e zona pranzo",
+   "de": "Riviera · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "assets/gallery/riviera-bedroom.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Bedroom",
+   "ro": "Riviera · Dormitor",
+   "he": "Riviera · חדר שינה",
+   "ru": "Riviera · Спальня",
+   "uk": "Riviera · Спальня",
+   "fr": "Riviera · Chambre",
+   "it": "Riviera · Camera da letto",
+   "de": "Riviera · Schlafzimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/riviera-bath.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Bathroom",
+   "ro": "Riviera · Baie",
+   "he": "Riviera · חדר רחצה",
+   "ru": "Riviera · Ванная",
+   "uk": "Riviera · Ванна кімната",
+   "fr": "Riviera · Salle de bains",
+   "it": "Riviera · Bagno",
+   "de": "Riviera · Badezimmer"
+  }
+ },
+ {
+  "src": "assets/gallery/riviera-dollhouse.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Apartment overview",
+   "ro": "Riviera · Vedere de ansamblu a apartamentului",
+   "he": "Riviera · מבט על הדירה",
+   "ru": "Riviera · Обзор квартиры",
+   "uk": "Riviera · Огляд квартири",
+   "fr": "Riviera · Vue d'ensemble de l'appartement",
+   "it": "Riviera · Panoramica dell'appartamento",
+   "de": "Riviera · Wohnungsübersicht"
+  }
+ },
+ {
+  "src": "assets/gallery/penthouse-riviera-living.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "D4",
+  "caption": {
+   "en": "Riviera · Duplex penthouse",
+   "ro": "Riviera · Penthouse duplex",
+   "he": "Riviera · פנטהאוז דופלקס",
+   "ru": "Riviera · Двухуровневый пентхаус",
+   "uk": "Riviera · Дворівневий пентхаус",
+   "fr": "Riviera · Penthouse en duplex",
+   "it": "Riviera · Attico duplex",
+   "de": "Riviera · Duplex-Penthouse"
+  }
+ },
+ {
+  "src": "assets/gallery/lobby.jpg",
+  "type": "lobby",
+  "caption": {
+   "en": "Entrance lobby",
+   "ro": "Holul de intrare",
+   "he": "לובי הכניסה",
+   "ru": "Входное лобби",
+   "uk": "Вхідне лобі",
+   "fr": "Hall d'entrée",
+   "it": "Lobby d'ingresso",
+   "de": "Eingangslobby"
+  }
+ },
+ {
+  "src": "assets/gallery/lobby-concierge.jpg",
+  "type": "lobby",
+  "caption": {
+   "en": "Concierge desk",
+   "ro": "Recepția concierge",
+   "he": "דלפק הקונסיירז'",
+   "ru": "Стойка консьержа",
+   "uk": "Стійка консьєржа",
+   "fr": "Conciergerie",
+   "it": "Banco concierge",
+   "de": "Concierge-Empfang"
+  }
+ },
+ {
+  "src": "assets/gallery/corridor.jpg",
+  "type": "lobby",
+  "caption": {
+   "en": "Residential corridor",
+   "ro": "Coridor rezidențial",
+   "he": "מסדרון הקומה",
+   "ru": "Коридор этажа",
+   "uk": "Коридор поверху",
+   "fr": "Couloir d'étage",
+   "it": "Corridoio di piano",
+   "de": "Etagenflur"
+  }
+ },
+ {
+  "src": "assets/gallery/lift-interior.jpg",
+  "type": "lobby",
+  "caption": {
+   "en": "Lift cabin",
+   "ro": "Cabina liftului",
+   "he": "תא המעלית",
+   "ru": "Кабина лифта",
+   "uk": "Кабіна ліфта",
+   "fr": "Cabine d'ascenseur",
+   "it": "Cabina ascensore",
+   "de": "Aufzugskabine"
+  }
+ },
+ {
+  "src": "assets/gallery/parking.jpg",
+  "type": "amenity",
+  "caption": {
+   "en": "Underground parking",
+   "ro": "Parcare subterană",
+   "he": "חניון תת‑קרקעי",
+   "ru": "Подземный паркинг",
+   "uk": "Підземний паркінг",
+   "fr": "Parking souterrain",
+   "it": "Parcheggio sotterraneo",
+   "de": "Tiefgarage"
+  }
+ }
+]
