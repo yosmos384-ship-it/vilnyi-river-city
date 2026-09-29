@@ -29,7 +29,8 @@ export const PROJECT = {
   // PLACEHOLDERS — replace with the real account before going live. The site shows a warning while these are empty.
   bank: { beneficiary: '', iban: '', bic: '', bank: '', address: '' },
   payments: { stripePaymentLink: '' },           // e.g. https://buy.stripe.com/xxxx — enables "Pay deposit by card"
-  leadsEndpoint: '',                             // optional POST URL (Formspree / Google Apps Script / Netlify function)
+  leadsEndpoint: '',                             // e.g. https://api.web3forms.com/submit
+  leadsKey: '',                                  // Web3Forms access key (public by design; only allows sending to the owner's email)                             // optional POST URL (Formspree / Google Apps Script / Netlify function)
   contact: { whatsapp: '', email: '', phone: '' },
 };
 

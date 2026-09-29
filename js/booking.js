@@ -271,7 +271,13 @@ async function saveRecord(collection, doc, id) {
   }
   if (PROJECT.leadsEndpoint) {
     try {
-      const res = await fetch(PROJECT.leadsEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection, ...doc }) });
+      // Flatten nested fields so the email service shows readable lines
+      const flat = { _subject: `VILNYI River City — ${collection === 'reservations' ? 'New reservation' : 'New lead'} ${doc.unitId || ''}`.trim(), _template: 'table', collection };
+      const walk = (o, pre) => { for (const [k, v] of Object.entries(o || {})) { const key = pre ? pre + '.' + k : k; if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, key); else flat[key] = Array.isArray(v) ? v.join(', ') : v; } };
+      walk(doc, '');
+      if (doc.email) { flat._replyto = doc.email; flat.replyto = doc.email; }
+      if (PROJECT.leadsKey) { flat.access_key = PROJECT.leadsKey; flat.subject = flat._subject; flat.from_name = 'VILNYI River City website'; }
+      const res = await fetch(PROJECT.leadsEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(flat) });
       if (res.ok) return true;
     } catch (e) { /* offline / blocked */ }
   }
