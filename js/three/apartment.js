@@ -15,7 +15,7 @@ const PW = 0.1, CW = 0.15, FW = 0.2, TW = 0.1;   // party wall, corridor wall, f
 const DOOR_W = 0.82, DOOR_H = 2.1, ENTRY_W = 1.0, ENTRY_H = 2.2;
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 const PI = Math.PI, HALF = PI / 2;
-const KEEP_UV = /\.(rug|art\d|leaf2?)$/;
+const KEEP_UV = /\.(rug|art\d|leaf2?|ao|aoSoft|glow|glowFaint|daylight)$/;
 
 // ------------------------------------------------------------------ baking (merge by material)
 const nonIndexed = new WeakMap();
@@ -121,11 +121,15 @@ function hrect(p, mat, u0, v0, u1, v1, y, dir = 1) {
 }
 // place a furniture group: (u, v) position, rotation so that its front (+z) faces `face` ('+v','-v','+u','-u' or radians)
 const FACE = { '+v': 0, '-v': PI, '+u': HALF, '-u': -HALF };
+let CUR_M = null;                     // materials of the apartment being built (for the contact-shadow decals)
 function put(p, obj, u, v, face = '+v', y = 0) {
   obj.position.set(u, y, v);
   obj.rotation.y = typeof face === 'number' ? face : FACE[face];
   p.add(obj);
   const sb = obj.userData.solidBox;
+  // baked contact shadow: a soft dark footprint just above the floor (above rugs too)
+  const ao = obj.userData.ao || (sb && !obj.userData.noSolid ? { w: sb.w, d: sb.d, x: sb.x, z: sb.z } : null);
+  if (ao && CUR_M) FX.fxFlat(obj, CUR_M.ao, ao.cell || 'rect', ao.x || 0, 0.013, ao.z || 0, ao.w + 0.3, ao.d + 0.3);
   if (sb && !obj.userData.noSolid) {
     const c = collider(obj, -sb.w / 2 + (sb.x || 0), 0.02, -sb.d / 2 + (sb.z || 0), sb.w / 2 + (sb.x || 0), Math.min(sb.h, 1.9), sb.d / 2 + (sb.z || 0));
     c.name = 'col-furniture';
@@ -472,8 +476,22 @@ function buildCeiling(ctx, L) {
         const u = u0 + (u1 - u0) * (i + 0.5) / nu, v = v0 + (v1 - v0) * (j + 0.5) / nv;
         if (P.duplex && L.lv === 0 && u > P.stair.s0 && u < P.stair.s1 && v > P.stair.v0 && v < P.stair.v1) continue;
         downlight(ctx, u, y, v);
+        downlightFx(ctx, L, u, v, r.kind === 'bath' ? 0.8 : 1);
       }
     }
+  }
+}
+// Light a downlight leaves behind: a soft pool on the floor and, if a wall is close, the classic scallop wash.
+function downlightFx(ctx, L, u, v, k = 1) {
+  const { m, sg } = ctx, y0 = L.y;
+  FX.fxFlat(sg, m.glowFaint, 'disc', u, y0 + 0.005, v, 1.7 * k, 1.7 * k);
+  if (k < 1) return;                                   // small tiled rooms: the pool only (scallops read as spots)
+  for (const s of ctx.segs[L.lv] || []) for (const f of s.faces) {
+    const off = s.c + f * s.t / 2, [a, b] = s.axis === 'u' ? [u, v] : [v, u], dist = (b - off) * f;
+    if (dist < 0.08 || dist > 0.8 || a < s.a0 + 0.3 || a > s.a1 - 0.3) continue;
+    const w = 0.55 + dist * 0.9, h = 1.25 + dist * 0.9, yc = y0 + CH - 0.03 - h / 2;
+    if (s.axis === 'u') FX.fxQuad(sg, m.glow, 'scallop', [a, yc, off + f * 0.013], [w, 0, 0], [0, h, 0]);
+    else FX.fxQuad(sg, m.glow, 'scallop', [off + f * 0.013, yc, a], [0, 0, w], [0, h, 0]);
   }
 }
 function downlight(ctx, u, y, v) {
@@ -498,9 +516,15 @@ function coveCeiling(ctx, L, r, [a0, b0, a1, b1]) {
   box(sg, m.led, a0 + band, y - 0.03, cv0 + band + 0.002, a1 - band, y - 0.018, cv0 + band + 0.012);
   // downlights in the bands
   const n = Math.max(2, Math.round((a1 - a0) / 1.3));
-  for (let i = 0; i < n; i++) downlight(ctx, a0 + (a1 - a0) * (i + 0.5) / n, yb, b1 - band / 2 - 0.05);
+  for (let i = 0; i < n; i++) { const u = a0 + (a1 - a0) * (i + 0.5) / n; downlight(ctx, u, yb, b1 - band / 2 - 0.05); FX.fxFlat(sg, m.glowFaint, 'disc', u, L.y + 0.005, b1 - 0.6, 1.5, 1.5); }
   const k = Math.max(1, Math.round((b1 - band - cv0) / 1.5));
-  for (let j = 0; j < k; j++) { const v = cv0 + band + (b1 - 2 * band - cv0) * (j + 0.5) / k; downlight(ctx, a0 + band / 2, yb, v); downlight(ctx, a1 - band / 2, yb, v); }
+  for (let j = 0; j < k; j++) { const v = cv0 + band + (b1 - 2 * band - cv0) * (j + 0.5) / k; for (const u of [a0 + band / 2, a1 - band / 2]) { downlight(ctx, u, yb, v); downlightFx(ctx, L, u, v, 1); } }
+  // the hidden LED washes the recessed ceiling: a bright band fading inwards from every lip
+  const iu0 = a0 + band, iu1 = a1 - band, iv0 = cv0 + band, iv1 = b1 - band, wash = Math.min(0.75, (iv1 - iv0) / 2, (iu1 - iu0) / 2);
+  FX.fxQuad(sg, m.glow, 'grad', [(iu0 + iu1) / 2, y - 0.004, iv1 - wash / 2], [iu1 - iu0, 0, 0], [0, 0, wash]);
+  FX.fxQuad(sg, m.glow, 'grad', [(iu0 + iu1) / 2, y - 0.004, iv0 + wash / 2], [iu1 - iu0, 0, 0], [0, 0, -wash]);
+  FX.fxQuad(sg, m.glow, 'grad', [iu0 + wash / 2, y - 0.004, (iv0 + iv1) / 2], [0, 0, iv1 - iv0], [-wash, 0, 0]);
+  FX.fxQuad(sg, m.glow, 'grad', [iu1 - wash / 2, y - 0.004, (iv0 + iv1) / 2], [0, 0, iv1 - iv0], [wash, 0, 0]);
 }
 
 // ---------------- doors
@@ -615,6 +639,8 @@ function buildFacade(ctx, L) {
       let best = 1e9;
       for (let k = 0; k < n; k++) { const c = a + (k + 0.5) * pw, dd = Math.abs(c - want); if (dd < best) { best = dd; slideI = k; } }
       ctx.doorU[L.lv] = a + (slideI + 0.5) * pw;
+      // daylight fill from the main glazing (a cheap stand-in for an area light): neutral white, low, near the glass
+      if (!cut) ctx.lightSpots.push({ u: (a + b) / 2, v: P.vF - 0.9, y: L.y, h: 1.5, k: 0.75, pri: 0.5, col: 0xfff2e4, dist: 6.5 });
     }
     const topY = Math.min(yH, top);
     for (let k = 0; k < n; k++) {
@@ -633,6 +659,8 @@ function buildFacade(ctx, L) {
       box(sg, m.glass, p0 + 0.02, y0 + 0.05, vg - 0.006, p1 - 0.02, topY - 0.04, vg + 0.006);
       collider(ctx.cg, p0, y0 + 0.02, vg - 0.05, p1, y0 + 2.2, vg + 0.05);
     }
+    // daylight falling in through the bay: brightest at the glass, fading ~2.4 m into the room
+    if (!cut) FX.fxQuad(sg, m.daylight, 'grad', [(a + b) / 2, y0 + 0.006, vF - 1.2], [b - a + 0.3, 0, 0], [0, 0, 2.4]);
     // frame: mullions + rails
     for (let k = 0; k <= n; k++) { const x = a + k * pw; box(sg, fr, x - ft / 2, y0 + 0.012, vg - ft / 2, x + ft / 2, topY, vg + ft / 2); }
     box(sg, fr, a, y0 + 0.012, vg - ft / 2, b, y0 + 0.05, vg + ft / 2);
@@ -689,15 +717,36 @@ function finishWalls(ctx, L) {
   const baths = L.rooms.filter(r => r.kind === 'bath').map(r => ({ r, c: clearRect(P, r) }));
   const inBath = (u, v) => baths.find(b => u > b.c[0] - 0.08 && u < b.c[2] + 0.08 && v > b.c[1] - 0.08 && v < b.c[3] + 0.08);
   const skM = m.skirting, sh = 0.08, st = 0.014;
+  const halls = L.rooms.filter(r => r.kind === 'hall').map(r => r.poly);
   for (const s of ctx.segs[L.lv] || []) {
     for (const f of s.faces) {
       const off = s.c + f * s.t / 2;
-      const mid = (s.a0 + s.a1) / 2;
+      const mid = (s.a0 + s.a1) / 2, len = s.a1 - s.a0;
       const [pu, pv] = s.axis === 'u' ? [mid, off + f * 0.1] : [off + f * 0.1, mid];
-      if (inBath(pu, pv)) continue;
       if (pv > P.vF + 0.01 || pv < 0) continue;
+      const bath = inBath(pu, pv);
+      // ambient-occlusion strips in the junctions: floor (dense), wall foot, ceiling + wall head (soft)
+      const W = (y, depth, into, mat) => s.axis === 'u'
+        ? FX.fxQuad(sg, mat, 'grad', [mid, y, off + f * into], [len, 0, 0], [0, depth, 0])
+        : FX.fxQuad(sg, mat, 'grad', [off + f * into, y, mid], [0, 0, len], [0, depth, 0]);
+      const Fl = (y, wdt, mat) => s.axis === 'u'
+        ? FX.fxQuad(sg, mat, 'grad', [mid, y, off + f * wdt / 2], [len, 0, 0], [0, 0, -f * wdt])
+        : FX.fxQuad(sg, mat, 'grad', [off + f * wdt / 2, y, mid], [0, 0, len], [-f * wdt, 0, 0]);
+      if (len > 0.12) {
+        Fl(y0 + 0.004, 0.32, m.ao);
+        W(y0 + (bath ? 0.2 : 0.08 + 0.17), bath ? -0.4 : -0.34, 0.012, m.aoSoft);
+        if (!ctx.cut) { Fl(y0 + CH - 0.004, 0.3, m.aoSoft); W(y0 + CH - 0.15, 0.3, 0.012, m.aoSoft); }
+      }
+      if (bath) continue;
       if (s.axis === 'u') box(sg, skM, s.a0, y0, Math.min(off, off + f * st), s.a1, y0 + sh, Math.max(off, off + f * st));
       else box(sg, skM, Math.min(off, off + f * st), y0, s.a0, Math.max(off, off + f * st), y0 + sh, s.a1);
+      // entrance halls: LED line under a floating skirting washes the floor
+      if (!ctx.cut && len > 0.5 && halls.some(poly => pointInPoly([pu, pv], poly))) {
+        const e = st + 0.004;
+        if (s.axis === 'u') box(sg, m.led, s.a0 + 0.05, y0 + 0.006, Math.min(off + f * e, off + f * (e + 0.006)), s.a1 - 0.05, y0 + 0.012, Math.max(off + f * e, off + f * (e + 0.006)));
+        else box(sg, m.led, Math.min(off + f * e, off + f * (e + 0.006)), y0 + 0.006, s.a0 + 0.05, Math.max(off + f * e, off + f * (e + 0.006)), y0 + 0.012, s.a1 - 0.05);
+        Fl(y0 + 0.006, 0.42, m.glowFaint);
+      }
     }
   }
   // bath cladding: the four inner faces, minus the door opening
@@ -867,6 +916,8 @@ function furnishBath(ctx, L, g, r) {
     if (w >= 3.3) put(g, F.bathtub(m, { len: Math.min(1.7, ww - 0.02) }), u + ww / 2, b0, '+v');
     else { put(g, F.shower(m, { w: ww, d: 0.95, h: ctx.cut ? 1.05 : 2.0 }), u + ww / 2, b0, '+v'); ctx.showers.push([g, u, b0, ww, 0.95, L]); }
   }
+  // bath mat in front of the wet zone
+  if (d >= 2.0) { const bm = new THREE.Group(); FX.soft(bm, 0.8, 0.014, 0.5, m.towel2, 0, 0.001, 0, null, { e: [0.08, 0.8, 0.08], seg: 12 }); bm.userData.noSolid = true; put(g, bm, a0 + Math.min(1.0, w / 2), b0 + 1.2, '+v'); }
   // towel rail on a free stretch, plant
   if (!ctx.cut && !(doorLeft && d >= 2.0) && d < 2.0 && r.door && r.door.wall === 'left') put(g, F.towelRail(m), a1, b0 + 1.2, '-u');
   if (w > 1.8 && d >= 2.0) FX.plantSmall(g, m, a0 + 0.2, 0, b1 - 0.2, 0.35, 0.4);
@@ -884,7 +935,8 @@ function mirrorAt(ctx, g, u, v, face, vl) {
     const s2 = new THREE.Group(); FX.sconce(s2, m, 0, 0, 0); put(g, s2, 0, 0, face); positionAlong(s2, u, v, face, off, 1.6);
   } else {
     // LED halo behind the round mirror
-    const h = new THREE.Group(); FX.torus(h, mw / 2 + 0.01, 0.006, m.led, 0, mh / 2, 0.01, [0, 0, 0], PI * 2, 40); put(g, h, u, v, face, 1.05);
+    const h = new THREE.Group(); FX.torus(h, mw / 2 + 0.01, 0.006, m.led, 0, mh / 2, 0.01, [0, 0, 0], PI * 2, 40);
+    FX.fxQuad(h, m.glow, 'disc', [0, mh / 2, 0.014], [mw * 1.7, 0, 0], [0, mh * 1.7, 0]); put(g, h, u, v, face, 1.05);
   }
 }
 function positionAlong(obj, u, v, face, off, y) {
@@ -992,7 +1044,7 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   put(g, F.plant(m, { h: 1.7, seed: 4 }), tvWall - t * 0.3, v1 + 0.2, '+v');       // facade corner of the TV wall
   if (farIsWall && !floating) artOn(ctx, g, farWall, lc, toTV, 1.1, 0.8, 0, 1.7);
   else if (farIsWall && Math.abs(farWall - sofaU) > 1.1) {
-    put(g, F.sideboard(m, { len: Math.min(1.8, zd - 0.4) }), farWall + t * 0.24, lc, toTV);
+    const sbl = Math.min(1.8, zd - 0.4); halo(ctx, put(g, F.sideboard(m, { len: sbl }), farWall + t * 0.24, lc, toTV), -sbl / 2 + 0.25, -0.235, 1.35);
     artOn(ctx, g, farWall, lc, toTV, 1.2, 0.9, 0, 1.8);
   }
   ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
@@ -1018,7 +1070,11 @@ function dining(ctx, L, g, z, kitBack) {
       put(grpT, F.tableSetting(m, { y: 0.76 }), cu, side * (tw / 2 - 0.2), side < 0 ? '-v' : '+v');
     }
   }
-  if (!ctx.cut) put(grpT, F.pendant(m, { kind: 'dining', drop: 0.85, len: Math.min(1.2, tl - 0.3) }), 0, 0, '+v', CH);
+  if (!ctx.cut) {
+    put(grpT, F.pendant(m, { kind: 'dining', drop: 0.85, len: Math.min(1.2, tl - 0.3) }), 0, 0, '+v', CH);
+    FX.fxFlat(grpT, m.glowFaint, 'rect', 0, 0.762, 0, tl + 0.3, tw + 0.25);
+    FX.fxFlat(grpT, m.glowFaint, 'disc', 0, 0.006, 0, tl + 2.2, tw + 2.2);
+  }
   grpT.userData.solidBox = { w: tl + 0.1, d: tw + 0.25, h: 0.8 };
   put(g, grpT, tu, tv, along ? '+v' : '+u');
   ctx.lightSpots.push({ u: tu, v: tv, y: L.y, k: 0.8, pri: 1 });
@@ -1066,7 +1122,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     const vcb = clamp((vmin + b1) / 2, vmin + bw / 2 + 0.5, b1 - bw / 2 - 0.45);
     put(g, F.bed(m, { w: bw }), a1 - 1.08, vcb, '-u');
     bedC = [a1 - 1.08, vcb];
-    for (const side of [-1, 1]) { const vv = vcb + side * (bw / 2 + 0.33); if (vv - 0.22 > vmin + 0.02 && vv + 0.22 < b1 - 0.05) put(g, F.nightstand(m, { seed: side + idx }), a1 - 0.23, vv, '-u'); }
+    for (const side of [-1, 1]) { const vv = vcb + side * (bw / 2 + 0.33); if (vv - 0.22 > vmin + 0.02 && vv + 0.22 < b1 - 0.05) halo(ctx, put(g, F.nightstand(m, { seed: side + idx }), a1 - 0.23, vv, '-u'), -0.07, -0.197); }
     featureWallBed(ctx, g, a1, vcb, '-u', Math.min(bw + 1.2, d - 0.1));
     artOn(ctx, g, a1, vcb, '-u', Math.min(1.2, bw), 0.7, 1 + idx, 1.55);
     let leftUsed = false;
@@ -1082,7 +1138,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     const bu = clamp((start + a1) / 2, a0 + bw / 2 + 0.02, a1 - bw / 2 - 0.02);
     put(g, F.bed(m, { w: bw }), bu, b0 + 1.08, '+v');
     bedC = [bu, b0 + 1.08];
-    if (a1 - (bu + bw / 2) > 0.46) put(g, F.nightstand(m, { w: 0.42 }), a1 - 0.22, b0 + 0.22, '+v');
+    if (a1 - (bu + bw / 2) > 0.46) halo(ctx, put(g, F.nightstand(m, { w: 0.42 }), a1 - 0.22, b0 + 0.22, '+v'), -0.06, -0.187);
     featureWallBed(ctx, g, bu, b0, '+v', Math.min(bw + 0.5, a1 - start + 0.2));
     artOn(ctx, g, bu, b0, '+v', Math.min(1.1, bw), 0.6, 1 + idx, 1.65);
     const free = d - 2.2;
@@ -1094,6 +1150,12 @@ function furnishBedroom(ctx, L, g, r, idx) {
   if (!ctx.cut) put(g, F.pendant(m, { kind: 'bed', drop: 0.45 }), bedC[0], bedC[1], '+v', CH);
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.7, pri: 1 });
 }
+// warm halo on the wall behind a lamp that stands against it (x, z in the furniture's local frame)
+function halo(ctx, obj, x, z, y = 1.0) {
+  if (ctx.cut || !obj) return obj;
+  FX.fxQuad(obj, ctx.m.glow, 'disc', [x, y, z], [1.0, 0, 0], [0, 1.2, 0]);
+  return obj;
+}
 function featureWallBed(ctx, g, u, v, face, len) {
   const { m } = ctx;
   if (ctx.cut) return;
@@ -1101,6 +1163,10 @@ function featureWallBed(ctx, g, u, v, face, len) {
   if (s === 'milano') { FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01); for (let i = 1; i < 4; i++) FX.box(grp, 0.006, H, 0.004, m.brass, -len / 2 + i * len / 4, 0, 0.022); }
   else if (s === 'nordic') { FX.box(grp, len, 1.2, 0.02, m.wallAccent, 0, 0, 0.01); FX.box(grp, len, 0.02, 0.12, m.woodLight, 0, 1.2, 0.06); FX.vase(grp, m, len / 2 - 0.2, 1.22, 0.06, 0.18, m.ceramic2, false); FX.bookStack(grp, m, 2, -len / 2 + 0.25, 1.22, 0.06, 55, 0.2); }
   else { FX.box(grp, len, H, 0.02, m.wallAccent, 0, 0, 0.01); }
+  // hidden LED slot in the ceiling along the bed wall: a grazing wash down the feature wall
+  FX.box(grp, len, 0.012, 0.03, m.led, 0, CH - 0.014, 0.05);
+  FX.fxQuad(grp, m.glow, 'grad', [0, CH - 0.55, 0.026], [len, 0, 0], [0, 1.1, 0]);
+  FX.fxQuad(grp, m.glowFaint, 'grad', [0, CH - 0.004, 0.25], [len, 0, 0], [0, 0, -0.45]);
   put(g, grp, u, v, face, 0);
 }
 
@@ -1112,9 +1178,10 @@ function buildLights(ctx) {
   const lights = [];
   for (const s of spots) {
     if (lights.length >= MAX) break;
-    if (lights.some(l => Math.abs(l.position.y - (s.y + 2.3)) < 1 && Math.hypot(l.position.x - s.u, l.position.z - s.v) < 1.6)) continue;
-    const l = new THREE.PointLight(col, 5.5 * s.k * (ctx.opts.lightScale ?? 1), 7.5, 1.6);
-    l.position.set(s.u, s.y + 2.3, s.v);
+    const h = s.h ?? 2.3;
+    if (lights.some(l => Math.abs(l.position.y - (s.y + h)) < 1 && Math.hypot(l.position.x - s.u, l.position.z - s.v) < 1.6)) continue;
+    const l = new THREE.PointLight(s.col ? new THREE.Color(s.col) : col, 5.5 * s.k * (ctx.opts.lightScale ?? 1), s.dist ?? 7.5, 1.6);
+    l.position.set(s.u, s.y + h, s.v);
     l.name = 'apt-light';
     lights.push(l);
   }
@@ -1132,6 +1199,7 @@ function build(unit, styleId, opts = {}) {
   const cg = new THREE.Group(); cg.name = 'colliders';
   const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {} };
   const onlyLevel = opts.cutaway && P.duplex ? (opts.level ?? 0) : null;
+  CUR_M = m;
   for (const L of P.levels) {
     if (onlyLevel != null && L.lv !== onlyLevel) continue;
     buildShell(ctx, L);
@@ -1146,6 +1214,7 @@ function build(unit, styleId, opts = {}) {
     const gw = Math.min(w - 0.1, 1.0);
     collider(cg, u + w - gw, L.y + 0.02, v + d - 0.03, u + w, L.y + 2.0, v + d + 0.03);
   }
+  CUR_M = null;
   // bake static geometry
   const baked = new THREE.Group(); baked.name = 'baked';
   root.add(baked);
@@ -1196,12 +1265,14 @@ function pointInPoly([x, y], poly) {
 }
 // Suggested camera presets (unit-local): used by the dev page and gallery stills.
 function cameraViews(ctx, P) {
-  const E = 1.55, L0 = P.levels[0].zones, v = {};
+  const E = 1.5, L0 = P.levels[0].zones, v = {};
   const liv = L0.livRoom;
   if (liv) {
     const [a0, b0, a1, b1] = clearRect(P, liv);
     const vb0 = P.duplex ? P.stair.v1 + 0.3 : b0 + 0.35;
-    v.living = { pos: [a0 + 0.35, E, vb0], target: [a1 - 0.6, 1.1, b1 - 0.4] };
+    v.living = { pos: [a0 + 0.35, E, vb0], target: [a1 - 0.6, 1.2, b1 - 0.4], fov: 66 };
+    // from the window side back into the room (dining / kitchen side)
+    v.living2 = { pos: [a0 + 0.45, E, b1 - 0.3], target: [a1 - 1.2, 1.15, b0 + 0.3], fov: 68 };
   }
   const k = ctx.kitchen || null, ks = ctx.kitchenSide;
   if (k) v.kitchen = { pos: [clamp((k.u0 + k.u1) / 2 - 0.9, P.ul + 0.4, P.ur - 0.4), E, Math.min(k.v + 2.2, P.vF - 0.5)], target: [(k.u0 + k.u1) / 2 + 0.4, 1.1, P.vc] };
@@ -1210,13 +1281,13 @@ function cameraViews(ctx, P) {
   if (bedLv) {
     const r = bedLv.zones.bedRooms.slice().sort((x, z) => z.area - x.area)[0], [a0, b0, a1, b1] = clearRect(P, r), y = bedLv.y;
     v.bedroom = (a1 - a0) >= 2.95
-      ? { pos: [a0 + Math.min(1.3, (a1 - a0) * 0.35), y + E, b1 - 0.45], target: [a1 - 0.5, y + 0.85, b0 + (b1 - b0) * 0.42], level: bedLv.lv, fov: 68 }
+      ? { pos: [a0 + 0.35, y + E, b0 + 0.95], target: [a1 - 0.4, y + 1.0, b1 - 1.2], level: bedLv.lv, fov: 72 }
       : { pos: [(a0 + a1) / 2 - 0.25, y + E, b1 - 0.35], target: [(a0 + a1) / 2 + 0.2, y + 0.8, b0 + 0.3], level: bedLv.lv, fov: 72 };
   }
   const bl = P.levels.find(L => L.zones.svc.some(s => s.kind === 'bath'));
   if (bl) {
     const r = bl.zones.svc.find(s => s.kind === 'bath'), [a0, b0, a1, b1] = clearRect(P, r), y = bl.y;
-    if (r.door && r.door.wall === 'left') v.bath = { pos: [a0 + 0.12, y + 1.55, r.door.v + 0.25], target: [a1 - 0.2, y + 0.85, b0 + 0.3], level: bl.lv, fov: 80 };
+    if (r.door && r.door.wall === 'left') v.bath = { pos: [a0 + 0.12, y + 1.55, r.door.v + 0.25], target: [a1 - 0.2, y + 1.0, b0 + 0.3], level: bl.lv, fov: 80 };
     else v.bath = { pos: [(a0 + a1) / 2 - 0.2, y + 1.5, b1 + 0.7], target: [(a0 + a1) / 2 + 0.2, y + 1.0, b0], level: bl.lv, fov: 72 };
   }
   if (P.levels[0].hasOutdoor) v.balcony = { pos: [P.W * 0.18, E, P.D + 0.3], target: [P.W * 0.8, 1.0, P.D + BD + 3], outside: true };

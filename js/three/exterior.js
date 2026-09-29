@@ -4,7 +4,7 @@
 // (walkthrough), highlighting a floor or units, and lit windows at dusk are all shader uniforms — no rebuilds.
 import * as THREE from 'three';
 import {
-  BUILDINGS, FOOTPRINT, UNITS, BLOCKS, CORES, TYPES, GEOM, LEVELS, TOP_FLOOR, ROOF_Y,
+  BUILDINGS, FOOTPRINT, UNITS, BLOCKS, CORES, CORRIDORS, TYPES, GEOM, LEVELS, TOP_FLOOR, ROOF_Y,
   floorY, localToWorld, unitsOn, blocksOn,
 } from '../data.js';
 import { SHARED, registerMaterial } from './environment.js';
@@ -127,9 +127,48 @@ function extMaterial(kind, params, envBase, EXT_U) {
       .replace('#include <common>', '#include <common>\n' + GLSL_EXT_HEAD)
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (ex_hidden()) discard;')
       .replace('#include <color_fragment>', `#include <color_fragment>
-        #if defined(EXT_WALL) || defined(EXT_STONE) || defined(EXT_ACCENT)
+        float exVert = 1. - abs(vEN.y);
+        float exAlong = dot(vEW.xz, vec2(-vEN.z, vEN.x));          // metres along a vertical surface
+        float exFy = (vEW.y - 3.3) / 3.;                            // floor-relative height (typical floors)
+        #if defined(EXT_WALL) || defined(EXT_STONE) || defined(EXT_ACCENT) || defined(EXT_CROWN) || defined(EXT_SLAB)
           float exN = fract(sin(dot(floor(vEW.xz * 2.2) + floor(vEW.y * 2.2), vec2(12.99, 78.23))) * 43758.55);
           diffuseColor.rgb *= .975 + .05 * exN;
+        #endif
+        #if defined(EXT_WALL) || defined(EXT_CROWN) || defined(EXT_ACCENT)
+          // cladding panel joints (large-format panels: 1.25 m wide, split at mid-storey), anti-aliased
+          {
+            float fa = max(fwidth(exAlong), 1e-4), fy = max(fwidth(exFy), 1e-4);
+            float dA = abs(fract(exAlong / 1.25 + .5) - .5) * 1.25, dY = abs(fract(exFy + .5) - .5) * 3.;
+            float j = max(1. - smoothstep(.012, .012 + fa * 1.5, dA), 1. - smoothstep(.012, .012 + fy * 4.5, dY));
+            diffuseColor.rgb *= 1. - .16 * j * step(.5, exVert) * step(3.3, vEW.y);
+          }
+        #endif
+        #ifdef EXT_SOLAR
+          {
+            vec2 c = vec2(abs(fract(vUvE.x / 1.02 + .5) - .5) * 1.02, abs(fract(vUvE.y / .8 + .5) - .5) * .8);
+            vec2 cc = vec2(abs(fract(vUvE.x / .17 + .5) - .5) * .17, abs(fract(vUvE.y / .16 + .5) - .5) * .16);
+            float g = max(1. - smoothstep(.015, .03, min(c.x, c.y)), .35 * (1. - smoothstep(.004, .012, min(cc.x, cc.y))));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.75, .78, .8), g * .8);
+          }
+        #endif
+        #ifdef EXT_GLASS
+          float exCur = 0.;
+          {
+            float sd0 = floor(vTag.z + .5);
+            if (sd0 < 10000.) {
+              float c3 = ex_h(sd0 + 41.), side0 = min(vUvE.x, 1. - vUvE.x);
+              exCur = c3 > .55 ? 1. - smoothstep(.1, .2, side0) : c3 < .22 ? .55 : c3 > .45 ? 1. - smoothstep(.3, .34, vUvE.x) : 0.;
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.86, .82, .74), exCur * .9);
+            }
+          }
+        #endif`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+        #ifdef EXT_GLASS
+          metalnessFactor *= 1. - exCur * .8;
+        #endif`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        #ifdef EXT_GLASS
+          roughnessFactor = mix(roughnessFactor, .75, exCur);
         #endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
@@ -137,10 +176,17 @@ function extMaterial(kind, params, envBase, EXT_U) {
           float hiU = 0.;
           if (vTag.y > -.5) { float ui = floor(vTag.y + .5); hiU = texture2D(uUnitTex, vec2((mod(ui, 64.) + .5) / 64., (floor(ui / 64.) + .5) / 32.)).r; }
           float vert = 1. - abs(vEN.y);
-          #if defined(EXT_WALL) || defined(EXT_STONE) || defined(EXT_ACCENT) || defined(EXT_CROWN)
+          #if defined(EXT_WALL) || defined(EXT_STONE) || defined(EXT_ACCENT) || defined(EXT_CROWN) || defined(EXT_SLAB)
             // warm grazing uplight at the plinth + a faint city-light wash after dark
-            totalEmissiveRadiance += vec3(1., .64, .34) * uGlow * vert * .75 * exp(-max(vEW.y, 0.) * .32);
-            totalEmissiveRadiance += diffuseColor.rgb * vec3(1., .82, .62) * uGlow * .07;
+            totalEmissiveRadiance += vec3(1., .64, .34) * uGlow * vert * .5 * exp(-max(vEW.y, 0.) * .38);
+            totalEmissiveRadiance += diffuseColor.rgb * vec3(1., .8, .58) * uGlow * .07;
+            // soft wall-washer scallops thrown down from every soffit / ceiling downlight (period ≈ one bay)
+            {
+              float t = fract(exFy), sc = pow(max(0., cos(exAlong * 6.2832 / 2.6)), 3.);
+              float fall = smoothstep(.15, .97, t) * (1. - smoothstep(.97, 1., t));
+              float w = sc * fall * fall * step(3.4, vEW.y) * step(.5, vert);
+              totalEmissiveRadiance += vec3(1., .66, .38) * uGlow * .45 * w * diffuseColor.rgb;
+            }
           #endif
           #ifdef EXT_GLASS
             float sd = floor(vTag.z + .5);   // integer seed; varyings are not exact, so round before hashing
@@ -151,12 +197,12 @@ function extMaterial(kind, params, envBase, EXT_U) {
             } else {
               float r1 = ex_h(sd), r2 = ex_h(sd + 17.), r3 = ex_h(sd + 41.);
               float lit = step(1. - uLit, r1);
-              vec3 wc = mix(vec3(1., .56, .26), vec3(1., .78, .52), r2);
+              vec3 wc = mix(vec3(1., .46, .16), vec3(1., .7, .4), r2 * r2);
               float ceilG = mix(.4, 1., smoothstep(.15, 1., vUvE.y));
               float side = min(vUvE.x, 1. - vUvE.x);
               float curtain = r3 > .55 ? .45 + .55 * smoothstep(.02, .2, side) : 1.;
               float sheer = r3 < .22 ? .55 : 1.;
-              totalEmissiveRadiance += wc * lit * (.35 + .7 * r2) * ceilG * curtain * sheer * uGlow * 1.35;
+              totalEmissiveRadiance += wc * lit * (.4 + .6 * r2) * ceilG * curtain * sheer * uGlow * 1.3;
               totalEmissiveRadiance += vec3(.9, .65, .4) * .02 * uGlow;
             }
           #endif
@@ -193,15 +239,17 @@ export function createComplex(opts = {}) {
   const mat = (kind, params, envBase = 0.9) => extMaterial(kind, params, envBase, EXT_U);
 
   const M = {
-    wall: mat('wall', { color: '#ece6da', roughness: 0.78 }, 0.6),
+    wall: mat('wall', { color: '#e8dcc6', roughness: 0.8 }, 0.6),          // warm ivory cladding
+    slab: mat('slab', { color: '#f7f4ee', roughness: 0.7 }, 0.65),         // bright white slab / balcony edges
     stone: mat('stone', { color: '#cbbfab', roughness: 0.62 }, 0.7),
-    accent: mat('accent', { color: '#a19a8f', roughness: 0.7 }, 0.6),
-    crown: mat('crown', { color: '#8c7a60', roughness: 0.38, metalness: 0.65 }, 1),
-    frame: mat('frame', { color: '#35302a', roughness: 0.4, metalness: 0.6 }, 1),
-    glass: mat('glass', { color: '#8397aa', roughness: 0.04, metalness: 0.92 }, 1.15),
-    rail: mat('rail', { color: '#c4d6da', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }, 1),
+    accent: mat('accent', { color: '#615b55', roughness: 0.6, metalness: 0.15 }, 0.7),   // graphite frames / fins
+    crown: mat('crown', { color: '#8a837a', roughness: 0.5, metalness: 0.25 }, 0.9),      // duplex crown panels
+    frame: mat('frame', { color: '#2e2c2a', roughness: 0.4, metalness: 0.6 }, 1),
+    glass: mat('glass', { color: '#4a5661', roughness: 0.06, metalness: 0.9 }, 0.8),
+    rail: mat('rail', { color: '#b7c7cb', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide }, 1),
     soffit: mat('soffit', { color: '#f2eee6', roughness: 0.85 }, 0.5),
     roof: mat('roof', { color: '#6f6d69', roughness: 0.95 }, 0.4),
+    hvac: mat('hvac', { color: '#b4b6b5', roughness: 0.45, metalness: 0.5 }, 0.8),
     solar: mat('solar', { color: '#1a2438', roughness: 0.18, metalness: 0.5 }, 1.2),
     hedge: mat('hedge', { color: '#3c5a27', roughness: 0.95 }, 0.3),
     led: mat('led', { color: '#1a1814', roughness: 0.5 }, 0.2),
@@ -375,6 +423,18 @@ function buildBuilding(bId, bufs) {
     return null;
   };
   const finKeys = new Set();
+  // convex footprint corners: balconies wrap around them onto the gables
+  const conv = edges.map((b, i) => { const a = edges[(i + edges.length - 1) % edges.length]; return a.U[0] * b.V[0] + a.U[1] * b.V[1] > 0; });
+  const CONVEX = FOOTPRINT.filter((_, i) => conv[i]);
+  const atCorner = p => CONVEX.some(c => Math.abs(c[0] - p[0]) < 0.06 && Math.abs(c[1] - p[2]) < 0.06);
+  const unitAt = (floor, x, z) => {
+    for (const u of unitsOn(bId, floor)) {
+      const ox = x - u.frame.o[0], oz = z - u.frame.o[1];
+      const uu = ox * u.frame.U[0] + oz * u.frame.U[1], vv = ox * u.frame.V[0] + oz * u.frame.V[1];
+      if (uu > -0.05 && uu < u.width + 0.05 && vv > -0.05 && vv < u.depth + 0.05) return u;
+    }
+    return null;
+  };
 
   for (let band = 0; band <= TOP_FLOOR + 1; band++) {
     const floor = Math.min(band, TOP_FLOOR);
@@ -392,9 +452,11 @@ function buildBuilding(bId, bufs) {
       const tag = { b: code, u: uid, s: 0 };
       const ext = onEdge([P(F, 0, 0, D)[0], P(F, 0, 0, D)[2]], [P(F, w, 0, D)[0], P(F, w, 0, D)[2]]);
       if (ext) cover[ext.i].push([ext.s0, ext.s1]);
-      const pierMat = band === 0 ? bufs.stone : crown ? bufs.crown : bufs.wall;
+      // graphite bays every fourth unit give the long facades their vertical rhythm (same index on floors 1–9)
+      const graphite = band > 0 && !crown && u.index % 4 === 2;
+      const pierMat = band === 0 ? bufs.stone : crown ? bufs.crown : graphite ? bufs.accent : bufs.wall;
       // slab edge under this floor
-      if (band > 0) box(crown ? bufs.crown : bufs.wall, F, 0, w, y0 - LEVELS.slab, y0, D - 0.25, D + 0.02, tag, 'V');
+      if (band > 0) box(bufs.slab, F, 0, w, y0 - LEVELS.slab, y0, D - 0.25, D + 0.02, tag, 'V');
       // openings: piers + floor-to-ceiling glazing
       const e = 0.32, pier = 0.5;
       const n = Math.max(1, Math.round((w - 2 * e) / 3.3));
@@ -424,20 +486,24 @@ function buildBuilding(bId, bufs) {
         continue;
       }
       // balcony / loggia / terrace slab (top flush with the floor), soffit with downlights under it
-      const bm = crown ? bufs.crown : bufs.wall;
-      box(bm, F, 0.12, w - 0.12, y0 - 0.2, y0, D, D + BD, tag, 'YVuU');
-      box(bufs.soffit, F, 0.12, w - 0.12, y0 - 0.2, y0, D, D + BD, tag, 'y');
+      // strong white slab band; at a convex building corner the balcony runs on round the corner square
+      const cs = atCorner(P(F, 0, 0, D)), ce = atCorner(P(F, w, 0, D));
+      const a0 = cs ? -BD : 0.12, a1 = ce ? w + BD : w - 0.12;
+      const r0 = cs ? -BD + 0.1 : 0.25, r1 = ce ? w + BD - 0.1 : w - 0.25;
+      box(bufs.slab, F, a0, a1, y0 - 0.3, y0, D, D + BD, tag, 'YVuU');
+      box(bufs.soffit, F, a0, a1, y0 - 0.3, y0, D, D + BD, tag, 'y');
       if (kind === 'loggia') {
-        box(bufs.accent, F, 0.25, w - 0.25, y0, y0 + 1.0, D + BD - 0.16, D + BD, tag, 'VvY');
-        box(bufs.stone, F, 0.25, w - 0.25, y0 + 1.0, y0 + 1.06, D + BD - 0.2, D + BD + 0.03, tag, 'YVv');
+        box(bufs.accent, F, r0, r1, y0, y0 + 1.0, D + BD - 0.16, D + BD, tag, 'VvY' + (cs ? 'u' : '') + (ce ? 'U' : ''));
+        box(bufs.slab, F, r0, r1, y0 + 1.0, y0 + 1.06, D + BD - 0.2, D + BD + 0.03, tag, 'YVv');
       } else {
-        box(bufs.rail, F, 0.25, w - 0.25, y0, y0 + RAIL_H, D + BD - 0.1, D + BD - 0.09, tag, 'V');
-        box(bufs.frame, F, 0.25, w - 0.25, y0 + RAIL_H, y0 + RAIL_H + 0.04, D + BD - 0.13, D + BD - 0.06, tag, 'YVvy');
-        box(bufs.frame, F, 0.25, w - 0.25, y0 - 0.02, y0 + 0.05, D + BD - 0.13, D + BD - 0.06, tag, 'V');
+        box(bufs.rail, F, r0, r1, y0, y0 + RAIL_H, D + BD - 0.1, D + BD - 0.09, tag, 'V');
+        box(bufs.frame, F, r0, r1, y0 + RAIL_H, y0 + RAIL_H + 0.04, D + BD - 0.13, D + BD - 0.06, tag, 'YVvy');
+        box(bufs.frame, F, r0, r1, y0 - 0.02, y0 + 0.05, D + BD - 0.13, D + BD - 0.06, tag, 'V');
       }
-      // privacy fins at both unit ends (shared between neighbours; never unit-hidden)
-      const finMat = crown ? bufs.crown : kind === 'loggia' ? bufs.accent : bufs.wall;
+      // privacy fins at both unit ends (shared between neighbours; never unit-hidden) — graphite vertical ribs
+      const finMat = crown ? bufs.crown : graphite ? bufs.accent : bufs.slab;
       for (const uu of [0, w]) {
+        if (uu === 0 ? cs : ce) continue;
         const p = P(F, uu, 0, D + 0.8), key = `${band}:${p[0].toFixed(1)}:${p[2].toFixed(1)}`;
         if (finKeys.has(key)) continue; finKeys.add(key);
         box(finMat, F, uu - 0.12, uu + 0.12, y0 - 0.2, y0 + LEVELS.typicalH - 0.2, D, D + BD + 0.05, { b: code, u: -2, s: 0 }, 'uUV');
@@ -472,6 +538,91 @@ function buildBuilding(bId, bufs) {
       }
     }
 
+    // ---------------- gable ends: corner-wrapping balconies, French windows in graphite frames, lit corridor-end slot
+    const wallM = crown ? bufs.crown : bufs.wall, frameM = crown ? bufs.slab : bufs.accent;
+    const corridorSlot = (e, a, b) => {
+      const tag = { b: code, u: -1, s: 0 }, m = (a + b) / 2, g0 = m - 0.8, g1 = m + 0.8;
+      box(frameM, e, a, g0, y0 - LEVELS.slab, yTop, -0.3, 0.14, tag, 'VuU' + (band === TOP_FLOOR + 1 ? 'Y' : ''));
+      box(frameM, e, g1, b, y0 - LEVELS.slab, yTop, -0.3, 0.14, tag, 'VuU' + (band === TOP_FLOOR + 1 ? 'Y' : ''));
+      pane(bufs.glass, e, g0, g1, y0, yTop, -0.16, { b: code, u: -1, s: 30001 });
+      box(wallM, e, g0, g1, yTop - 0.001, yTop, -0.16, 0, tag, 'y');
+      box(bufs.frame, e, g0, g1, y0, y0 + 0.08, -0.18, -0.1, tag, 'VY');
+      box(bufs.rail, e, g0, g1, y0, y0 + RAIL_H, 0.06, 0.07, tag, 'V');
+      box(bufs.frame, e, g0, g1, y0 + RAIL_H, y0 + RAIL_H + 0.04, 0.03, 0.1, tag, 'VY');
+    };
+    // one opening: glazing + frame + mullions, piers either side are built by the caller
+    const opening = (e, g0, g1, tagU) => {
+      const tag = { b: code, u: tagU, s: 0 };
+      pane(bufs.glass, e, g0, g1, y0, yTop, -0.18, { b: code, u: tagU, s: winSeed() });
+      box(wallM, e, g0, g1, yTop - 0.001, yTop, -0.18, 0, tag, 'y');
+      box(bufs.frame, e, g0, g1, y0, y0 + 0.06, -0.2, -0.13, tag, 'VY');
+      box(bufs.frame, e, g0, g1, yTop - 0.06, yTop, -0.2, -0.13, tag, 'Vy');
+      const nm = Math.max(1, Math.round((g1 - g0) / 1.25));
+      for (let m = 0; m <= nm; m++) { const x = g0 + ((g1 - g0) * m) / nm; box(bufs.frame, e, x - 0.028, x + 0.028, y0, yTop, -0.2, -0.13, tag, 'VuU'); }
+    };
+    const gableBay = (e, a, b, ca, cb) => {
+      const len = b - a, mid = (a + b) / 2;
+      const owner = unitAt(floor, e.o[0] + e.U[0] * mid - e.V[0] * 1.5, e.o[1] + e.U[1] * mid - e.V[1] * 1.5);
+      const uid = owner ? UNIT_INDEX.get(owner) : -1, tag = { b: code, u: uid, s: 0 };
+      const kind = !owner || band === TOP_FLOOR + 1 ? 'balcony' : TYPES[owner.type].outdoorKind;
+      const Lb = Math.min(3.8, len - 2.4);
+      const ops = [];
+      let bal = null;
+      if (Lb > 1.8 && (ca || cb)) {
+        bal = ca ? [a, a + Lb] : [b - Lb, b];
+        ops.push(ca ? [a + 0.5, bal[1] - 0.35] : [bal[0] + 0.35, b - 0.5]);
+        // French window in a graphite frame on the rest of the gable bay
+        const r0 = ca ? bal[1] : a, r1 = ca ? b : bal[0];
+        if (r1 - r0 > 2.2) { const m = (r0 + r1) / 2; ops.push([m - 0.65, m + 0.65, true]); }
+      } else if (len > 2.2) { const m = (a + b) / 2; ops.push([m - 0.65, m + 0.65, true]); }
+      ops.sort((p, q) => p[0] - q[0]);
+      let s = a;
+      for (const [g0, g1, framed] of ops) {
+        box(wallM, e, s, g0, y0, yTop, -0.3, 0, tag, (s > a + 0.01 ? 'u' : '') + 'UV');
+        opening(e, g0, g1, uid);
+        if (framed) {
+          box(frameM, e, g0 - 0.16, g0, y0 - LEVELS.slab, yTop, -0.02, 0.12, tag, 'uUV');
+          box(frameM, e, g1, g1 + 0.16, y0 - LEVELS.slab, yTop, -0.02, 0.12, tag, 'uUV');
+          box(bufs.rail, e, g0, g1, y0, y0 + RAIL_H, 0.06, 0.07, tag, 'V');
+          box(bufs.frame, e, g0, g1, y0 + RAIL_H, y0 + RAIL_H + 0.04, 0.03, 0.1, tag, 'VY');
+        }
+        s = g1;
+      }
+      box(wallM, e, s, b, y0, yTop, -0.3, 0, tag, 'uV');
+      if (!bal) return;
+      const [b0, b1] = bal;
+      box(bufs.slab, e, b0, b1, y0 - 0.3, y0, 0, BD, tag, 'YV' + (ca ? 'U' : 'u'));
+      box(bufs.soffit, e, b0, b1, y0 - 0.3, y0, 0, BD, tag, 'y');
+      // rail runs on to meet the long-facade rail at the corner square
+      const q0 = ca ? b0 - BD + 0.1 : b0 + 0.12, q1 = ca ? b1 - 0.12 : b1 + BD - 0.1;
+      if (kind === 'loggia') {
+        box(bufs.accent, e, q0, q1, y0, y0 + 1.0, BD - 0.16, BD, tag, 'VvY');
+        box(bufs.slab, e, q0, q1, y0 + 1.0, y0 + 1.06, BD - 0.2, BD + 0.03, tag, 'YVv');
+      } else {
+        box(bufs.rail, e, q0, q1, y0, y0 + RAIL_H, BD - 0.1, BD - 0.09, tag, 'V');
+        box(bufs.frame, e, q0, q1, y0 + RAIL_H, y0 + RAIL_H + 0.04, BD - 0.13, BD - 0.06, tag, 'YVvy');
+        box(bufs.frame, e, q0, q1, y0 - 0.02, y0 + 0.05, BD - 0.13, BD - 0.06, tag, 'V');
+      }
+      const fs = ca ? b1 : b0;   // privacy fin closing the balcony on the inner side
+      box(crown ? bufs.crown : bufs.slab, e, fs - 0.12, fs + 0.12, y0 - 0.3, y0 + LEVELS.typicalH - 0.3, 0, BD + 0.05, { b: code, u: -2, s: 0 }, 'uUV');
+    };
+    const gable = (e, s0, s1, c0, c1) => {
+      let cor = null;
+      for (const c of CORRIDORS) {
+        const pts = [[c.x0, c.z0], [c.x1, c.z0], [c.x1, c.z1], [c.x0, c.z1]];
+        const dv = Math.max(...pts.map(p => (p[0] - e.o[0]) * e.V[0] + (p[1] - e.o[1]) * e.V[1]));
+        if (dv < -0.8) continue;
+        const ss = pts.map(p => (p[0] - e.o[0]) * e.U[0] + (p[1] - e.o[1]) * e.U[1]);
+        const a = Math.max(s0, Math.min(...ss)), b = Math.min(s1, Math.max(...ss));
+        if (b - a > 0.5) cor = [a, b];
+      }
+      if (cor) {
+        corridorSlot(e, cor[0], cor[1]);
+        if (cor[0] - s0 > 0.3) gableBay(e, s0, cor[0], c0, false);
+        if (s1 - cor[1] > 0.3) gableBay(e, cor[1], s1, false, c1);
+      } else gableBay(e, s0, s1, c0, c1);
+    };
+
     // ---------------- gaps along each footprint edge: cores, end walls
     edges.forEach((e, i) => {
       const iv = cover[i].sort((p, q) => p[0] - q[0]);
@@ -481,7 +632,7 @@ function buildBuilding(bId, bufs) {
       for (const [s0, s1] of gaps) {
         const tag = { b: code, u: -1, s: 0 }, L = s1 - s0, mid = (s0 + s1) / 2;
         const baseMat = band === 0 ? bufs.stone : crown ? bufs.crown : bufs.accent;
-        if (band > 0) box(crown ? bufs.crown : bufs.wall, e, s0, s1, y0 - LEVELS.slab, y0, -0.25, 0.02, tag, 'V');
+        if (band > 0) box(bufs.slab, e, s0, s1, y0 - LEVELS.slab, y0, -0.25, 0.02, tag, 'V');
         // lobby entrance if a core entrance lies in this gap
         const entr = band === 0 && CORES.find(c => {
           const dx = c.entrance[0] - e.o[0], dz = c.entrance[1] - e.o[1];
@@ -499,7 +650,9 @@ function buildBuilding(bId, bufs) {
           box(bufs.crown, e, ss - 2.6, ss + 2.6, yTop + 0.2, yTop + 0.55, -0.05, 0.12, tag, 'VY');
           continue;
         }
-        if (L >= 5.5) {  // panel with a vertical glazed slot (stair / corridor end)
+        const c0 = s0 < 0.06 && conv[i], c1 = s1 > e.L - 0.06 && conv[(i + 1) % edges.length];
+        if (band > 0 && (c0 || c1)) { gable(e, s0, s1, c0, c1); continue; }
+        if (L >= 5.5) {  // panel with a vertical glazed slot (stair core)
           const g0 = mid - 0.75, g1 = mid + 0.75;
           box(baseMat, e, s0, g0, y0, yTop, -0.3, 0, tag, 'VU');
           box(baseMat, e, g1, s1, y0, yTop, -0.3, 0, tag, 'Vu');
@@ -528,7 +681,6 @@ function buildBuilding(bId, bufs) {
     g.dispose();
   }
   // corner i (between edge i-1 and edge i) is convex when the previous edge runs along this edge's outward normal
-  const conv = edges.map((b, i) => { const a = edges[(i + edges.length - 1) % edges.length]; return a.U[0] * b.V[0] + a.U[1] * b.V[1] > 0; });
   edges.forEach((e, i) => {
     const ext0 = conv[i] ? CORNICE : 0, ext1 = conv[(i + 1) % edges.length] ? CORNICE : 0;
     box(bufs.crown, e, -ext0, e.L + ext1, yR, yR + 0.42, 0, CORNICE, rt, 'YVuU');
@@ -536,12 +688,29 @@ function buildBuilding(bId, bufs) {
     box(bufs.led, e, -ext0, e.L + ext1, yR + 0.02, yR + 0.1, CORNICE, CORNICE + 0.01, rt, 'V');
     box(bufs.wall, e, 0, e.L, yR + 0.42, yR + 1.25, -0.25, 0.05, rt, 'VvY');
   });
-  // lift overruns / stair heads over each core, and the wing core
-  for (const c of CORES) box(bufs.accent, { o: [0, 0], U: [1, 0], V: [0, 1] }, c.x0 + 0.5, c.x1 - 0.5, ROOF_Y, ROOF_Y + 3.4, c.z0 + 0.5, c.z1 - 0.5, rt, 'uUvVY');
-  // plant screens on the wing
-  box(bufs.accent, { o: [0, 0], U: [1, 0], V: [0, 1] }, 70, 81, ROOF_Y, ROOF_Y + 2.2, -30, -20, rt, 'uUvVY');
-  // solar arrays (tilted towards the south)
   const I = { o: [0, 0], U: [1, 0], V: [0, 1] };
+  // lift overruns / stair heads over each core: graphite volume, louvre bands, white cap
+  for (const c of CORES) {
+    const x0 = c.x0 + 0.5, x1 = c.x1 - 0.5, z0 = c.z0 + 0.5, z1 = c.z1 - 0.5;
+    box(bufs.accent, I, x0, x1, ROOF_Y, ROOF_Y + 3.4, z0, z1, rt, 'uUvV');
+    box(bufs.slab, I, x0 - 0.15, x1 + 0.15, ROOF_Y + 3.4, ROOF_Y + 3.62, z0 - 0.15, z1 + 0.15, rt, 'uUvVYy');
+    for (let y = ROOF_Y + 1.6; y < ROOF_Y + 3.2; y += 0.22) box(bufs.frame, I, x0 + 0.6, x1 - 0.6, y, y + 0.07, z1, z1 + 0.08, rt, 'VY');
+  }
+  // plant enclosure on the wing: open vertical louvre screen around condensers
+  const screen = (x0, x1, z0, z1, h) => {
+    for (let x = x0; x <= x1 + 1e-3; x += 0.5) { box(bufs.hvac, I, x - 0.05, x + 0.05, ROOF_Y, ROOF_Y + h, z0 - 0.05, z0 + 0.05, rt, 'uUvVY'); box(bufs.hvac, I, x - 0.05, x + 0.05, ROOF_Y, ROOF_Y + h, z1 - 0.05, z1 + 0.05, rt, 'uUvVY'); }
+    for (let z = z0 + 0.5; z < z1; z += 0.5) { box(bufs.hvac, I, x0 - 0.05, x0 + 0.05, ROOF_Y, ROOF_Y + h, z - 0.05, z + 0.05, rt, 'uUvVY'); box(bufs.hvac, I, x1 - 0.05, x1 + 0.05, ROOF_Y, ROOF_Y + h, z - 0.05, z + 0.05, rt, 'uUvVY'); }
+    box(bufs.frame, I, x0 - 0.06, x1 + 0.06, ROOF_Y + h, ROOF_Y + h + 0.12, z0 - 0.06, z0 + 0.06, rt, 'uUvVY');
+    box(bufs.frame, I, x0 - 0.06, x1 + 0.06, ROOF_Y + h, ROOF_Y + h + 0.12, z1 - 0.06, z1 + 0.06, rt, 'uUvVY');
+  };
+  const condensers = (x0, x1, z0, z1) => {
+    for (let x = x0; x + 1.0 <= x1; x += 1.3) for (let z = z0; z + 0.9 <= z1; z += 1.5) {
+      box(bufs.hvac, I, x, x + 1.0, ROOF_Y + 0.15, ROOF_Y + 1.0, z, z + 0.9, rt, 'uUvVY');
+      box(bufs.frame, I, x + 0.15, x + 0.85, ROOF_Y + 1.0, ROOF_Y + 1.03, z + 0.1, z + 0.8, rt, 'Y');
+    }
+  };
+  screen(70, 81, -30, -20, 2.2); condensers(71, 80, -29.4, -20.6);
+  // solar arrays (tilted towards the south)
   const solarRow = (x0, x1, z) => {
     const yl = ROOF_Y + 0.35, yh = ROOF_Y + 0.75;
     bufs.solar.quad([[x0, yl, z], [x1, yl, z], [x1, yh, z - 1.6], [x0, yh, z - 1.6]], [0, 0.97, 0.24], [[0, 0], [x1 - x0, 0], [x1 - x0, 1.6], [0, 1.6]], rt);
@@ -553,5 +722,10 @@ function buildBuilding(bId, bufs) {
   }
   for (let z = -11; z > -36; z -= 2.6) { if (z < -18 && z > -33) continue; solarRow(69.5, 81.5, z); }
   // hvac boxes
-  for (const [x, z] of [[12, 4.5], [30, -3.5], [57, 4.5], [78, 3.5]]) box(bufs.accent, I, x, x + 2.2, ROOF_Y, ROOF_Y + 1.4, z - 1.2, z + 1.2, rt, 'uUvVY');
+  for (const [x, z] of [[12, 4.5], [30, -3.5], [57, 4.5], [78, 3.5]]) {
+    box(bufs.hvac, I, x, x + 2.4, ROOF_Y, ROOF_Y + 1.5, z - 1.2, z + 1.2, rt, 'uUvVY');                  // air-handling unit
+    box(bufs.frame, I, x + 0.3, x + 2.1, ROOF_Y + 1.5, ROOF_Y + 1.62, z - 0.9, z + 0.9, rt, 'uUvVY');
+  }
+  // small condensers beside each core
+  for (const c of CORES) condensers(c.x0 + 0.6, c.x1 - 0.6, c.z1 + 0.4, c.z1 + 2.0);
 }

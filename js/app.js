@@ -521,7 +521,7 @@ async function loadGallery() {
   } catch (e) { list = []; }
   const base = url.slice(0, url.lastIndexOf('/') + 1);
   G.items = (Array.isArray(list) ? list : []).filter(it => it && safeSrc(it.src) && GAL_TYPES.includes(it.type))
-    .map(it => ({ ...it, url: it.src.startsWith('assets/') ? it.src : base + it.src.replace(/^\.\//, '') }));
+    .map(it => ({ ...it, url: (it.src.startsWith('assets/') || it.src.startsWith('ai/')) ? it.src : base + it.src.replace(/^\.\//, '') }));
   renderGallery();
   if (dlgU().open) renderUnitGallery();
 }
@@ -639,7 +639,7 @@ function markLang() {
   $('#langBtn').innerHTML = `${L.flagSvg}<span class="lang-code">${L.short}</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>`;
   $('#langBtn').setAttribute('aria-label', `${t('lang.menu')}: ${L.name}`);
   $('#langMenu').setAttribute('aria-label', t('lang.menu'));
-  $('#langMenu').innerHTML = LANGS.map(l => `<li role="option" id="lo-${l.code}" tabindex="-1" data-lang="${l.code}" lang="${l.code}" dir="${l.dir}" aria-selected="${l.code === lang}">${l.flagSvg}<span>${l.name}</span>${l.code === lang ? '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : ''}</li>`).join('');
+  $('#langMenu').innerHTML = LANGS.map(l => `<li role="option" id="lo-${l.code}" tabindex="-1" data-lang="${l.code}" lang="${l.code}" dir="ltr" aria-selected="${l.code === lang}">${l.flagSvg}<span dir="${l.dir}">${l.name}</span><span class="lang-code-sm">${l.code.toUpperCase()}</span>${l.code === lang ? '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : ''}</li>`).join('');
 }
 function bindLangMenu() {
   const btn = $('#langBtn'), menu = $('#langMenu');

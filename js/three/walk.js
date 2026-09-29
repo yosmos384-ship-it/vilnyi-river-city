@@ -277,7 +277,7 @@ const CSS = `
 .vw-ucard .u2 b{color:var(--g2);font-weight:600}
 .vw-ucard .vw-btn{height:32px;font-size:10.5px;flex-shrink:0}
 .vw.phone .vw-ucard{top:calc(52px + var(--st))}
-.vw.phone.dim .vw-ucard{opacity:.7}
+.vw.phone.dim .vw-ucard.show{opacity:.8}
 .vw-ucard.show~.vw-toast{top:calc(122px + var(--st))}
 @media (min-width:600px){.vw.phone .vw-lift .grid{grid-template-columns:repeat(12,38px)}.vw.phone .vw-lift .grid button{width:38px;height:38px}}
 /* auto-fade: the HUD steps back while you look/walk or after a few idle seconds; any tap brings it back */
@@ -1411,7 +1411,22 @@ export class Walkthrough {
   _floorFromY(y) { let best = 0, bd = Infinity; for (let f = -1; f <= TOP_FLOOR; f++) { const d = Math.abs(floorY(f) - y); if (d < bd) { bd = d; best = f; } } return best; }
 
   // ======================= glide =======================
-  _glideTo(x, z) { this.glide = { x, z, t: 0, stuck: 0 }; }
+  // Glide target; a closed apartment door on the way shortens it to a comfortable spot ~0.7 m in front of the leaf.
+  _glideTo(x, z) {
+    const P = this.player.pos, dx = x - P.x, dz = z - P.z, L = Math.hypot(dx, dz);
+    let door = false;
+    if (L > 0.3) {
+      const dir = new THREE.Vector3(dx / L, 0, dz / L), o = new THREE.Vector3(P.x, P.y + 1.0, P.z);
+      const hit = this._cast(this._near(this.solids, P, L + 1), o, dir, L + 0.35)[0];
+      for (let n = hit && hit.object; n; n = n.parent) { const ud = n.userData || {}; if (ud.doorLeaf || (ud.action && ud.action.type === 'aptDoor')) { door = !ud._open && !ud._anim; break; } }
+      if (door) {
+        const d = Math.max(0, hit.distance - 0.7);
+        if (d < 0.15) { this.glide = null; this._doorHint(true); return; }
+        x = P.x + dir.x * d; z = P.z + dir.z * d;
+      }
+    }
+    this.glide = { x, z, t: 0, stuck: 0, door };
+  }
   _glideTap(clientX, clientY) {
     if (this.mode === '360' || this.riding) return;
     const hit = this._pickAt(clientX, clientY, true);
@@ -1462,7 +1477,7 @@ export class Walkthrough {
       } else if (this.glide) {
         const g = this.glide, dx = g.x - P.pos.x, dz = g.z - P.pos.z, L = Math.hypot(dx, dz);
         g.t += dt;
-        if (L < 0.12 || g.t > 12) this.glide = null;
+        if (L < 0.12 || g.t > 12) { this.glide = null; if (g.door) this._doorHint(true); }
         else want.set(dx / L, 0, dz / L).multiplyScalar(Math.min(1.9, L * 1.8 + 0.25) * Math.min(1, 0.35 + g.t * 2.2));
       }
       P.vel.lerp(want, damp(want.lengthSq() ? 7 : 10, dt));
@@ -1521,8 +1536,9 @@ export class Walkthrough {
     }
   }
   // Blocked by a closed apartment door → tell the user to tap it (throttled).
-  _doorHint() {
+  _doorHint(known = false) {
     const now = performance.now(); if (now - (this._doorHintT || 0) < 5000) return;
+    if (known) { this._doorHintT = now; this._toast(this.t('walk.tapDoor'), 2400); return; }
     const P = this.player, dir = new THREE.Vector3(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
     const o = new THREE.Vector3(P.pos.x, P.pos.y + 1.0, P.pos.z);
     const hit = this._cast(this._near(this.solids, P.pos, 1.6), o, dir, 1.1)[0];
