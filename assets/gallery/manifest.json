@@ -1,16 +1,522 @@
 [
  {
+  "src": "ai/ext-day-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "The complex from above on a spring morning",
+   "ro": "Ansamblul văzut de sus, într-o dimineață de primăvară",
+   "he": "המתחם ממעוף הציפור בבוקר אביבי",
+   "ru": "Комплекс с высоты весенним утром",
+   "uk": "Комплекс з висоти весняного ранку",
+   "fr": "La résidence vue du ciel un matin de printemps",
+   "it": "Il complesso dall’alto in una mattina di primavera",
+   "de": "Das Ensemble aus der Luft an einem Frühlingsmorgen"
+  }
+ },
+ {
+  "src": "ai/ext-golden-aerial-lake.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Golden hour over Lacul Morii and the complex",
+   "ro": "Ora de aur deasupra Lacului Morii și a ansamblului",
+   "he": "שעת הזהב מעל אגם מוריי והמתחם",
+   "ru": "Золотой час над озером Мории и комплексом",
+   "uk": "Золота година над озером Морії та комплексом",
+   "fr": "Heure dorée sur le lac Morii et la résidence",
+   "it": "Ora d’oro sul lago Morii e sul complesso",
+   "de": "Goldene Stunde über dem Morii-See und dem Ensemble"
+  }
+ },
+ {
   "src": "ai/exterior-dusk-aerial.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Photorealistic visualisation — dusk over the complex",
-   "ro": "Vizualizare fotorealistă — amurg deasupra ansamblului",
-   "he": "הדמיה פוטוריאליסטית — שקיעה מעל המתחם",
-   "ru": "Фотореалистичная визуализация — закат над комплексом",
-   "uk": "Фотореалістична візуалізація — захід над комплексом",
-   "fr": "Visualisation photoréaliste — crépuscule sur la résidence",
-   "it": "Visualizzazione fotorealistica — tramonto sul complesso",
-   "de": "Fotorealistische Visualisierung — Abenddämmerung"
+   "en": "Dusk over the residences and the lake",
+   "ro": "Amurg deasupra clădirilor și a lacului",
+   "he": "דמדומים מעל הבניינים והאגם",
+   "ru": "Сумерки над домами и озером",
+   "uk": "Сутінки над будинками та озером",
+   "fr": "Crépuscule sur les résidences et le lac",
+   "it": "Crepuscolo sulle residenze e sul lago",
+   "de": "Abenddämmerung über den Häusern und dem See"
+  }
+ },
+ {
+  "src": "ai/ext-courtyard-eye.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Landscaped inner courtyard",
+   "ro": "Curte interioară amenajată peisagistic",
+   "he": "חצר פנימית מגוננת",
+   "ru": "Озеленённый внутренний двор",
+   "uk": "Озеленений внутрішній двір",
+   "fr": "Cour intérieure paysagère",
+   "it": "Corte interna con giardino",
+   "de": "Begrünter Innenhof"
+  }
+ },
+ {
+  "src": "ai/exterior-day-courtyard.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Courtyard gardens on a sunny day",
+   "ro": "Grădinile curții într-o zi însorită",
+   "he": "גני החצר ביום שמשי",
+   "ru": "Сады во дворе в солнечный день",
+   "uk": "Сади у дворі сонячного дня",
+   "fr": "Jardins de la cour par une journée ensoleillée",
+   "it": "Giardini della corte in una giornata di sole",
+   "de": "Hofgärten an einem sonnigen Tag"
+  }
+ },
+ {
+  "src": "ai/ext-entrance-night.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Building entrance at blue hour",
+   "ro": "Intrarea în clădire la ora albastră",
+   "he": "כניסה לבניין בשעה הכחולה",
+   "ru": "Вход в дом в синий час",
+   "uk": "Вхід до будинку в синю годину",
+   "fr": "Entrée de l’immeuble à l’heure bleue",
+   "it": "Ingresso dell’edificio all’ora blu",
+   "de": "Hauseingang zur blauen Stunde"
+  }
+ },
+ {
+  "src": "ai/exterior-street-night.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Evening arrival from the street",
+   "ro": "Sosire seara dinspre stradă",
+   "he": "הגעה בערב מהרחוב",
+   "ru": "Вечерний вид с улицы",
+   "uk": "Вечірній вигляд з вулиці",
+   "fr": "Arrivée en soirée depuis la rue",
+   "it": "Arrivo serale dalla strada",
+   "de": "Abendliche Ankunft von der Straße"
+  }
+ },
+ {
+  "src": "ai/ext-lake-promenade.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Lacul Morii promenade, a short walk away",
+   "ro": "Promenada Lacului Morii, la câțiva pași",
+   "he": "טיילת אגם מוריי, במרחק הליכה קצר",
+   "ru": "Набережная озера Мории в нескольких минутах ходьбы",
+   "uk": "Набережна озера Морії за кілька хвилин пішки",
+   "fr": "La promenade du lac Morii, à quelques pas",
+   "it": "La passeggiata del lago Morii, a pochi passi",
+   "de": "Die Promenade am Morii-See, nur ein paar Schritte entfernt"
+  }
+ },
+ {
+  "src": "ai/penthouse-rooftop-sunset.jpg",
+  "type": "exterior",
+  "unitType": "D4",
+  "caption": {
+   "en": "Penthouse rooftop terrace at sunset, lake view",
+   "ro": "Terasa penthouse-ului la apus, cu vedere la lac",
+   "he": "מרפסת הגג של הפנטהאוז בשקיעה, נוף לאגם",
+   "ru": "Терраса пентхауса на закате с видом на озеро",
+   "uk": "Тераса пентхауса на заході сонця з видом на озеро",
+   "fr": "Toit-terrasse du penthouse au coucher du soleil, vue sur le lac",
+   "it": "Terrazza dell’attico al tramonto, vista lago",
+   "de": "Dachterrasse des Penthouse bei Sonnenuntergang mit Seeblick"
+  }
+ },
+ {
+  "src": "ai/penthouse-terrace.jpg",
+  "type": "exterior",
+  "unitType": "D4",
+  "caption": {
+   "en": "Penthouse terrace in the evening",
+   "ro": "Terasa penthouse-ului seara",
+   "he": "מרפסת הפנטהאוז בערב",
+   "ru": "Терраса пентхауса вечером",
+   "uk": "Тераса пентхауса ввечері",
+   "fr": "Terrasse du penthouse le soir",
+   "it": "Terrazza dell’attico la sera",
+   "de": "Penthouse-Terrasse am Abend"
+  }
+ },
+ {
+  "src": "ai/balcony-lake-sunset.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Balcony view of the lake at sunset",
+   "ro": "Vedere spre lac din balcon, la apus",
+   "he": "נוף לאגם מהמרפסת בשקיעה",
+   "ru": "Вид на озеро с балкона на закате",
+   "uk": "Вид на озеро з балкона на заході сонця",
+   "fr": "Vue sur le lac depuis le balcon au coucher du soleil",
+   "it": "Vista lago dal balcone al tramonto",
+   "de": "Blick vom Balkon auf den See bei Sonnenuntergang"
+  }
+ },
+ {
+  "src": "ai/duplex-milano.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "D4",
+  "caption": {
+   "en": "Milano · Duplex penthouse · double-height living",
+   "ro": "Milano · Penthouse duplex · living dublă înălțime",
+   "he": "Milano · פנטהאוז דופלקס · סלון בגובה כפול",
+   "ru": "Milano · Пентхаус-дуплекс · гостиная двойной высоты",
+   "uk": "Milano · Пентхаус-дуплекс · вітальня подвійної висоти",
+   "fr": "Milano · Penthouse duplex · séjour double hauteur",
+   "it": "Milano · Attico duplex · soggiorno a doppia altezza",
+   "de": "Milano · Duplex-Penthouse · Wohnraum mit doppelter Höhe"
+  }
+ },
+ {
+  "src": "ai/duplex-nordic.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "D4",
+  "caption": {
+   "en": "Nordic · Duplex penthouse · double-height living",
+   "ro": "Nordic · Penthouse duplex · living dublă înălțime",
+   "he": "Nordic · פנטהאוז דופלקס · סלון בגובה כפול",
+   "ru": "Nordic · Пентхаус-дуплекс · гостиная двойной высоты",
+   "uk": "Nordic · Пентхаус-дуплекс · вітальня подвійної висоти",
+   "fr": "Nordic · Penthouse duplex · séjour double hauteur",
+   "it": "Nordic · Attico duplex · soggiorno a doppia altezza",
+   "de": "Nordic · Duplex-Penthouse · Wohnraum mit doppelter Höhe"
+  }
+ },
+ {
+  "src": "ai/duplex-riviera.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "D4",
+  "caption": {
+   "en": "Riviera · Duplex penthouse · double-height living",
+   "ro": "Riviera · Penthouse duplex · living dublă înălțime",
+   "he": "Riviera · פנטהאוז דופלקס · סלון בגובה כפול",
+   "ru": "Riviera · Пентхаус-дуплекс · гостиная двойной высоты",
+   "uk": "Riviera · Пентхаус-дуплекс · вітальня подвійної висоти",
+   "fr": "Riviera · Penthouse duplex · séjour double hauteur",
+   "it": "Riviera · Attico duplex · soggiorno a doppia altezza",
+   "de": "Riviera · Duplex-Penthouse · Wohnraum mit doppelter Höhe"
+  }
+ },
+ {
+  "src": "ai/family-milano.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "3A",
+  "caption": {
+   "en": "Milano · 3-room apartment · living & dining",
+   "ro": "Milano · Apartament 3 camere · living și dining",
+   "he": "Milano · דירת 3 חדרים · סלון ופינת אוכל",
+   "ru": "Milano · 3-комнатная квартира · гостиная-столовая",
+   "uk": "Milano · 3-кімнатна квартира · вітальня-їдальня",
+   "fr": "Milano · 3 pièces · séjour et salle à manger",
+   "it": "Milano · Trilocale · soggiorno e pranzo",
+   "de": "Milano · 3-Zimmer-Wohnung · Wohn- und Essbereich"
+  }
+ },
+ {
+  "src": "ai/family-nordic.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "3A",
+  "caption": {
+   "en": "Nordic · 3-room apartment · living & dining",
+   "ro": "Nordic · Apartament 3 camere · living și dining",
+   "he": "Nordic · דירת 3 חדרים · סלון ופינת אוכל",
+   "ru": "Nordic · 3-комнатная квартира · гостиная-столовая",
+   "uk": "Nordic · 3-кімнатна квартира · вітальня-їдальня",
+   "fr": "Nordic · 3 pièces · séjour et salle à manger",
+   "it": "Nordic · Trilocale · soggiorno e pranzo",
+   "de": "Nordic · 3-Zimmer-Wohnung · Wohn- und Essbereich"
+  }
+ },
+ {
+  "src": "ai/family-riviera.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "3A",
+  "caption": {
+   "en": "Riviera · 3-room apartment · living & dining",
+   "ro": "Riviera · Apartament 3 camere · living și dining",
+   "he": "Riviera · דירת 3 חדרים · סלון ופינת אוכל",
+   "ru": "Riviera · 3-комнатная квартира · гостиная-столовая",
+   "uk": "Riviera · 3-кімнатна квартира · вітальня-їдальня",
+   "fr": "Riviera · 3 pièces · séjour et salle à manger",
+   "it": "Riviera · Trilocale · soggiorno e pranzo",
+   "de": "Riviera · 3-Zimmer-Wohnung · Wohn- und Essbereich"
+  }
+ },
+ {
+  "src": "ai/studio-milano.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "S1",
+  "caption": {
+   "en": "Milano · Studio · open living",
+   "ro": "Milano · Garsonieră · living deschis",
+   "he": "Milano · סטודיו · סלון פתוח",
+   "ru": "Milano · Студия · открытая гостиная",
+   "uk": "Milano · Студія · відкрита вітальня",
+   "fr": "Milano · Studio · séjour ouvert",
+   "it": "Milano · Monolocale · soggiorno open space",
+   "de": "Milano · Studio · offener Wohnbereich"
+  }
+ },
+ {
+  "src": "ai/studio-nordic.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "S1",
+  "caption": {
+   "en": "Nordic · Studio · open living",
+   "ro": "Nordic · Garsonieră · living deschis",
+   "he": "Nordic · סטודיו · סלון פתוח",
+   "ru": "Nordic · Студия · открытая гостиная",
+   "uk": "Nordic · Студія · відкрита вітальня",
+   "fr": "Nordic · Studio · séjour ouvert",
+   "it": "Nordic · Monolocale · soggiorno open space",
+   "de": "Nordic · Studio · offener Wohnbereich"
+  }
+ },
+ {
+  "src": "ai/studio-riviera.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "S1",
+  "caption": {
+   "en": "Riviera · Studio · open living",
+   "ro": "Riviera · Garsonieră · living deschis",
+   "he": "Riviera · סטודיו · סלון פתוח",
+   "ru": "Riviera · Студия · открытая гостиная",
+   "uk": "Riviera · Студія · відкрита вітальня",
+   "fr": "Riviera · Studio · séjour ouvert",
+   "it": "Riviera · Monolocale · soggiorno open space",
+   "de": "Riviera · Studio · offener Wohnbereich"
+  }
+ },
+ {
+  "src": "ai/milano-living.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Living room",
+   "ro": "Milano · Living",
+   "he": "Milano · סלון",
+   "ru": "Milano · Гостиная",
+   "uk": "Milano · Вітальня",
+   "fr": "Milano · Séjour",
+   "it": "Milano · Soggiorno",
+   "de": "Milano · Wohnzimmer"
+  }
+ },
+ {
+  "src": "ai/milano-kitchen.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Kitchen & dining",
+   "ro": "Milano · Bucătărie și dining",
+   "he": "Milano · מטבח ופינת אוכל",
+   "ru": "Milano · Кухня и столовая",
+   "uk": "Milano · Кухня та їдальня",
+   "fr": "Milano · Cuisine et salle à manger",
+   "it": "Milano · Cucina e zona pranzo",
+   "de": "Milano · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "ai/milano-bedroom.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Bedroom",
+   "ro": "Milano · Dormitor",
+   "he": "Milano · חדר שינה",
+   "ru": "Milano · Спальня",
+   "uk": "Milano · Спальня",
+   "fr": "Milano · Chambre",
+   "it": "Milano · Camera da letto",
+   "de": "Milano · Schlafzimmer"
+  }
+ },
+ {
+  "src": "ai/milano-bath.jpg",
+  "type": "interior",
+  "style": "milano",
+  "unitType": "2A",
+  "caption": {
+   "en": "Milano · Bathroom",
+   "ro": "Milano · Baie",
+   "he": "Milano · חדר רחצה",
+   "ru": "Milano · Ванная",
+   "uk": "Milano · Ванна кімната",
+   "fr": "Milano · Salle de bains",
+   "it": "Milano · Bagno",
+   "de": "Milano · Badezimmer"
+  }
+ },
+ {
+  "src": "ai/nordic-living.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Living room",
+   "ro": "Nordic · Living",
+   "he": "Nordic · סלון",
+   "ru": "Nordic · Гостиная",
+   "uk": "Nordic · Вітальня",
+   "fr": "Nordic · Séjour",
+   "it": "Nordic · Soggiorno",
+   "de": "Nordic · Wohnzimmer"
+  }
+ },
+ {
+  "src": "ai/nordic-kitchen.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Kitchen & dining",
+   "ro": "Nordic · Bucătărie și dining",
+   "he": "Nordic · מטבח ופינת אוכל",
+   "ru": "Nordic · Кухня и столовая",
+   "uk": "Nordic · Кухня та їдальня",
+   "fr": "Nordic · Cuisine et salle à manger",
+   "it": "Nordic · Cucina e zona pranzo",
+   "de": "Nordic · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "ai/nordic-bedroom.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Bedroom",
+   "ro": "Nordic · Dormitor",
+   "he": "Nordic · חדר שינה",
+   "ru": "Nordic · Спальня",
+   "uk": "Nordic · Спальня",
+   "fr": "Nordic · Chambre",
+   "it": "Nordic · Camera da letto",
+   "de": "Nordic · Schlafzimmer"
+  }
+ },
+ {
+  "src": "ai/nordic-bath.jpg",
+  "type": "interior",
+  "style": "nordic",
+  "unitType": "2A",
+  "caption": {
+   "en": "Nordic · Bathroom",
+   "ro": "Nordic · Baie",
+   "he": "Nordic · חדר רחצה",
+   "ru": "Nordic · Ванная",
+   "uk": "Nordic · Ванна кімната",
+   "fr": "Nordic · Salle de bains",
+   "it": "Nordic · Bagno",
+   "de": "Nordic · Badezimmer"
+  }
+ },
+ {
+  "src": "ai/riviera-living.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Living room",
+   "ro": "Riviera · Living",
+   "he": "Riviera · סלון",
+   "ru": "Riviera · Гостиная",
+   "uk": "Riviera · Вітальня",
+   "fr": "Riviera · Séjour",
+   "it": "Riviera · Soggiorno",
+   "de": "Riviera · Wohnzimmer"
+  }
+ },
+ {
+  "src": "ai/riviera-kitchen.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Kitchen & dining",
+   "ro": "Riviera · Bucătărie și dining",
+   "he": "Riviera · מטבח ופינת אוכל",
+   "ru": "Riviera · Кухня и столовая",
+   "uk": "Riviera · Кухня та їдальня",
+   "fr": "Riviera · Cuisine et salle à manger",
+   "it": "Riviera · Cucina e zona pranzo",
+   "de": "Riviera · Küche & Essbereich"
+  }
+ },
+ {
+  "src": "ai/riviera-bedroom.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Bedroom",
+   "ro": "Riviera · Dormitor",
+   "he": "Riviera · חדר שינה",
+   "ru": "Riviera · Спальня",
+   "uk": "Riviera · Спальня",
+   "fr": "Riviera · Chambre",
+   "it": "Riviera · Camera da letto",
+   "de": "Riviera · Schlafzimmer"
+  }
+ },
+ {
+  "src": "ai/riviera-bath.jpg",
+  "type": "interior",
+  "style": "riviera",
+  "unitType": "2A",
+  "caption": {
+   "en": "Riviera · Bathroom",
+   "ro": "Riviera · Baie",
+   "he": "Riviera · חדר רחצה",
+   "ru": "Riviera · Ванная",
+   "uk": "Riviera · Ванна кімната",
+   "fr": "Riviera · Salle de bains",
+   "it": "Riviera · Bagno",
+   "de": "Riviera · Badezimmer"
+  }
+ },
+ {
+  "src": "ai/lobby.jpg",
+  "type": "lobby",
+  "caption": {
+   "en": "Entrance lobby",
+   "ro": "Holul de intrare",
+   "he": "לובי הכניסה",
+   "ru": "Входное лобби",
+   "uk": "Вхідне лобі",
+   "fr": "Hall d’entrée",
+   "it": "Hall d’ingresso",
+   "de": "Eingangslobby"
+  }
+ },
+ {
+  "src": "ai/amenity-courtyard-garden.jpg",
+  "type": "amenity",
+  "caption": {
+   "en": "Residents’ garden lounge in the courtyard",
+   "ro": "Lounge-ul grădinii rezidenților din curte",
+   "he": "טרקלין גינה לדיירים בחצר",
+   "ru": "Садовая лаунж-зона для жителей во дворе",
+   "uk": "Садова лаунж-зона для мешканців у дворі",
+   "fr": "Salon de jardin des résidents dans la cour",
+   "it": "Lounge in giardino per i residenti nella corte",
+   "de": "Garten-Lounge für Bewohner im Innenhof"
   }
  },
  {
