@@ -12,9 +12,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Frank+Ruhl+Libre:wght@300;400;500&family=Heebo:wght@300;400;500;600&family=Manrope:wght@300;400;500;600&display=swap">
 <link rel="stylesheet" href="css/site.css">
+<link rel="stylesheet" href="css/panorama.css">
 <link rel="preload" as="image" href="assets/hero-night.jpg">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/addons/"}}</script>
 <script type="module" src="js/app.js"></script>
+<script type="module" src="js/panorama.js"></script>
 </head>
 <body>
 <a class="skip" href="#main" data-i18n="skip">דלגו לתוכן</a>
@@ -105,6 +107,18 @@
       </div>
       <div class="gal-grid" id="galGrid"></div>
       <p class="fine gal-note" data-i18n="gal.note"></p>
+    </div>
+  </section>
+
+  <!-- 360° AROUND THE PROJECT (js/panorama.js + css/panorama.css; strings in js/i18n-panorama.js) -->
+  <section class="around section" id="around" aria-labelledby="around-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow" data-pp="eyebrow"></p>
+        <h2 id="around-h" class="h2" data-pp="title"></h2>
+        <p class="lead" data-pp="lead"></p>
+      </div>
+      <div class="pano-app" id="panoApp"></div>
     </div>
   </section>
 

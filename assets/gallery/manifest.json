@@ -1,100 +1,170 @@
 [
  {
-  "src": "ai/ext-day-aerial.jpg",
+  "src": "ai/real-aerial-bluehour.jpg",
   "type": "exterior",
   "caption": {
-   "en": "The complex from above on a spring morning",
-   "ro": "Ansamblul văzut de sus, într-o dimineață de primăvară",
-   "he": "המתחם ממעוף הציפור בבוקר אביבי",
-   "ru": "Комплекс с высоты весенним утром",
-   "uk": "Комплекс з висоти весняного ранку",
-   "fr": "La résidence vue du ciel un matin de printemps",
-   "it": "Il complesso dall’alto in una mattina di primavera",
-   "de": "Das Ensemble aus der Luft an einem Frühlingsmorgen"
+   "en": "VILNYI RIVER CITY at blue hour — blocks C3 & C4 in the centre",
+   "ro": "VILNYI RIVER CITY la ora albastră — blocurile C3 și C4 în centru",
+   "he": "VILNYI RIVER CITY בשעה הכחולה — בניינים C3 ו-C4 במרכז",
+   "ru": "VILNYI RIVER CITY в синий час — корпуса C3 и C4 в центре",
+   "uk": "VILNYI RIVER CITY у синю годину — корпуси C3 і C4 у центрі",
+   "fr": "VILNYI RIVER CITY à l’heure bleue — blocs C3 et C4 au centre",
+   "it": "VILNYI RIVER CITY all’ora blu — edifici C3 e C4 al centro",
+   "de": "VILNYI RIVER CITY zur blauen Stunde — Blöcke C3 und C4 in der Mitte"
   }
  },
  {
-  "src": "ai/ext-golden-aerial-lake.jpg",
+  "src": "ai/real-aerial-day.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Golden hour over Lacul Morii and the complex",
-   "ro": "Ora de aur deasupra Lacului Morii și a ansamblului",
-   "he": "שעת הזהב מעל אגם מוריי והמתחם",
-   "ru": "Золотой час над озером Мории и комплексом",
-   "uk": "Золота година над озером Морії та комплексом",
-   "fr": "Heure dorée sur le lac Morii et la résidence",
-   "it": "Ora d’oro sul lago Morii e sul complesso",
-   "de": "Goldene Stunde über dem Morii-See und dem Ensemble"
+   "en": "The whole ensemble by day: C3 & C4 between Phase I and Phase III",
+   "ro": "Întregul ansamblu ziua: C3 și C4 între Faza I și Faza III",
+   "he": "המתחם כולו ביום: C3 ו-C4 בין שלב א׳ לשלב ג׳",
+   "ru": "Весь комплекс днём: C3 и C4 между I и III очередями",
+   "uk": "Увесь комплекс удень: C3 і C4 між I та III чергами",
+   "fr": "L’ensemble de jour : C3 et C4 entre la Phase I et la Phase III",
+   "it": "L’intero complesso di giorno: C3 e C4 tra la Fase I e la Fase III",
+   "de": "Das gesamte Ensemble bei Tag: C3 und C4 zwischen Phase I und Phase III"
   }
  },
  {
-  "src": "ai/exterior-dusk-aerial.jpg",
+  "src": "ai/real-aerial-golden.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Dusk over the residences and the lake",
-   "ro": "Amurg deasupra clădirilor și a lacului",
-   "he": "דמדומים מעל הבניינים והאגם",
-   "ru": "Сумерки над домами и озером",
-   "uk": "Сутінки над будинками та озером",
-   "fr": "Crépuscule sur les résidences et le lac",
-   "it": "Crepuscolo sulle residenze e sul lago",
-   "de": "Abenddämmerung über den Häusern und dem See"
+   "en": "Golden hour over the complex and the surrounding garden suburb",
+   "ro": "Ora de aur deasupra ansamblului și a cartierului de case",
+   "he": "שעת זהב מעל המתחם ושכונת הבתים שסביבו",
+   "ru": "Золотой час над комплексом и окружающим посёлком",
+   "uk": "Золота година над комплексом і довколишнім житловим районом",
+   "fr": "L’heure dorée sur la résidence et le quartier pavillonnaire",
+   "it": "L’ora d’oro sul complesso e sul quartiere di villette",
+   "de": "Goldene Stunde über dem Ensemble und der Gartenvorstadt"
   }
  },
  {
-  "src": "ai/ext-courtyard-eye.jpg",
+  "src": "ai/real-lake-foreground.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Landscaped inner courtyard",
-   "ro": "Curte interioară amenajată peisagistic",
-   "he": "חצר פנימית מגוננת",
-   "ru": "Озеленённый внутренний двор",
-   "uk": "Озеленений внутрішній двір",
-   "fr": "Cour intérieure paysagère",
-   "it": "Corte interna con giardino",
-   "de": "Begrünter Innenhof"
+   "en": "Lacul Morii lies just south of the complex",
+   "ro": "Lacul Morii se află chiar la sud de ansamblu",
+   "he": "אגם מוריי נמצא ממש מדרום למתחם",
+   "ru": "Озеро Морий — прямо к югу от комплекса",
+   "uk": "Озеро Морій — одразу на південь від комплексу",
+   "fr": "Le lac Morii s’étend juste au sud de la résidence",
+   "it": "Il lago Morii si trova subito a sud del complesso",
+   "de": "Der Morii-See liegt direkt südlich des Ensembles"
   }
  },
  {
-  "src": "ai/exterior-day-courtyard.jpg",
+  "src": "ai/real-aerial-close.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Courtyard gardens on a sunny day",
-   "ro": "Grădinile curții într-o zi însorită",
-   "he": "גני החצר ביום שמשי",
-   "ru": "Сады во дворе в солнечный день",
-   "uk": "Сади у дворі сонячного дня",
-   "fr": "Jardins de la cour par une journée ensoleillée",
-   "it": "Giardini della corte in una giornata di sole",
-   "de": "Hofgärten an einem sonnigen Tag"
+   "en": "Blocks C3 & C4 with the open-air car park and spiral ramp",
+   "ro": "Blocurile C3 și C4 cu parcarea în aer liber și rampa în spirală",
+   "he": "בניינים C3 ו-C4 עם החניה הפתוחה והרמפה הספירלית",
+   "ru": "Корпуса C3 и C4 с открытой парковкой и спиральным пандусом",
+   "uk": "Корпуси C3 і C4 з відкритою парковкою та спіральним пандусом",
+   "fr": "Blocs C3 et C4 avec le parking à ciel ouvert et la rampe en spirale",
+   "it": "Edifici C3 e C4 con il parcheggio all’aperto e la rampa a spirale",
+   "de": "Blöcke C3 und C4 mit offenem Parkplatz und Spiralrampe"
   }
  },
  {
-  "src": "ai/ext-entrance-night.jpg",
+  "src": "ai/real-street-eye.jpg",
   "type": "exterior",
   "caption": {
-   "en": "Building entrance at blue hour",
-   "ro": "Intrarea în clădire la ora albastră",
-   "he": "כניסה לבניין בשעה הכחולה",
-   "ru": "Вход в дом в синий час",
-   "uk": "Вхід до будинку в синю годину",
-   "fr": "Entrée de l’immeuble à l’heure bleue",
-   "it": "Ingresso dell’edificio all’ora blu",
-   "de": "Hauseingang zur blauen Stunde"
+   "en": "Arriving from the quiet neighbouring streets",
+   "ro": "Sosire pe străzile liniștite din vecinătate",
+   "he": "הגעה מהרחובות השקטים הסמוכים",
+   "ru": "Подъезд по тихим соседним улицам",
+   "uk": "Під’їзд тихими сусідніми вулицями",
+   "fr": "Arrivée par les rues calmes du voisinage",
+   "it": "Arrivo dalle tranquille strade vicine",
+   "de": "Anfahrt über ruhige Nachbarstraßen"
   }
  },
  {
-  "src": "ai/exterior-street-night.jpg",
+  "src": "ai/real-courtyard.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Landscaped courtyard between the wings of C3 & C4",
+   "ro": "Curte amenajată între aripile blocurilor C3 și C4",
+   "he": "חצר מגוננת בין אגפי C3 ו-C4",
+   "ru": "Благоустроенный двор между крыльями C3 и C4",
+   "uk": "Упорядкований двір між крилами C3 і C4",
+   "fr": "Cour paysagée entre les ailes de C3 et C4",
+   "it": "Corte paesaggistica tra le ali di C3 e C4",
+   "de": "Begrünter Innenhof zwischen den Flügeln von C3 und C4"
+  }
+ },
+ {
+  "src": "ai/real-street-murelor.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "C3 & C4 rising above the neighbourhood rooftops",
+   "ro": "C3 și C4 se ridică deasupra acoperișurilor cartierului",
+   "he": "C3 ו-C4 מתנשאים מעל גגות השכונה",
+   "ru": "C3 и C4 над крышами района",
+   "uk": "C3 і C4 над дахами району",
+   "fr": "C3 et C4 dominant les toits du quartier",
+   "it": "C3 e C4 svettano sui tetti del quartiere",
+   "de": "C3 und C4 über den Dächern des Viertels"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-day-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Blocks C3 & C4 by day",
+   "ro": "Blocurile C3 și C4 ziua",
+   "he": "בניינים C3 ו‑C4 באור יום",
+   "ru": "Корпуса C3 и C4 днём",
+   "uk": "Корпуси C3 і C4 вдень",
+   "fr": "Les bâtiments C3 et C4 de jour",
+   "it": "Gli edifici C3 e C4 di giorno",
+   "de": "Die Gebäude C3 und C4 bei Tag"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-dusk-aerial.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Dusk over the complex and Lacul Morii",
+   "ro": "Amurg deasupra ansamblului și a Lacului Morii",
+   "he": "שקיעה מעל המתחם ואגם מוריי",
+   "ru": "Закат над комплексом и озером Мории",
+   "uk": "Захід сонця над комплексом і озером Морії",
+   "fr": "Crépuscule sur la résidence et le lac Morii",
+   "it": "Tramonto sul complesso e sul lago Morii",
+   "de": "Abenddämmerung über dem Ensemble und dem Morii-See"
+  }
+ },
+ {
+  "src": "assets/gallery/view-lake-floor8.jpg",
+  "type": "exterior",
+  "caption": {
+   "en": "Lake view from a floor 8 balcony",
+   "ro": "Vedere spre lac de la balconul etajului 8",
+   "he": "נוף לאגם ממרפסת בקומה 8",
+   "ru": "Вид на озеро с балкона 8 этажа",
+   "uk": "Вид на озеро з балкона 8 поверху",
+   "fr": "Vue sur le lac depuis un balcon du 8e étage",
+   "it": "Vista lago da un balcone all'8° piano",
+   "de": "Seeblick vom Balkon im 8. Stock"
+  }
+ },
+ {
+  "src": "assets/gallery/exterior-night-street.jpg",
   "type": "exterior",
   "caption": {
    "en": "Evening arrival from the street",
-   "ro": "Sosire seara dinspre stradă",
+   "ro": "Sosire seara, dinspre stradă",
    "he": "הגעה בערב מהרחוב",
-   "ru": "Вечерний вид с улицы",
-   "uk": "Вечірній вигляд з вулиці",
+   "ru": "Вечерний подъезд с улицы",
+   "uk": "Вечірній під'їзд з вулиці",
    "fr": "Arrivée en soirée depuis la rue",
    "it": "Arrivo serale dalla strada",
-   "de": "Abendliche Ankunft von der Straße"
+   "de": "Ankunft am Abend von der Straße"
   }
  },
  {
@@ -517,62 +587,6 @@
    "fr": "Salon de jardin des résidents dans la cour",
    "it": "Lounge in giardino per i residenti nella corte",
    "de": "Garten-Lounge für Bewohner im Innenhof"
-  }
- },
- {
-  "src": "assets/gallery/exterior-dusk-aerial.jpg",
-  "type": "exterior",
-  "caption": {
-   "en": "Dusk over the complex and Lacul Morii",
-   "ro": "Amurg deasupra ansamblului și a Lacului Morii",
-   "he": "שקיעה מעל המתחם ואגם מוריי",
-   "ru": "Закат над комплексом и озером Мории",
-   "uk": "Захід сонця над комплексом і озером Морії",
-   "fr": "Crépuscule sur la résidence et le lac Morii",
-   "it": "Tramonto sul complesso e sul lago Morii",
-   "de": "Abenddämmerung über dem Ensemble und dem Morii-See"
-  }
- },
- {
-  "src": "assets/gallery/view-lake-floor8.jpg",
-  "type": "exterior",
-  "caption": {
-   "en": "Lake view from a floor 8 balcony",
-   "ro": "Vedere spre lac de la balconul etajului 8",
-   "he": "נוף לאגם ממרפסת בקומה 8",
-   "ru": "Вид на озеро с балкона 8 этажа",
-   "uk": "Вид на озеро з балкона 8 поверху",
-   "fr": "Vue sur le lac depuis un balcon du 8e étage",
-   "it": "Vista lago da un balcone all'8° piano",
-   "de": "Seeblick vom Balkon im 8. Stock"
-  }
- },
- {
-  "src": "assets/gallery/exterior-day-aerial.jpg",
-  "type": "exterior",
-  "caption": {
-   "en": "Blocks C3 & C4 by day",
-   "ro": "Blocurile C3 și C4 ziua",
-   "he": "בניינים C3 ו‑C4 באור יום",
-   "ru": "Корпуса C3 и C4 днём",
-   "uk": "Корпуси C3 і C4 вдень",
-   "fr": "Les bâtiments C3 et C4 de jour",
-   "it": "Gli edifici C3 e C4 di giorno",
-   "de": "Die Gebäude C3 und C4 bei Tag"
-  }
- },
- {
-  "src": "assets/gallery/exterior-night-street.jpg",
-  "type": "exterior",
-  "caption": {
-   "en": "Evening arrival from the street",
-   "ro": "Sosire seara, dinspre stradă",
-   "he": "הגעה בערב מהרחוב",
-   "ru": "Вечерний подъезд с улицы",
-   "uk": "Вечірній під'їзд з вулиці",
-   "fr": "Arrivée en soirée depuis la rue",
-   "it": "Arrivo serale dalla strada",
-   "de": "Ankunft am Abend von der Straße"
   }
  },
  {

@@ -148,6 +148,13 @@ const texPool = () => cached('pool', () => {
   gr.addColorStop(0, 'rgba(255,214,160,1)'); gr.addColorStop(0.45, 'rgba(160,120,80,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return texOf(c, { repeat: false });
 });
+// Ambient-occlusion ramp (alpha): dark at v = 0 (the corner), gone by v = 1 — for wall/floor and wall/ceiling junctions.
+const texAO = () => cached('ao', () => {
+  const c = canvas(4, 128), g = c.getContext('2d'), img = g.createImageData(4, 128);
+  for (let y = 0; y < 128; y++) { const t = y / 127, a = Math.pow(1 - t, 2.2) * (0.55 + 0.45 * (1 - t)); for (let x = 0; x < 4; x++) { const i = (y * 4 + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(a * 255); img.data[i + 3] = 255; } }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.flipY = false; t.anisotropy = 8; return t;
+});
 const texBrushed = () => cached('brushed', () => texOf(pixelCanvas(64, 512, (u, v, c) => {
   const y = (v * 512) | 0, s = hash2(3, y, 91) * 0.55 + hash2((u * 4) | 0, y, 93) * 0.25 + fbm(u, v, 1, 16, 95, 3) * 0.2;
   const b = 236 + (s - 0.5) * 18; c[0] = b; c[1] = b; c[2] = b;
@@ -354,6 +361,10 @@ function M(key) {
     pool: () => new THREE.MeshBasicMaterial({ map: texPool(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.22 }),
     poolCool: () => new THREE.MeshBasicMaterial({ map: texPool(), color: 0xbcd0ff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.3 }),
     hidden: () => new THREE.MeshBasicMaterial({ visible: false }),
+    // cheap baked "SSAO": translucent black ramps hugging the room's corners (no post-processing)
+    aoFloor: () => new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: texAO(), transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+    aoCeil: () => new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: texAO(), transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+    aoWall: () => new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: texAO(), transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
   };
   const m = mk[key](); m.name = 'vrc-' + key; MAT[key] = m; return m;
 }
@@ -465,6 +476,17 @@ function instanced(parent, geo, mat, matrices, colors) {
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 function mat4(x, y, z, ry = 0, sx = 1, sy = 1, sz = 1, rx = 0) { return new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, 0)), _s.set(sx, sy, sz)); }
 
+// A flat ramp quad: corner edge p0→p1, extending by vector w (the ramp fades along w). uv.y = 0 on the edge.
+function aoQuad(B, mat, p0, p1, w) {
+  const q = [p0, p1, [p1[0] + w[0], p1[1] + w[1], p1[2] + w[2]], [p0[0] + w[0], p0[1] + w[1], p0[2] + w[2]]];
+  const pos = [], uv = [], U = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (const i of [0, 1, 2, 0, 2, 3]) { pos.push(...q[i]); uv.push(...U[i]); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  B.add(mat, g);
+}
+
 // ============================================================ lights (one shared rig → constant light count)
 const RIG = { group: null, pts: [], hemi: null, car: null, carOwner: null };
 function lightRig() {
@@ -502,6 +524,21 @@ function wallRun(ctx, s) {
     a = Math.max(a, g1);
   }
   solidSeg(a, s.a1);
+  // contact darkening where the wall meets the floor (and the ceiling on typical floors); faded across openings
+  if (!s.noAO) {
+    const d0 = FACE + SKIN + 0.001, P3 = (a, d, y) => { const [x, z] = P(a, d); return [x, y, z]; };
+    const inw = s.axis === 'x' ? [0, 0, s.side] : [s.side, 0, 0];
+    const floorW = 0.34, ceilW = 0.3, ceil = ctx.floor >= 1 && s.H == null;
+    let aa = s.a0;
+    const run = (a0, a1) => {
+      if (a1 - a0 < 0.05) return;
+      aoQuad(B, 'aoFloor', P3(a0, d0, 0.003), P3(a1, d0, 0.003), inw.map(v => v * floorW));
+      if (ceil) aoQuad(B, 'aoCeil', P3(a1, d0, H - 0.003), P3(a0, d0, H - 0.003), inw.map(v => v * ceilW));
+      if (ceil) aoQuad(B, 'aoWall', P3(a0, d0 + 0.001, H - 0.004), P3(a1, d0 + 0.001, H - 0.004), [0, -0.22, 0]);
+    };
+    for (const o of ops) { run(aa, Math.min(o.a0, s.a1)); if (o.kind !== 'lift' && ceil) aoQuad(B, 'aoCeil', P3(o.a1, d0, H - 0.003), P3(o.a0, d0, H - 0.003), inw.map(v => v * ceilW)); aa = Math.max(aa, o.a1); }
+    run(aa, s.a1);
+  }
   // finish overlays by zone (painter's algorithm over [a0,a1])
   const zones = [{ a0: s.a0, a1: s.a1, mat: s.finish || 'fabric' }, ...(s.zones || [])];
   const cuts = new Set([s.a0, s.a1]); zones.forEach(z => { cuts.add(clamp(z.a0, s.a0, s.a1)); cuts.add(clamp(z.a1, s.a0, s.a1)); });
@@ -678,6 +715,11 @@ export class Lift {
     // floor & ceiling
     b.box('nero', -x, x, -0.06, 0, zb - 0.1, zf + 0.08);
     b.box('bronzeDark', -x - 0.04, x + 0.04, h, h + 0.05, zb - 0.06, zf + 0.02);
+    // soft contact darkening along the car walls (floor) and around the LED ceiling
+    const xi = x - 0.012, fy = 0.003;
+    aoQuad(b, 'aoFloor', [-xi, fy, zb], [-xi, fy, zf], [0.22, 0, 0]); aoQuad(b, 'aoFloor', [xi, fy, zb], [xi, fy, zf], [-0.22, 0, 0]);
+    aoQuad(b, 'aoFloor', [-xi, fy, zb + 0.012], [xi, fy, zb + 0.012], [0, 0, 0.22]);
+    aoQuad(b, 'aoCeil', [-xi, h - 0.053, zb], [-xi, h - 0.053, zf], [0.12, 0, 0]); aoQuad(b, 'aoCeil', [xi, h - 0.053, zb], [xi, h - 0.053, zf], [-0.12, 0, 0]);
     // LED ceiling: glowing panel framed in bronze with dot grid
     b.box('bronze', -x + 0.02, x - 0.02, h - 0.05, h, zb + 0.02, zf - 0.02);
     b.box('ledSoft', -x + 0.14, x - 0.14, h - 0.052, h - 0.05, zb + 0.14, zf - 0.14);

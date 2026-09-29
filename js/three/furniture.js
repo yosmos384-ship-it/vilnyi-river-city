@@ -89,7 +89,7 @@ function soft(p, w, h, d, mat, x = 0, y = 0, z = 0, rot, o = {}) {
 // Local frame: top surface at y = top, x ∈ [-W/2, W/2], z from zH to the foot zF.
 function clothGeo(W, zH, zF, top, drop, r = 0.06, seed = 1, off = 0, zFade = zH) {
   return cg(`cloth${r3(W)}|${r3(zH)}|${r3(zF)}|${r3(top)}|${r3(drop)}|${r3(r)}|${seed}|${r3(off)}|${r3(zFade)}`, () => {
-    const R = r + off, ext = Math.PI * R / 2 + drop, nx = 48, nz = 40;
+    const R = r + off, ext = Math.PI * R / 2 + drop, nx = 64, nz = 56;
     const g = new THREE.PlaneGeometry(1, 1, nx, nz), P = g.attributes.position;
     const xi = W / 2 - r, zi = zF - r, ph = seed * 1.7;
     for (let i = 0; i < P.count; i++) {
@@ -98,7 +98,8 @@ function clothGeo(W, zH, zF, top, drop, r = 0.06, seed = 1, off = 0, zFade = zH)
       const cx = Math.max(-xi, Math.min(xi, s)), cz = Math.max(zH, Math.min(zi, t));
       const ox = s - cx, oz = t - cz, e = Math.hypot(ox, oz);
       // gentle wrinkles on top (same function for every layer so stacked cloths never intersect)
-      const wr = (Math.sin(cx * 7.3 + cz * 2.1 + ph) * Math.sin(cz * 5.7 - cx * 1.3) * 0.006 + Math.sin(cx * 2.2 - cz * 3.1) * 0.004) * Math.min(1, Math.max(0, cz - zFade) * 6);
+      const wr = (Math.sin(cx * 7.3 + cz * 2.1 + ph) * Math.sin(cz * 5.7 - cx * 1.3) * 0.011 + Math.sin(cx * 2.2 - cz * 3.1) * 0.006
+        + Math.pow(Math.abs(Math.sin(cx * 11.7 - cz * 4.3 + ph * 2)), 6) * 0.006 - Math.pow(Math.abs(Math.sin(cz * 13.1 + cx * 3.7)), 8) * 0.004) * Math.min(1, Math.max(0, cz - zFade) * 6);
       let X = cx, Y = top + off + wr, Z = cz;
       if (e > 1e-5) {
         const dx = ox / e, dz = oz / e, arc = Math.PI * R / 2;
@@ -119,13 +120,17 @@ function clothGeo(W, zH, zF, top, drop, r = 0.06, seed = 1, off = 0, zFade = zH)
 }
 // ---- baked light / contact-shadow decals (atlas cells: disc, rect, grad, scallop). A quad from its centre and two
 // edge vectors: `right` (local +x, full width) and `up` (local +y, full height; the atlas cell's top edge = +up side).
-const FXCELL = { disc: [0, 0], rect: [1, 0], grad: [0, 1], scallop: [1, 1] };
+const FXCELL = { disc: [0, 0], rect: [1, 0], grad: [2, 0], scallop: [3, 0], lamp: [0, 1], sun: [1, 1], soft: [2, 1], corner: [3, 1], fall: [0, 2] };
 function fxGeo(cell) {
   return cg('fx' + cell, () => {
     const g = new THREE.PlaneGeometry(1, 1), uv = g.attributes.uv, [cx, cy] = FXCELL[cell];
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, cx * 0.5 + uv.getX(i) * 0.5, 0.5 - cy * 0.5 + uv.getY(i) * 0.5);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, cx * 0.25 + uv.getX(i) * 0.25, 0.75 - cy * 0.25 + uv.getY(i) * 0.25);
     return g;
   });
+}
+// Camera-facing light halo marker: apartment.js collects these (after placement) into ONE billboard mesh.
+function bloom(p, x, y, z, size = 0.5, k = 1) {
+  const o = new THREE.Object3D(); o.position.set(x, y, z); o.userData.bloom = { size, k }; p.add(o); return o;
 }
 const _fr = new THREE.Vector3(), _fu = new THREE.Vector3(), _fn = new THREE.Vector3();
 function fxQuad(p, mat, cell, c, right, up) {
@@ -228,7 +233,7 @@ function bookStack(p, m, n, x, y, z, seed = 3, ry = 0) {
 
 // Cushion / pillow: soft rounded block. Lies in XY plane (faces +z) and is tilted back by `tilt`.
 function cushion(p, w, h, t, mat, x, y, z, ry = 0, tilt = -0.25) {
-  return soft(p, w, h, t, mat, x, y, z, [tilt, ry, 0], { e: [0.3, 0.3, 0.8], pinch: 0.55, seg: 20 });
+  return soft(p, w, h, t, mat, x, y, z, [tilt, ry, 0], { e: [0.4, 0.4, 0.9], pinch: 0.68, seg: 22 });
 }
 // sofa seat / back cushions (boxy sides, domed faces, a slight sit-in dip)
 const seatC = (p, w, h, d, mat, x, y, z, rot) => soft(p, w, h, d, mat, x, y, z, rot, { e: [0.16, 0.42, 0.16], sag: 0.012 });
@@ -423,6 +428,7 @@ function tableLamp(p, m, x, y, z, h = 0.5) {
   else { lathe(g, [[0, 0], [0.05, 0], [0.11, h * 0.28], [0.05, h * 0.52], [0, h * 0.52]], m.pot, 0, 0, 0, 20); cyl(g, 0.12, 0.17, h * 0.34, m.lampShade, 0, h * 0.5, 0, 24, null, true); }
   sph(g, 0.03, m.bulb, 0, h * 0.62, 0, [1, 1, 1], 8);
   fxFlat(g, m.glowFaint, 'disc', 0, 0.003, 0, 0.75, 0.75);
+  bloom(g, 0, h * 0.7, 0, 0.75, 0.55);
   return g;
 }
 
@@ -454,10 +460,12 @@ function tableSetting(m, o = {}) { const g = new THREE.Group(); placeSetting(g, 
 function diningChair(m, o = {}) {
   const s = m.styleId, g = new THREE.Group(), SH = 0.46;
   if (s === 'milano') {
-    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(g, 0.018, 0.013, SH - 0.06, m.woodDark, x, 0, z, 10);
-    rbox(g, 0.48, 0.09, 0.48, 0.03, m.fabric, 0, SH - 0.08, 0.01);
-    rbox(g, 0.46, 0.46, 0.08, 0.035, m.fabric, 0, SH - 0.02, -0.22, [-0.08, 0, 0]);
-    box(g, 0.44, 0.01, 0.01, m.brass, 0, SH - 0.08, 0.25);
+    // cognac-leather tub chair: tapered dark legs, a padded seat and a curved wrap-around back shell
+    for (const [x, z] of [[-0.19, -0.17], [0.19, -0.17], [-0.19, 0.19], [0.19, 0.19]]) cyl(g, 0.017, 0.011, SH - 0.05, m.woodDark, x, 0, z, 10, [z * 0.25, 0, -x * 0.25]);
+    soft(g, 0.5, 0.1, 0.48, m.fabricAccent, 0, SH - 0.08, 0.02, null, { e: [0.2, 0.5, 0.2], sag: 0.008 });
+    const shell = cg('chairShell', () => new THREE.TorusGeometry(0.235, 0.032, 10, 28, Math.PI * 1.15));
+    add(g, shell, m.fabricAccent, 0, SH + 0.17, 0.0, [-HALF, 0, -0.075 * Math.PI], [1.02, 1, 4.2]);
+    soft(g, 0.4, 0.26, 0.06, m.fabricAccent, 0, SH + 0.06, -0.19, [-0.12, 0, 0], { e: [0.25, 0.3, 0.6], pinch: 0.2 });
   } else if (s === 'nordic') {
     for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(g, 0.017, 0.014, SH, m.woodLight, x, 0, z, 10);
     box(g, 0.44, 0.02, 0.42, m.rattan, 0, SH - 0.02, 0);
@@ -987,7 +995,8 @@ function sconce(p, m, x, y, z) {
   rod(g, 0.006, 0.1, m.metal, 0, 0, 0.05, [HALF, 0, 0]);
   if (m.styleId === 'nordic') cyl(g, 0.06, 0.06, 0.12, m.lampShade, 0, -0.06, 0.12, 20, null, true);
   else sph(g, 0.06, m.lampShade, 0, 0, 0.12, [1, 1, 1], 16);
-  fxWallZ(g, m.glow, 'disc', 0, 0, 0.004, 0.55, 0.95);
+  fxWallZ(g, m.lampGlow, 'lamp', 0, 0, 0.004, 0.6, 1.1);
+  bloom(g, 0, 0, 0.12, 0.45, 0.5);
   return g;
 }
 function bathtub(m, o = {}) {          // along x, length 1.7, back to z = 0 wall
@@ -1081,11 +1090,11 @@ function plant(m, o = {}) {
   if (kind === 'fig') {
     // fiddle-leaf fig: slim trunk, three branches, leaves in overlapping clusters, larger towards the top
     rod(g, 0.02, H * 0.62, m.stem, 0, top + H * 0.3, 0, [0.04, 0, 0.03], 6);
-    const br = [[0, 0.62, 0, 0.3], [1.9, 0.5, 0.2, 0.26], [4.1, 0.42, 0.24, 0.22]];
+    const br = [[0, 0.62, 0, 0.3], [1.9, 0.5, 0.2, 0.26], [4.1, 0.42, 0.24, 0.22], [3.0, 0.34, 0.26, 0.2]];
     for (const [a0, hy, lean, rad] of br) {
       const bx = Math.cos(a0) * lean * 0.5, bz = Math.sin(a0) * lean * 0.5, by = top + H * hy;
       if (lean) rod(g, 0.01, 0.3, m.stem, bx * 0.5, by - 0.08, bz * 0.5, [Math.sin(a0) * 0.7, 0, -Math.cos(a0) * 0.7], 5);
-      const n = 11;
+      const n = 15;
       for (let i = 0; i < n; i++) {
         const t = i / n, a = a0 + i * 2.39, rr = rad * (0.35 + 0.65 * Math.sqrt(t)), yy = by + (1 - t) * H * 0.3 - 0.05;
         const size = 0.2 + (1 - t) * 0.08 + r() * 0.05;
@@ -1093,7 +1102,7 @@ function plant(m, o = {}) {
       }
     }
   } else if (kind === 'monstera') {
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 17; i++) {
       const a = i * 2.2 + r() * 0.4, tl = 0.35 + r() * (H * 0.42), lean = 0.3 + r() * 0.45;
       const ex = Math.sin(lean) * tl * Math.cos(a), ez = Math.sin(lean) * tl * Math.sin(a), ey = Math.cos(lean) * tl;
       rod(g, 0.007, tl, m.stem, ex / 2, top + ey / 2, ez / 2, [Math.sin(a) * lean, 0, -Math.cos(a) * lean], 5);
@@ -1128,19 +1137,22 @@ function floorLamp(m, o = {}) {
     lathe(d, [[0.001, 0.18], [0.1, 0.16], [0.2, 0.06], [0.22, 0], [0.215, 0], [0.19, 0.055], [0.001, 0.15]], m.brass, 0, 0, 0, 28);
     sph(d, 0.05, m.bulb, 0, 0.04, 0, [1, 1, 1], 10);
     fxFlat(g, m.glow, 'disc', 1.55, 0.014, 0, 1.3, 1.3);
+    bloom(d, 0, -0.02, 0, 0.6, 0.6);
     g.userData.solidBox = { w: 0.32, d: 0.32, h: 1.5 };
   } else if (s === 'nordic') {
     for (let i = 0; i < 3; i++) { const a = i * 2.094; rod(g, 0.012, 1.3, m.woodLight, Math.cos(a) * 0.14, 0.62, Math.sin(a) * 0.14, [Math.sin(a) * 0.2, 0, -Math.cos(a) * 0.2], 8); }
     cyl(g, 0.2, 0.24, 0.34, m.lampShade, 0, 1.25, 0, 28, null, true);
     sph(g, 0.04, m.bulb, 0, 1.38, 0, [1, 1, 1], 8);
+    bloom(g, 0, 1.42, 0, 1.0, 0.55);
     fxFlat(g, m.glowFaint, 'disc', 0, (o.ceil || 2.7) - 0.004, 0, 1.8, 1.8, true);
     fxFlat(g, m.glowFaint, 'disc', 0, 0.014, 0, 1.1, 1.1);
     g.userData.solidBox = { w: 0.4, d: 0.4, h: 1.5 };
   } else {
     cyl(g, 0.14, 0.16, 0.03, m.woodDark, 0, 0, 0, 20);
     rod(g, 0.012, 1.35, m.woodDark, 0, 0.68, 0);
-    sph(g, 0.24, m.rattan, 0, 1.55, 0, [1, 0.85, 1], 18);
+    sph(g, 0.24, m.rattanShade, 0, 1.55, 0, [1, 0.85, 1], 24);
     sph(g, 0.19, m.lampShade, 0, 1.55, 0, [1, 0.85, 1], 14);
+    bloom(g, 0, 1.55, 0, 1.1, 0.5);
     fxFlat(g, m.glowFaint, 'disc', 0, (o.ceil || 2.7) - 0.004, 0, 1.6, 1.6, true);
     fxFlat(g, m.glowFaint, 'disc', 0, 0.014, 0, 1.4, 1.4);
     g.userData.solidBox = { w: 0.34, d: 0.34, h: 1.5 };
@@ -1157,21 +1169,24 @@ function pendant(m, o = {}) {
       const L = o.len || 1.2;
       for (const sx of [-1, 1]) rod(g, 0.002, drop - 0.1, m.brass, sx * L * 0.4, -(drop - 0.1) / 2, 0, null, 4);
       box(g, L, 0.025, 0.04, m.brass, 0, -drop, 0);
-      for (let i = 0; i < 5; i++) sph(g, 0.07, m.lampShade, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, [1, 1, 1], 16);
+      for (let i = 0; i < 5; i++) { sph(g, 0.07, m.lampShade, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, [1, 1, 1], 16); bloom(g, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, 0.42, 0.55); }
     } else {
       rod(g, 0.003, drop, m.brass, 0, -drop / 2, 0, null, 4);
       lathe(g, [[0.001, 0.02], [0.14, 0], [0.2, -0.12], [0.195, -0.12], [0.13, -0.01], [0.001, 0.01]], m.brass, 0, -drop, 0, 28);
       sph(g, 0.05, m.bulb, 0, -drop - 0.05, 0, [1, 1, 1], 10);
+      bloom(g, 0, -drop - 0.1, 0, 0.7, 0.6);
     }
   } else if (s === 'nordic') {
     rod(g, 0.003, drop, m.blackMetal, 0, -drop / 2, 0, null, 4);
     lathe(g, [[0.02, 0.04], [0.05, 0.03], [0.21, -0.14], [0.26, -0.2], [0.255, -0.2], [0.2, -0.15], [0.04, 0.02], [0.001, 0.02]], m.blackMetal, 0, -drop, 0, 32);
     disc(g, 0.25, m.lightEmit, 0, -drop - 0.18, 0, [HALF, 0, 0], 32);
+    bloom(g, 0, -drop - 0.24, 0, 0.9, 0.5);
   } else {
     rod(g, 0.004, drop, m.woodDark, 0, -drop / 2, 0, null, 4);
     const R = kind === 'dining' ? 0.3 : 0.24;
-    sph(g, R, m.rattan, 0, -drop - R * 0.7, 0, [1, 0.75, 1], 20);
+    sph(g, R, m.rattanShade, 0, -drop - R * 0.7, 0, [1, 0.75, 1], 28);
     sph(g, R * 0.8, m.lampShade, 0, -drop - R * 0.7, 0, [1, 0.72, 1], 16);
+    bloom(g, 0, -drop - R * 0.7, 0, R * 3.6, 0.45);
     fxFlat(g, m.glowFaint, 'disc', 0, -0.004, 0, 1.4, 1.4, true);
   }
   if (s === 'milano' && kind === 'dining') fxFlat(g, m.glowFaint, 'rect', 0, -0.004, 0, (o.len || 1.2) + 0.9, 0.9, true);
@@ -1218,8 +1233,8 @@ function curtains(m, o = {}) {
   const w = o.w || 2.4, h = o.h || 2.6, g = new THREE.Group(), side = o.drape ?? 0.42, sheer = Math.min(0.7, w * 0.16);
   box(g, w + 0.1, 0.03, 0.1, m.styleId === 'milano' ? m.brass : m.frame, 0, -0.03, 0);
   for (const sx of [-1, 1]) {
-    add(g, curtainGeo(sheer, h - 0.05, Math.max(4, Math.round(sheer / 0.09)), 0.028, 2 + sx), m.sheer, sx * (w / 2 - sheer / 2 - 0.02), -h / 2 - 0.02, -0.02);
-    add(g, curtainGeo(side, h - 0.05, Math.max(3, Math.round(side / 0.11)), 0.042, 5 + sx), m.curtain, sx * (w / 2 - side / 2 + 0.02), -h / 2 - 0.02, 0.05);
+    add(g, curtainGeo(sheer, h - 0.05, Math.max(5, Math.round(sheer / 0.075)), 0.034, 2 + sx), m.sheer, sx * (w / 2 - sheer / 2 - 0.02), -h / 2 - 0.02, -0.02);
+    add(g, curtainGeo(side, h - 0.05, Math.max(4, Math.round(side / 0.1)), 0.058, 5 + sx), m.curtain, sx * (w / 2 - side / 2 + 0.02), -h / 2 - 0.02, 0.05);
   }
   g.userData.noSolid = true;
   return g;
@@ -1286,5 +1301,5 @@ export const F = {
   outdoorLounge, outdoorTable, outdoorChair, planter,
 };
 // small helpers reused by apartment.js (decor on shelves / walls)
-export const FX = { box, rbox, cyl, rod, sph, lathe, torus, disc, plane, grp, bookRow, bookStack, vase, candle, bowl, plantSmall, sconce, tableLamp, tap, glass, plate, HALF,
+export const FX = { bloom, box, rbox, cyl, rod, sph, lathe, torus, disc, plane, grp, bookRow, bookStack, vase, candle, bowl, plantSmall, sconce, tableLamp, tap, glass, plate, HALF,
   soft, softGeo, clothGeo, fxQuad, fxFlat, fxWallZ };

@@ -80,7 +80,10 @@ function fbmFn(base, oct, seed) {
 function canvas(w, h = w) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
-function hex(c) { const col = new THREE.Color(c); return [col.r * 255, col.g * 255, col.b * 255]; }
+// sRGB 0–255 components for canvas painting. (THREE.Color stores linear values, so reading .r/.g/.b directly would
+// darken and over-saturate every generated texture.)
+const _rgb = {};
+function hex(c) { new THREE.Color(c).getRGB(_rgb, THREE.SRGBColorSpace); return [_rgb.r * 255, _rgb.g * 255, _rgb.b * 255]; }
 function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 function rgbStr(c, k = 1) { return `rgb(${Math.max(0, Math.min(255, c[0] * k)) | 0},${Math.max(0, Math.min(255, c[1] * k)) | 0},${Math.max(0, Math.min(255, c[2] * k)) | 0})`; }
 function pixels(size, fn, h = size) {
@@ -132,7 +135,7 @@ function grainStrip(base, seed, W = 2048, H = 256, { rings = 9, figure = 1, cont
     let t = (v - 0.5) * rings + (warp(u, v) - 0.5) * 2.2 * figure;
     for (const [cu, wdt, dep] of arches) { const du = (u - cu) / wdt; t += dep * figure * 3 * Math.exp(-du * du) * (1 - Math.abs(v - 0.5)); }
     const f = t - Math.floor(t);
-    const lw = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 18) * 0.85 + Math.pow(f, 7) * 0.35;
+    const lw = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 7) * 0.55 + Math.pow(f, 5) * 0.4;
     let col = mix(early, late, Math.min(1, lw));
     const s = (streak(u * 0.06, v) - 0.5) * streaks + (fleck(u, v) - 0.5) * 0.05, k = 0.93 + (slow(u, v) - 0.5) * 0.14 + s;
     return [col[0] * k, col[1] * k, col[2] * k];
@@ -163,11 +166,11 @@ function woodHeight(hctx, strip, x, y, w, h, r) {
 function herringbone(base, seed, size = 1024) {
   const c = canvas(size), ctx = c.getContext('2d'), U = size / 8;
   const hc = canvas(size), hctx = hc.getContext('2d'), rc = canvas(size), rctx = rc.getContext('2d');
-  const strip = grainStrip(base, seed, 2048, 256, { rings: 8, figure: 0.55, contrast: 0.27, streaks: 0.2 });
+  const strip = grainStrip(base, seed, 2048, 256, { rings: 7, figure: 0.8, contrast: 0.34, streaks: 0.09 });
   const planks = [];
   for (let m = 0; m < 8; m++) { planks.push([m, m, 4, 1]); planks.push([m + 4, m - 3, 1, 4]); }
   for (const [px, py, pw, ph] of planks) {
-    const s0 = seed * 31 + px * 7 + py * 131 + pw, tone = 0.9 + rng(s0 + 5)() * 0.18, rough = 175 + rng(s0 + 9)() * 70;
+    const s0 = seed * 31 + px * 7 + py * 131 + pw, rr = rng(s0 + 5)(), tone = 0.87 + rr * 0.2, rough = 170 + rng(s0 + 9)() * 80;
     for (const ox of [-8, 0, 8]) for (const oy of [-8, 0, 8]) {
       const X = (px + ox) * U, Y = (py + oy) * U, W = pw * U, H = ph * U;
       if (X > size || Y > size || X + W < 0 || Y + H < 0) continue;
@@ -190,13 +193,13 @@ function herringbone(base, seed, size = 1024) {
 function widePlanks(base, seed, size = 1024) {
   const c = canvas(size), ctx = c.getContext('2d'), r = rng(seed);
   const hc = canvas(size), hctx = hc.getContext('2d'), rc = canvas(size), rctx = rc.getContext('2d');
-  const strip = grainStrip(base, seed, 2048, 128, { rings: 7, figure: 0.45, contrast: 0.26, streaks: 0.24 });
+  const strip = grainStrip(base, seed, 2048, 128, { rings: 6, figure: 0.55, contrast: 0.17, streaks: 0.07 });
   const rows = 12, rh = size / rows;
   for (let i = 0; i < rows; i++) {
     let x = -r() * size * 0.6;
     while (x < size) {
       const len = size * (0.45 + r() * 0.4), s0 = seed + i * 97 + (x * 13 | 0);
-      const tone = 0.93 + rng(s0 + 3)() * 0.12, rough = 180 + rng(s0 + 7)() * 60;
+      const tone = 0.9 + rng(s0 + 3)() * 0.17, rough = 170 + rng(s0 + 7)() * 80;
       for (const ox of [0, -size, size]) {
         plank(ctx, strip, x + ox, i * rh, len, rh, rng(s0), tone);
         woodHeight(hctx, strip, x + ox, i * rh, len, rh, rng(s0));
@@ -243,46 +246,84 @@ function stoneTex(size, c1, c2, { bands = 6, pores = 0.0, seed = 3, contrast = 1
   c.height_ = h;
   return c;
 }
-// Marble: soft cloudy ground + veins drawn along iso-contours of a domain-warped fbm (long meandering lines with
-// natural wiggle), loosely aligned by a periodic diagonal bias; a second, finer and fainter vein family; a haze
-// around the main veins. All noise is lattice-periodic → seamless.
-function marbleTex(size, base, vein, { scale = 3, sharp = 7, seed = 5, vein2, strength = 0.85, network = 0.6 } = {}) {
-  const warpA = fbmFn(2, 4, seed), warpB = fbmFn(2, 4, seed + 31), f1 = fbmFn(3, 5, seed + 57), f2 = fbmFn(5, 4, seed + 61), f3 = fbmFn(8, 3, seed + 67);
-  const cloud = fbmFn(3, 4, seed + 70), grain = lattice(128, seed + 90);
-  const A = hex(base), V = hex(vein), V2 = hex(vein2 || vein);
-  const Al = A.map(x => Math.min(255, x * 1.14 + 7)), Ad = A.map(x => x * 0.86);
-  const k = Math.max(1, Math.round(scale * 0.5)), T = Math.PI * 2;
-  const wv = fbmFn(4, 3, seed + 80);               // vein width varies along its length
+// Marble: cloudy ground + veins drawn as iso-contours of a domain-warped fbm. The contour distance is normalised by
+// the field gradient (|n - c| / |∇n|), so a vein keeps a controlled width instead of turning into hairline cracks
+// where the field is steep; width swells and thins along the vein, veins fade in and out (real slabs never run a
+// vein uniformly), each main vein carries a soft haze, and a finer secondary family crosses them. Everything is
+// lattice-periodic → seamless. Returns the colour canvas with `.rough_` (roughness: polished stone, veins a touch
+// duller) attached.
+function marbleTex(size, base, vein, { seed = 5, vein2, strength = 0.9, network = 0.5, width = 1, levels = [0], scale = 1, turb = 0.4, turb2 = 0.4, haze = 0.35, cloud = 1, gold = 0, rough = 1, smoke = 0 } = {}) {
+  const N = size, warpA = fbmFn(2, 4, seed), warpB = fbmFn(2, 4, seed + 31), f1 = fbmFn(3, 4, seed + 57), f2 = fbmFn(4, 4, seed + 61);
+  const cl = fbmFn(3, 5, seed + 70), cl2 = fbmFn(8, 3, seed + 73), wv = fbmFn(4, 3, seed + 80), fade = fbmFn(2, 3, seed + 85), fade2 = fbmFn(4, 3, seed + 87), grain = lattice(256, seed + 90);
+  const A = hex(base), V = hex(vein), V2 = hex(vein2 || vein), G = hex('#b8955a');
+  const Al = A.map(x => Math.min(255, x * 1.12 + 8)), Ad = A.map(x => x * 0.84);
+  // Directional "Perlin marble" fields: a diagonal ramp (integer slope → periodic) plus strong turbulence; veins are
+  // where the ramp crosses integers, i.e. long meandering streams that never close into loops.
+  const F1 = new Float32Array(N * N), F2 = new Float32Array(N * N), k1 = Math.max(1, Math.round(scale));
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N, wx = warpA(u, v) - 0.5, wy = warpB(u, v) - 0.5, pu = u + wx * 0.35, pv = v + wy * 0.35;
+    F1[y * N + x] = (u + v) * k1 + (f1(pu, pv) - 0.5) * 2.6 * turb;
+    F2[y * N + x] = (2 * u - v) * k1 + (f2(pu + 0.31, pv - 0.17) - 0.5) * 3.2 * turb2;
+  }
   const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  const ridge = (n) => 1 - Math.abs(2 * n - 1);
-  const line = (r, w) => sm(1 - w, 1 - w * 0.2, r);   // crisp vein of half-width w (in ridge units)
-  return pixels(size, (u, v) => {
-    const wx = warpA(u, v) - 0.5, wy = warpB(u, v) - 0.5;
-    const pu = u + wx * 0.32, pv = v + wy * 0.32;
-    const bias = 0.5 + 0.5 * Math.sin(((u + v) * k + wx * 1.2) * T);
-    const r1 = ridge(f1(pu, pv) * 0.7 + bias * 0.3), r2 = ridge(f2(pu + 0.31, pv - 0.17)), r3 = ridge(f3(pu - 0.2, pv + 0.4));
-    const w = 0.004 + Math.pow(wv(u, v), 3) * 0.045 / (1 + sharp * 0.1);
-    const vA = line(r1, w) * strength, halo = line(r1, w * 4) * 0.12 * strength;
-    const vB = (line(r2, w * 0.45) * 0.7 + line(r3, 0.0025) * 0.3) * strength * network;
-    const c = cloud(u, v);
-    let col = c > 0.5 ? mix(A, Al, (c - 0.5) * 1.6) : mix(Ad, A, c * 2);
-    col = mix(col, V2, Math.min(1, halo + vB * 0.6));
-    col = mix(col, V, Math.min(1, vA + vB * 0.5));
-    const gr = (grain(u, v) - 0.5) * 5;
-    return [col[0] + gr, col[1] + gr, col[2] + gr];
-  });
+  const wrapD = (d) => d - Math.round(d);             // neighbour differences across the tile seam (ramp jumps by an integer)
+  const dist = (F, x, y, lv) => {
+    const i = y * N + x, xl = y * N + (x - 1 + N) % N, xr = y * N + (x + 1) % N, yu = ((y - 1 + N) % N) * N + x, yd = ((y + 1) % N) * N + x;
+    const g = Math.hypot(wrapD(F[xr] - F[xl]), wrapD(F[yd] - F[yu])) * N * 0.5 + 0.2;
+    let d = 1e9; for (const c of lv) { const f = F[i] + c; d = Math.min(d, Math.abs(f - Math.round(f))); } return d / g;
+  };
+  const c = canvas(N), ctx = c.getContext('2d'), img = ctx.createImageData(N, N), D = img.data;
+  const rc = canvas(N), rctx = rc.getContext('2d'), rimg = rctx.createImageData(N, N), RD = rimg.data;
+  const w0 = 0.0035 * width;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const t = cl(u, v), t2 = cl2(u, v);
+    let col = t > 0.5 ? mix(A, Al, (t - 0.5) * 1.5 * cloud) : mix(Ad, A, 1 - (0.5 - t) * 2 * cloud);
+    col = mix(col, Al, Math.max(0, t2 - 0.55) * 0.5 * cloud);
+    if (smoke) col = mix(col, V2, smoke * sm(0.42, 0.85, t) * (0.6 + 0.8 * t2));      // smoky grey drifts (dark marbles)
+    const wm = 0.12 + 2.2 * Math.pow(wv(u, v), 2.5), w = w0 * wm;          // veins taper to nothing and swell
+    const fm = sm(0.3, 0.55, fade(u, v)), fm2 = sm(0.42, 0.62, fade2(u, v));
+    const d1 = dist(F1, x, y, levels), d2 = dist(F2, x, y, [0]);
+    const core = Math.exp(-((d1 / w) ** 2)) * fm * strength;
+    const hz = Math.exp(-d1 / (w * 7)) * haze * fm * strength;
+    const sec = Math.exp(-((d2 / (w0 * 0.45)) ** 2)) * fm2 * network * strength;
+    const sh = Math.exp(-d2 / (w0 * 3)) * 0.25 * fm2 * network * strength;
+    col = mix(col, V2, Math.min(1, hz + sh));
+    col = mix(col, gold ? mix(V, G, gold * sm(0.5, 0.8, t2)) : V, Math.min(1, core + sec * 0.8));
+    const g = (grain(u, v) - 0.5) * 4, i = (y * N + x) * 4;
+    D[i] = col[0] + g; D[i + 1] = col[1] + g; D[i + 2] = col[2] + g; D[i + 3] = 255;
+    const r = (30 + (t2 - 0.5) * 16 + (core + sec) * 30) * rough;         // roughness ≈ 0.12 polished … 0.24 in the veins
+    RD[i] = RD[i + 1] = RD[i + 2] = r; RD[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0); rctx.putImageData(rimg, 0, 0);
+  c.rough_ = rc;
+  return c;
 }
-// Tileable furniture wood (veneer): rings run along x, integer ring count over the tile → seamless.
-function woodTile(base, seed, size = 512) {
-  const warp = fbmFn(2, 4, seed), streak = lattice(128, seed + 4), slow = fbmFn(2, 3, seed + 8);
-  const early = base.map(x => x * 1.06 + 4), late = base.map(x => x * 0.72);
-  return pixels(size, (u, v) => {
-    const t = v * 10 + (warp(u, v) - 0.5) * 1.1 + Math.sin(u * Math.PI * 2 + seed) * 0.25;
+// Tileable furniture wood (veneer): fine straight grain with a gentle flame figure; rings run along x with an integer
+// ring count over the tile → seamless. `.rough_` = satin lacquer (pores a little rougher than the late wood).
+// Real veneer is mostly quarter/rift cut: many thin, nearly straight growth lines (≈ 60 per tile), a slow
+// low-amplitude drift, flitch-to-flitch tone steps and fine open-pore streaks. The old wide, warped ring figure
+// read as cartoon "wavy stripes" at furniture scale. `.height_` (pores + late wood) feeds a normal map.
+function woodTile(base, seed, size = 512, { rings = 56, contrast = 0.22 } = {}) {
+  const warp = fbmFn(2, 4, seed), fig = fbmFn(3, 3, seed + 2), pore = lattice(256, seed + 4), pore2 = lattice(512, seed + 5), slow = fbmFn(2, 3, seed + 8);
+  const early = base.map(x => x * 1.05 + 4), late = base.map(x => x * (1 - contrast));
+  const R = new Uint8Array(size * size), Hh = new Uint8Array(size * size);
+  const flitch = [], rf = rng(seed * 3 + 1); for (let i = 0; i < 4; i++) flitch.push(0.95 + rf() * 0.1);   // 4 veneer leaves per tile
+  const c = pixels(size, (u, v, x, y) => {
+    const t = v * rings + (warp(u, v) - 0.5) * 1.6 + (fig(u, v) - 0.5) * 0.8 + Math.sin(u * Math.PI * 2 + v * 6) * 0.2;
     const f = t - Math.floor(t);
-    const lw = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 16) * 0.8 + Math.pow(f, 7) * 0.3;
-    const col = mix(early, late, Math.min(1, lw)), k = 0.92 + (streak(u * 0.125, v) - 0.5) * 0.18 + (slow(u, v) - 0.5) * 0.2;
+    const lw = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 9) * 0.55 + Math.pow(f, 7) * 0.45;
+    const p = pore(u * 0.015, v), p2 = pore2(u * 0.03, v);            // pores: short streaks along the grain
+    const pr = Math.max(0, p - 0.6) * 1.6 + Math.max(0, p2 - 0.7) * 1.2;
+    const col = mix(early, late, Math.min(1, lw * 0.8 + pr * 0.45));
+    const k = (0.95 + (slow(u, v) - 0.5) * 0.12) * flitch[Math.min(3, (v * 4) | 0)];
+    R[y * size + x] = 140 + lw * 40 + pr * 90;
+    Hh[y * size + x] = 180 - lw * 40 - pr * 150;
     return [col[0] * k, col[1] * k, col[2] * k];
   });
+  c.rough_ = pixels(size, (u, v, x, y) => { const r = R[y * size + x]; return [r, r, r]; });
+  c.height_ = pixels(size, (u, v, x, y) => { const r = Hh[y * size + x]; return [r, r, r]; });
+  return c;
 }
 // Tile grid; pattern: 'grid' | 'stack' | 'brick' | 'chevron'
 function tileTex({ size = 512, tilesX = 4, tilesY = 4, colors, grout, groutW = 3, pattern = 'grid', seed = 1, glaze = 0.08, surface }) {
@@ -327,10 +368,18 @@ function fabricTex(kind, seed = 2, size = 256) {
     if (kind === 'boucle') { t = 0.8 + (bl(u, v) - 0.5) * 0.34 + (n2(u, v) - 0.5) * 0.1; }
     else if (kind === 'velvet') { t = 0.84 + (n2(u, v) - 0.5) * 0.22 + (n(u, v) - 0.5) * 0.05; }
     else if (kind === 'linen') { const w = ((x % 4 < 2) ^ (y % 4 < 2)) ? 0.05 : -0.02; t = 0.84 + w + (n(u, v) - 0.5) * 0.1 + (n2(u, v) - 0.5) * 0.06; }
+    else if (kind === 'knit') { const t2 = knitH(x, y, size); t = 0.72 + t2 * 0.26 + (n(u, v) - 0.5) * 0.06; }
     else if (kind === 'jute') { const w = Math.sin(x * 0.8) * Math.sin(y * 0.8); t = 0.7 + w * 0.18 + (n(u, v) - 0.5) * 0.25; }
     else { const w = ((x % 3 < 1.5) ^ (y % 3 < 1.5)) ? 0.06 : -0.04; t = 0.82 + w + (n(u, v) - 0.5) * 0.14; }
     const g = Math.max(0, Math.min(1, t)) * 255; return [g, g, g];
   }, size);
+}
+// Stockinette knit: columns of V-shaped stitches (8 columns × 12 rows per tile), each stitch a pair of slanted lobes.
+function knitH(x, y, size) {
+  const cw = size / 8, rh = size / 12, fx = (x % cw) / cw, fy = (y % rh) / rh;
+  const side = fx < 0.5 ? fx * 2 : (1 - fx) * 2;             // 0 at the column edge, 1 at the centre seam
+  const lobe = Math.sin(Math.min(1, Math.max(0, (fy + side * 0.45 - 0.1))) * Math.PI);
+  return Math.max(0, lobe) * Math.pow(Math.sin(side * Math.PI * 0.5 + 0.2), 0.6);
 }
 // Weave / pile heightmaps → normal maps (tiny repeat: one tile ≈ 5–8 cm of cloth)
 function weaveHeight(kind, seed = 3, size = 256) {
@@ -338,7 +387,9 @@ function weaveHeight(kind, seed = 3, size = 256) {
   const T = kind === 'linen' ? 10 : kind === 'boucle' ? 8 : 8;       // thread period (px)
   return pixels(size, (u, v, x, y) => {
     let hgt;
-    if (kind === 'boucle') {
+    if (kind === 'knit') {
+      hgt = 0.15 + knitH(x, y, size) * 0.8 + (n2(u, v) - 0.5) * 0.12;
+    } else if (kind === 'boucle') {
       hgt = 0.5 + (n(u, v) - 0.5) * 0.9 + (n2(u, v) - 0.5) * 0.7 + (n3(u, v) - 0.5) * 0.3;
     } else if (kind === 'velvet') {
       hgt = 0.5 + (n3(u, v) - 0.5) * 0.35 + (n2(u, v) - 0.5) * 0.1;
@@ -353,14 +404,17 @@ function weaveHeight(kind, seed = 3, size = 256) {
     const g = Math.max(0, Math.min(1, hgt)) * 255; return [g, g, g];
   }, size);
 }
-// Effects atlas (2×2 cells, alpha only, white): 0 soft disc · 1 soft rectangle · 2 edge gradient (dense at the
-// cell's top edge) · 3 downlight "scallop" wash (source at the cell's top centre). Used by the contact-shadow (AO)
-// decals and the additive light decals; one texture → the decals of each material merge into one draw call.
-function fxAtlas(size = 512) {
-  const c = canvas(size), ctx = c.getContext('2d'), img = ctx.createImageData(size, size), d = img.data, H = size / 2, pad = 3;
+// Effects atlas (4×2 cells, alpha only, white). Row 0: 0 soft disc · 1 soft rectangle · 2 edge gradient (dense at
+// the cell's top edge) · 3 downlight "scallop" wash (source at the cell's top centre). Row 1: 4 lamp-shade
+// hourglass (light escaping above and below a shade, shade at the cell centre) · 5 sun patch (a soft-edged
+// rectangle with window-mullion bars, bright at the top edge) · 6 wide soft falloff (broad bounce light) ·
+// 7 corner occlusion (dense at the top edge, fading fast). Used by the contact-shadow (AO) decals and the additive
+// light decals; one texture → the decals of each material merge into one draw call.
+function fxAtlas(size = 1024) {
+  const Hh = size, c = canvas(size, Hh), ctx = c.getContext('2d'), img = ctx.createImageData(size, Hh), d = img.data, H = size / 4, pad = 3;
   const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const cx = x >= H ? 1 : 0, cy = y >= H ? 1 : 0, cell = cy * 2 + cx;
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < size; x++) {
+    const cx = Math.floor(x / H), cy = Math.floor(y / H), cell = cy * 4 + cx;
     const lx = x - cx * H, ly = y - cy * H;
     if (lx < pad || ly < pad || lx >= H - pad || ly >= H - pad) continue;
     const u = (lx - pad) / (H - 2 * pad - 1), v = (ly - pad) / (H - 2 * pad - 1);   // 0..1, v down
@@ -369,15 +423,39 @@ function fxAtlas(size = 512) {
     if (cell === 0) { const r = Math.min(1, Math.hypot(sx, sy)); a = Math.pow(1 - r * r, 2.2); }
     else if (cell === 1) { a = sm(1, 0.35, Math.abs(sx)) * sm(1, 0.35, Math.abs(sy)); a = Math.pow(a, 0.9); }
     else if (cell === 2) { a = Math.pow(1 - v, 2.4) * sm(1, 0.93, Math.abs(sx)); }
-    else {
+    else if (cell === 3) {
       const arc = 0.04 + 0.55 * sx * sx;                // parabolic cut-off line of the beam on the wall
       const inside = v >= arc ? Math.exp(-(v - arc) * 2.2) : Math.exp(-(arc - v) * 30);
       a = inside * Math.pow(Math.max(0, 1 - Math.abs(sx)), 1.3) * sm(1, 0.7, v) * sm(0, 0.08, v) * 0.85;
-    }
+    } else if (cell === 4) {
+      // up-cone from the shade's open top (crisp edges, widening, fading with distance), a dimmer down-cone,
+      // and a warm core around the shade itself
+      const yy = -sy, ax = Math.abs(sx);
+      let up = 0, dn = 0;
+      if (yy > 0.08) { const t = yy - 0.08, w = 0.2 + t * 0.62; up = sm(w * 1.08, w * 0.86, ax) * Math.exp(-t * 1.9) * sm(0.08, 0.2, yy); }
+      if (yy < -0.12) { const t = -0.12 - yy, w = 0.24 + t * 0.5; dn = sm(w * 1.1, w * 0.85, ax) * Math.exp(-t * 3.2) * 0.55 * sm(-0.12, -0.2, yy); }
+      const r = Math.hypot(sx * 1.3, yy * 1.6), core = Math.exp(-r * r * 6) * 0.55;
+      a = (up * 0.9 + dn + core) * sm(1, 0.85, ax) * sm(1, 0.9, Math.abs(yy));
+    } else if (cell === 5) {
+      // sun patch through a 3-bay window: bright near the glass (top), soft penumbra, two mullion shadows
+      const edge = sm(1, 0.8, Math.abs(sx)) * sm(1, 0.85, v) * sm(0, 0.04, v);
+      const bars = 1 - 0.75 * (Math.exp(-Math.pow((sx + 0.333) * 40, 2)) + Math.exp(-Math.pow((sx - 0.333) * 40, 2)));
+      a = edge * bars * (0.45 + 0.55 * Math.pow(1 - v, 1.5));
+    } else if (cell === 6) { const r = Math.min(1, Math.hypot(sx, sy)); a = Math.exp(-r * r * 2.6) * sm(1, 0.7, r); }
+    else if (cell === 7) { a = Math.pow(1 - v, 5) * sm(1, 0.9, Math.abs(sx)); }
+    else if (cell === 8) { a = Math.pow(1 - v, 1.35) * sm(1, 0.8, Math.abs(sx)) * sm(1, 0.97, v); }   // gentle falloff (room depth)
+    else { a = 0; }
     const i = (y * size + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = Math.max(0, Math.min(255, a * 255));
   }
   ctx.putImageData(img, 0, 0);
   return c;
+}
+// Radial bloom sprite for the camera-facing light halos (bright core + wide soft skirt).
+function bloomTex(size = 128) {
+  return pixels(size, (u, v) => {
+    const r = Math.hypot(u * 2 - 1, v * 2 - 1), a = r >= 1 ? 0 : (Math.exp(-r * r * 12) * 0.85 + Math.exp(-r * r * 3.2) * 0.4) * (1 - r * r);
+    return [255, 255, 255, Math.min(255, a * 255)];
+  });
 }
 function plasterTex(seed = 4, strength = 0.06, size = 512) {
   const f = fbmFn(6, 5, seed);
@@ -387,10 +465,10 @@ function limewashTex(seed = 8, size = 512) {
   const f = fbmFn(3, 5, seed), g2 = fbmFn(12, 3, seed + 3);
   return pixels(size, (u, v) => { const t = f(u, v) * 0.75 + g2(u, v) * 0.25; const g = (0.84 + t * 0.2) * 240; return [g, g, g]; });
 }
-function woodFurnitureTex(base, seed, size = 512) { return woodTile(base, seed, size); }
+function woodFurnitureTex(base, seed, size = 512, o) { return woodTile(base, seed, size, o); }
 function caneTex(base, size = 256) {
   const c = canvas(size), ctx = c.getContext('2d'); const col = hex(base);
-  ctx.fillStyle = rgbStr(col, 0.55); ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = rgbStr(col, 0.72); ctx.fillRect(0, 0, size, size);
   const s = size / 8;
   ctx.lineWidth = s * 0.28; ctx.lineCap = 'round';
   for (let i = -8; i < 16; i++) {
@@ -400,34 +478,47 @@ function caneTex(base, size = 256) {
   ctx.strokeStyle = rgbStr(col, 1.12); ctx.lineWidth = s * 0.22;
   for (let i = 0; i <= 8; i++) { ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s, size); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, i * s); ctx.lineTo(size, i * s); ctx.stroke(); }
   // holes
-  ctx.fillStyle = 'rgba(20,14,8,0.85)';
-  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { ctx.beginPath(); ctx.arc(i * s + s / 2, j * s + s / 2, s * 0.16, 0, 6.28); ctx.fill(); }
+  ctx.fillStyle = 'rgba(70,52,34,0.4)';
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { ctx.beginPath(); ctx.arc(i * s + s / 2, j * s + s / 2, s * 0.2, 0, 6.28); ctx.fill(); }
   return c;
 }
+// Rugs (whole rug in UV 0..1): milano = hand-knotted, faded abstract "marbled" wool with a border; nordic = cream
+// berber with a hand-drawn diamond lattice; riviera = flat-woven jute (ribbed) with a darker bound edge.
 function rugTex(style, size = 1024) {
-  const c = canvas(size), ctx = c.getContext('2d');
-  const noise = fabricTex(style === 'riviera' ? 'jute' : 'boucle', 11, 256);
-  if (style === 'milano') {
-    ctx.fillStyle = '#4a4744'; ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = '#8f7a5a'; ctx.lineWidth = 6; ctx.strokeRect(40, 40, size - 80, size - 80);
-    ctx.strokeStyle = '#353230'; ctx.lineWidth = 26; ctx.strokeRect(80, 80, size - 160, size - 160);
-    ctx.globalAlpha = 0.18; ctx.strokeStyle = '#b8a07a'; ctx.lineWidth = 3;
-    for (let i = 0; i < 14; i++) { ctx.beginPath(); ctx.arc(size / 2, size / 2, 60 + i * 28, 0, 6.28); ctx.stroke(); }
-    ctx.globalAlpha = 1;
-  } else if (style === 'nordic') {
-    ctx.fillStyle = '#e8e2d6'; ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#d7cfc0';
-    for (let i = 0; i < 26; i++) ctx.fillRect(0, i * size / 26, size, 6);
-    ctx.strokeStyle = '#bdb3a2'; ctx.lineWidth = 10; ctx.strokeRect(24, 24, size - 48, size - 48);
-  } else {
-    ctx.fillStyle = '#c9ae83'; ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = '#a88b5f'; ctx.lineWidth = 34; ctx.strokeRect(34, 34, size - 68, size - 68);
-    ctx.strokeStyle = '#e6d6b8'; ctx.lineWidth = 8; ctx.strokeRect(80, 80, size - 160, size - 160);
-  }
-  ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.9;
-  for (let x = 0; x < size; x += 256) for (let y = 0; y < size; y += 256) ctx.drawImage(noise, x, y);
-  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-  return c;
+  const n1 = fbmFn(3, 5, 41), n2 = fbmFn(6, 4, 43), pile = lattice(256, 47), pile2 = lattice(512, 49);
+  const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const P = {
+    milano: [hex('#6f6862'), hex('#8d857b'), hex('#4c4641'), hex('#a88f6c')],
+    nordic: [hex('#ebe5da'), hex('#d8cfbf'), hex('#c9bfae'), hex('#bfb39f')],
+    riviera: [hex('#cdb897'), hex('#bda582'), hex('#8e7658'), hex('#dccbaa')],
+  }[style];
+  return pixels(size, (u, v, x, y) => {
+    const e = Math.min(u, v, 1 - u, 1 - v);                                   // distance to the edge (uv)
+    const pl = (pile(u, v) - 0.5) * 0.12 + (pile2(u, v) - 0.5) * 0.08;         // pile / fibre noise
+    let col;
+    if (style === 'milano') {
+      const t = n1(u, v), w = n2(u, v);
+      const band = 0.5 + 0.5 * Math.sin((u * 3 + t * 2.5 + w * 0.8) * Math.PI * 2);
+      col = mix(P[0], P[1], sm(0.35, 0.9, band) * 0.8);
+      col = mix(col, P[2], sm(0.55, 0.8, w) * 0.45);                           // worn, darker abrash
+      col = mix(col, P[3], sm(0.8, 0.95, band) * sm(0.4, 0.7, t) * 0.5);        // faded ochre veins
+      if (e < 0.06) col = mix(P[2], P[1], sm(0.03, 0.035, e) * sm(0.045, 0.04, e) * 0.9);   // border + fillet
+    } else if (style === 'nordic') {
+      const a = (u + v) * 9, b = (u - v) * 9, wob = (n2(u, v) - 0.5) * 0.18;
+      const la = Math.abs(a + wob - Math.round(a + wob)), lb = Math.abs(b + wob - Math.round(b + wob));
+      const line = Math.max(sm(0.06, 0.02, la), sm(0.06, 0.02, lb));
+      col = mix(P[0], P[2], line * 0.75);
+      col = mix(col, P[1], (n1(u, v) - 0.4) * 0.5);
+      if (e < 0.05) col = mix(P[3], col, sm(0.02, 0.045, e));
+    } else {
+      const rib = 0.5 + 0.5 * Math.sin(y * Math.PI * 2 / 6), knot = 0.5 + 0.5 * Math.sin(x * Math.PI * 2 / 12 + (y / 6 | 0) * Math.PI);
+      col = mix(P[0], P[1], rib * 0.5 + knot * 0.2);
+      col = mix(col, P[3], (n1(u, v) - 0.45) * 0.6);
+      if (e < 0.05) col = mix(P[2], col, sm(0.035, 0.05, e));
+    }
+    const k = 1 + pl;
+    return [col[0] * k, col[1] * k, col[2] * k];
+  });
 }
 // Abstract art canvases, one family per style
 function artTex(style, variant, w = 512, h = 640) {
@@ -505,32 +596,40 @@ export function getMaterials(styleId = 'milano') {
   const nBoucle = nrm(weaveHeight('boucle', 9), 3.5, 1 / 0.09), nVelvet = nrm(weaveHeight('velvet', 11), 1.2, 1 / 0.2);
   const nPlaster = nrm(plasterTex(21, 0.5, 256), 0.9, 1 / 1.3);
   const nRug = nrm(weaveHeight('boucle', 9), 3.5, 26);
+  // smudge: faint low-frequency roughness drift (wipe marks, uneven sheen) for lacquer, painted walls, appliances —
+  // a perfectly uniform specular lobe is one of the strongest "CG" tells
+  const smudgeC = (() => { const f = fbmFn(4, 5, 77), g = fbmFn(16, 3, 79); return pixels(256, (u, v) => { const t = 150 + (f(u, v) - 0.5) * 55 + (g(u, v) - 0.5) * 18; return [t, t, t]; }); })();
+  const smudge = (rep) => tex(smudgeC, { srgb: false, repeat: rep });
 
   // ---------- floors (colour + normal + roughness maps; tiles/planks carry their own variation)
   if (styleId === 'milano') {
-    const hb = herringbone(hex('#7b5a40'), 11), R = 1 / 0.72;
-    m.floor = std({ map: tex(hb.map, { repeat: R }), normalMap: tex(hb.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.9, 0.9), roughnessMap: tex(hb.rough, { srgb: false, repeat: R }), roughness: 0.82, metalness: 0, envMapIntensity: 0.45 });
-    const mb = marbleTex(1024, '#151414', '#e6e0d4', { scale: 2, sharp: 3, seed: 21, vein2: '#57514a', strength: 0.85, network: 0.9 });
-    m.marble = phys({ map: tex(mb, { repeat: 1 / 1.6 }), roughness: 0.14, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 1.0 });
+    const hb = herringbone(hex('#6e4f3a'), 11), R = 1 / 0.72;
+    m.floor = std({ map: tex(hb.map, { repeat: R }), normalMap: tex(hb.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.9, 0.9), roughnessMap: tex(hb.rough, { srgb: false, repeat: R }), roughness: 0.6, metalness: 0, envMapIntensity: 0.6 });
+    // Nero Marquina: near-black with smoky grey clouding, crisp white veins with a grey haze, a fine crossing network
+    const mb = marbleTex(1024, '#141312', '#b3ada3', { seed: 21, vein2: '#4a4540', strength: 0.6, network: 0.4, width: 0.62, levels: [0, 0.42], scale: 2, turb: 0.3, turb2: 0.45, haze: 0.4, cloud: 1.4, smoke: 0.3 });
+    m.marble = phys({ map: tex(mb, { repeat: 1 / 1.6 }), roughnessMap: tex(mb.rough_, { srgb: false, repeat: 1 / 1.6 }), roughness: 1, clearcoat: 0.6, clearcoatRoughness: 0.08, envMapIntensity: 1.0 });
     const tb = tileTex({ size: 512, tilesX: 2, tilesY: 2, colors: ['#1f1e1d'], grout: '#2c2a28', groutW: 3, surface: mb });
     m.floorBath = std({ map: tex(tb.map, { repeat: 1 / 1.2 }), normalMap: nrm(tb.bump, 1.5, 1 / 1.2), roughness: 0.22, envMapIntensity: 0.9 });
-    m.wallBath = phys({ map: tex(mb, { repeat: 1 / 2.4 }), roughness: 0.26, clearcoat: 0.3, clearcoatRoughness: 0.3, envMapIntensity: 0.9 });
+    m.wallBath = phys({ map: tex(mb, { repeat: 1 / 1.8 }), roughnessMap: tex(mb.rough_, { srgb: false, repeat: 1 / 1.8 }), roughness: 1, clearcoat: 0.3, clearcoatRoughness: 0.35, envMapIntensity: 0.9 });
     m.counter = m.marble;
-    m.stone = phys({ map: tex(marbleTex(512, '#ebe6de', '#9a9084', { scale: 3, sharp: 3, seed: 33, strength: 0.65, network: 0.5 }), { repeat: 1 / 1.2 }), roughness: 0.16, clearcoat: 0.5, envMapIntensity: 0.9 });
+    const sb = marbleTex(512, '#ebe6de', '#9a9084', { seed: 33, vein2: '#cfc7bb', strength: 0.7, network: 0.4, width: 1.4, gold: 0.5, rough: 1.2 });
+    m.stone = phys({ map: tex(sb, { repeat: 1 / 1.2 }), roughnessMap: tex(sb.rough_, { srgb: false, repeat: 1 / 1.2 }), roughness: 1, clearcoat: 0.5, envMapIntensity: 0.9 });
   } else if (styleId === 'nordic') {
-    const wp = widePlanks(hex('#d6bd97'), 12), R = 1 / 2.4;
-    m.floor = std({ map: tex(wp.map, { repeat: R }), normalMap: tex(wp.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tex(wp.rough, { srgb: false, repeat: R }), roughness: 0.88, envMapIntensity: 0.55 });
-    const mb = marbleTex(1024, '#f2f0ec', '#9c978f', { scale: 3, sharp: 5, seed: 22, vein2: '#cdc8c0', strength: 0.6, network: 0.7 });
-    m.marble = phys({ map: tex(mb, { repeat: 1 / 1.4 }), roughness: 0.14, clearcoat: 0.55, clearcoatRoughness: 0.12, envMapIntensity: 0.9 });
+    const wp = widePlanks(hex('#d3b88f'), 12), R = 1 / 2.4;
+    m.floor = std({ map: tex(wp.map, { repeat: R }), normalMap: tex(wp.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tex(wp.rough, { srgb: false, repeat: R }), roughness: 0.64, envMapIntensity: 0.7 });
+    // Calacatta-style: warm white, soft grey veins with a wide haze and a faint gold cast
+    const mb = marbleTex(1024, '#f2f0ec', '#8f887e', { seed: 22, vein2: '#d2ccc3', strength: 0.75, network: 0.45, width: 1.5, haze: 0.55, cloud: 0.7, gold: 0.35 });
+    m.marble = phys({ map: tex(mb, { repeat: 1 / 1.4 }), roughnessMap: tex(mb.rough_, { srgb: false, repeat: 1 / 1.4 }), roughness: 1, clearcoat: 0.55, clearcoatRoughness: 0.12, envMapIntensity: 0.9 });
     const tb = tileTex({ size: 512, tilesX: 8, tilesY: 8, colors: ['#d9d7d2', '#d3d1cc', '#dcdad5'], grout: '#bdbab4', groutW: 2 });
     m.floorBath = std({ map: tex(tb.map, { repeat: 1 / 1.2 }), normalMap: nrm(tb.bump, 1.5, 1 / 1.2), roughness: 0.5 });
     const wt = tileTex({ size: 512, tilesX: 4, tilesY: 16, colors: ['#f4f3f0', '#eeede9', '#f1f0ec'], grout: '#dcdad5', groutW: 2, pattern: 'brick', glaze: 0.04 });
     m.wallBath = phys({ map: tex(wt.map, { repeat: 1 / 1.2 }), normalMap: nrm(wt.bump, 2, 1 / 1.2), roughness: 0.12, clearcoat: 0.7, clearcoatRoughness: 0.08, envMapIntensity: 0.8 });
-    m.counter = phys({ map: tex(marbleTex(512, '#f3f2ef', '#b5afa6', { scale: 2, sharp: 3, seed: 44, strength: 0.55, network: 0.45 }), { repeat: 1 / 1.2 }), roughness: 0.18, clearcoat: 0.4 });
+    const cb = marbleTex(512, '#f3f2ef', '#aaa399', { seed: 44, vein2: '#dcd7cf', strength: 0.6, network: 0.35, width: 1.6, haze: 0.5, cloud: 0.6, rough: 1.3 });
+    m.counter = phys({ map: tex(cb, { repeat: 1 / 1.2 }), roughnessMap: tex(cb.rough_, { srgb: false, repeat: 1 / 1.2 }), roughness: 1, clearcoat: 0.4 });
     m.stone = m.counter;
   } else {
-    const tr = stoneTex(1024, '#e4d6bc', '#c9b38c', { bands: 14, pores: 0.06, seed: 7, contrast: 0.75 });
-    const tt = tileTex({ size: 1024, tilesX: 2, tilesY: 2, colors: ['#e2d2b4', '#dccbad', '#e6d7bb'], grout: '#cdbb9b', groutW: 3, surface: tr, glaze: 0.03 });
+    const tr = stoneTex(1024, '#dccbac', '#c4aa82', { bands: 14, pores: 0.06, seed: 7, contrast: 0.75 });
+    const tt = tileTex({ size: 1024, tilesX: 2, tilesY: 2, colors: ['#d9c7a6', '#d3c09f', '#ddccad'], grout: '#c2ad8a', groutW: 3, surface: tr, glaze: 0.03 });
     // floor height = tile grid + the travertine pores
     const th = canvas(1024), thc = th.getContext('2d'); thc.drawImage(tt.bump, 0, 0); thc.globalCompositeOperation = 'multiply'; thc.drawImage(tr.height_, 0, 0);
     m.floor = std({ map: tex(tt.map, { repeat: 1 / 1.6 }), normalMap: nrm(th, 2.2, 1 / 1.6), roughness: 0.5, envMapIntensity: 0.7 });
@@ -539,7 +638,7 @@ export function getMaterials(styleId = 'milano') {
     const zel = tileTex({ size: 512, tilesX: 8, tilesY: 8, colors: ['#ebe1cf', '#e7dcc8', '#eee5d5', '#e4d8c2', '#e9dfcc'], grout: '#dccdb3', groutW: 3, glaze: 0.035 });
     // zellige: hand-made undulating glaze → low-frequency height on top of the grout grid
     const zh = canvas(512), zhc = zh.getContext('2d'); zhc.drawImage(zel.bump, 0, 0); zhc.globalAlpha = 0.35; zhc.drawImage(plasterTex(31, 0.9, 512), 0, 0); zhc.globalAlpha = 1;
-    m.wallBath = phys({ map: tex(zel.map, { repeat: 1 / 0.8 }), normalMap: nrm(zh, 2.2, 1 / 0.8), roughness: 0.16, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.95 });
+    m.wallBath = phys({ map: tex(zel.map, { repeat: 1 / 0.8 }), normalMap: nrm(zh, 2.2, 1 / 0.8), roughness: 0.32, clearcoat: 0.45, clearcoatRoughness: 0.22, envMapIntensity: 0.85 });
     const bt = tileTex({ size: 512, tilesX: 6, tilesY: 6, colors: ['#b8653f', '#c07049', '#ad5d39', '#c47a55', '#b26a44'], grout: '#d9c7aa', groutW: 3, glaze: 0.1 });
     m.floorBath = std({ map: tex(bt.map, { repeat: 1 / 1.2 }), normalMap: nrm(bt.bump, 1.6, 1 / 1.2), roughness: 0.62 });
     m.counter = std({ map: tex(tr, { repeat: 1 / 1.2 }), normalMap: trN, roughness: 0.35 });
@@ -554,25 +653,27 @@ export function getMaterials(styleId = 'milano') {
   }
 
   // ---------- walls / ceiling
-  const wallCol = { milano: '#c4b8a8', nordic: '#f1efea', riviera: '#eadcc6' }[styleId];
-  m.wall = std({ color: wallCol, map: styleId === 'riviera' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughness: 0.9, envMapIntensity: 0.35 });
+  const wallCol = { milano: '#bcb3a7', nordic: '#f1efea', riviera: '#eadcc6' }[styleId];
+  m.wall = std({ color: wallCol, map: styleId === 'riviera' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: smudge(0.4), roughness: 1.5, envMapIntensity: 0.35 });
   m.ceiling = std({ color: { milano: '#f2eee7', nordic: '#fbfaf8', riviera: '#f5eee2' }[styleId], roughness: 0.95, envMapIntensity: 0.3 });
   m.cutCap = std({ color: '#f4f2ee', roughness: 0.9 });
   m.skirting = std({ color: { milano: '#2a2522', nordic: '#f4f2ee', riviera: '#e2d2b8' }[styleId], roughness: 0.45, envMapIntensity: 0.6 });
   m.exterior = std({ color: '#ece8e0', map: plaster, roughness: 0.85 });
 
   // ---------- woods
-  const woodBase = { milano: '#5a3a26', nordic: '#caa77c', riviera: '#9b7552' }[styleId];
-  m.wood = std({ map: tex(woodFurnitureTex(hex(woodBase), 5), { repeat: 1.2 }), roughness: 0.45, envMapIntensity: 0.6 });
-  m.woodDark = std({ map: tex(woodFurnitureTex(hex({ milano: '#3a2519', nordic: '#8a6a48', riviera: '#6e4f35' }[styleId]), 6), { repeat: 1.2 }), roughness: 0.4 });
-  m.woodLight = std({ map: tex(woodFurnitureTex(hex('#d5b890'), 9), { repeat: 1.2 }), roughness: 0.55 });
-  m.teak = std({ map: tex(woodFurnitureTex(hex('#8c6440'), 10), { repeat: 2 }), roughness: 0.7 });
+  const woodBase = { milano: '#5a3a26', nordic: '#d2b893', riviera: '#9b7552' }[styleId];
+  // tile ≈ 0.9 m; the grain runs along the texture's u → along world X/Z (horizontal) after the bake's world-UV projection
+  const woodM = (col, seed, rough, rep = 1.1, o) => { const c = woodFurnitureTex(hex(col), seed, 512, o); return std({ map: tex(c, { repeat: rep }), normalMap: tex(normalFromHeight(c.height_, 1.4), { srgb: false, repeat: rep }), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: tex(c.rough_, { srgb: false, repeat: rep }), roughness: rough, envMapIntensity: 0.6 }); };
+  m.wood = woodM(woodBase, 5, 0.6);
+  m.woodDark = woodM({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35' }[styleId], 6, 0.55, 1.1, { contrast: 0.3 });
+  m.woodLight = woodM('#d8c3a2', 9, 0.72, 1.1, { contrast: 0.16, rings: 64 });
+  m.teak = woodM('#8c6440', 10, 0.9, 2);
   // feature wall: milano = fluted walnut; nordic = oak slats; riviera = limewash plaster arch niche
   m.wallAccent = styleId === 'milano' ? m.woodDark : styleId === 'nordic' ? m.woodLight : std({ color: '#dcc6a6', map: lime, normalMap: nPlaster, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95 });
 
   // ---------- lacquer / cabinetry
   const lac = { milano: '#1f1e1d', nordic: '#efede8', riviera: '#6f7350' }[styleId];
-  m.lacquer = phys({ color: lac, roughness: styleId === 'milano' ? 0.35 : 0.55, clearcoat: styleId === 'riviera' ? 0.4 : 0.2, clearcoatRoughness: 0.4, envMapIntensity: 0.6 });
+  m.lacquer = phys({ color: lac, roughnessMap: smudge(0.9), roughness: styleId === 'milano' ? 0.55 : 0.8, clearcoat: styleId === 'riviera' ? 0.4 : 0.2, clearcoatRoughness: 0.4, envMapIntensity: 0.6 });
   m.lacquer2 = styleId === 'nordic' ? m.woodLight : styleId === 'milano' ? m.wood : phys({ color: '#e8dcc6', roughness: 0.6, clearcoat: 0.2 });
   m.doorLeaf = styleId === 'milano' ? m.woodDark : std({ color: { nordic: '#f4f2ee', riviera: '#e9dcc6' }[styleId], roughness: 0.6 });
   m.frame = std({ color: { milano: '#1d1c1b', nordic: '#262626', riviera: '#5a4a3a' }[styleId], roughness: 0.45, metalness: 0.4 });
@@ -601,7 +702,7 @@ export function getMaterials(styleId = 'milano') {
   const P = {
     milano: { sofa: ['#34363b', velvet], chair: ['#7a4526', null], accent: '#8a4b2a', c1: '#8c5a2b', c2: '#bfa06a', c3: '#2c2c30', throw: '#6b6258', duvet: '#d8d2c8', head: '#34333a', curtain: '#8d8274', sheer: '#e8e2d8', towel: '#2d2b2a', towel2: '#c9b89c', outdoor: '#57534e' },
     nordic: { sofa: ['#c6c1b8', linen], chair: ['#ece6da', boucle], accent: '#7d8c7a', c1: '#8a9b86', c2: '#d6b98c', c3: '#8ea1ad', throw: '#9c948a', duvet: '#f3f1ec', head: '#cfc8bd', curtain: '#f1eee7', sheer: '#faf8f4', towel: '#f1efea', towel2: '#aab4a8', outdoor: '#d9d5cd' },
-    riviera: { sofa: ['#efe7d8', boucle], chair: ['#e5dac6', boucle], accent: '#b5623b', c1: '#b5623b', c2: '#7b7f52', c3: '#e2c69a', throw: '#c98d5f', duvet: '#f1e9dc', head: '#e3d6c1', curtain: '#e6dac5', sheer: '#f7f1e6', towel: '#efe6d5', towel2: '#b5623b', outdoor: '#ece2cf' },
+    riviera: { sofa: ['#efe7d8', boucle], chair: ['#e5dac6', boucle], accent: '#b5623b', c1: '#b0674a', c2: '#7b7f52', c3: '#e2c69a', throw: '#b99477', duvet: '#f1e9dc', head: '#e3d6c1', curtain: '#e6dac5', sheer: '#f7f1e6', towel: '#efe6d5', towel2: '#b5623b', outdoor: '#ece2cf' },
   }[styleId];
   const NF = { [velvet.uuid]: nVelvet, [boucle.uuid]: nBoucle, [linen.uuid]: nLinen };
   const nOf = (t) => (t && NF[t.uuid]) || nWeave;
@@ -617,9 +718,9 @@ export function getMaterials(styleId = 'milano') {
     : std({ color: P.c1, map: velvet, normalMap: nVelvet, roughness: 0.9 });
   m.cushionB = std({ color: P.c2, map: linen, normalMap: nLinen, roughness: 0.95 });
   m.cushionC = std({ color: P.c3, map: fab, normalMap: nWeave, roughness: 0.95 });
-  m.throw = std({ color: P.throw, map: tex(fabricTex('boucle', 14), { repeat: 3 }), normalMap: nBoucle, roughness: 1, side: THREE.DoubleSide });
+  m.throw = std({ color: P.throw, map: tex(fabricTex('knit', 14), { repeat: 1 / 0.12 }), normalMap: nrm(weaveHeight('knit', 14), 2.4, 1 / 0.12), roughness: 1, side: THREE.DoubleSide });
   m.linen = std({ color: '#f6f3ee', map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95, envMapIntensity: 0.5 });
-  m.duvet = std({ color: P.duvet, map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95, envMapIntensity: 0.5, side: THREE.DoubleSide });
+  m.duvet = std({ color: P.duvet, map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.95, envMapIntensity: 0.5, side: THREE.DoubleSide });
   m.headboard = std({ color: P.head, map: styleId === 'milano' ? velvet : linen, normalMap: styleId === 'milano' ? nVelvet : nLinen, roughness: 0.9 });
   m.curtain = std({ color: P.curtain, map: linen, normalMap: nLinen, roughness: 0.95, side: THREE.DoubleSide });
   // sheers are back-lit by the daylight behind them: a little emissive makes them glow like real voile
@@ -628,16 +729,30 @@ export function getMaterials(styleId = 'milano') {
   m.towel2 = std({ color: P.towel2, map: tex(fabricTex('boucle', 16), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.outdoorFabric = std({ color: P.outdoor, map: fab, normalMap: nWeave, roughness: 0.95 });
   m.rug = std({ map: tex(rugTex(styleId), { repeat: 1 }), normalMap: nRug, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 1, envMapIntensity: 0.2 });
-  m.cane = std({ map: tex(caneTex('#c9a26b'), { repeat: 6 }), roughness: 0.75 });
+  m.cane = std({ map: tex(caneTex('#d8b98a'), { repeat: 9 }), roughness: 0.7, envMapIntensity: 0.5 });
   m.rattan = std({ color: '#b98f5a', map: tex(fabricTex('jute', 18), { repeat: 4 }), normalMap: nBoucle, roughness: 0.85 });
+  // woven shades keep their own sphere UVs (a world-UV projection shows patch seams on a sphere)
+  { const wv = tex(caneTex('#c7a57a'), { repeat: 16, repeatY: 8 }); m.rattanShade = std({ color: '#f3e8d8', map: wv, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.5 }); }
   m.accentFabric = std({ color: P.accent, map: velvet, normalMap: nVelvet, roughness: 0.9 });
+  // Cloth gets a sheen lobe (the soft bright rim fabric shows at grazing angles — the single biggest cue that reads
+  // "textile" instead of "painted plastic"). Standard PBR extension (KHR_materials_sheen) → survives glTF export.
+  const sheenify = (k, amt = 0.8, sr = 0.55) => {
+    const a = m[k]; if (!a || a.isMeshPhysicalMaterial) return;
+    const p = new THREE.MeshPhysicalMaterial(); THREE.MeshStandardMaterial.prototype.copy.call(p, a);
+    p.defines = { STANDARD: '', PHYSICAL: '' };
+    p.sheen = amt; p.sheenRoughness = sr; p.sheenColor = a.color.clone().lerp(new THREE.Color('#ffffff'), 0.3);
+    m[k] = p; a.dispose();
+  };
+  for (const k of ['fabric', 'fabricAccent', 'cushionA', 'cushionB', 'cushionC', 'throw', 'linen', 'duvet', 'headboard', 'curtain', 'accentFabric', 'outdoorFabric']) if (!(styleId === 'milano' && k === 'fabricAccent')) sheenify(k);
+  for (const k of ['towel', 'towel2']) sheenify(k, 0.5, 0.8);
+  sheenify('rattanShade', 0.3, 0.7);
 
   // ---------- ceramics, table, food
   m.porcelain = phys({ color: '#fbfbfa', roughness: 0.12, clearcoat: 0.8, clearcoatRoughness: 0.1, envMapIntensity: 0.9 });
   m.ceramic = phys({ color: { milano: '#f3efe8', nordic: '#f4f3ef', riviera: '#f1e8d8' }[styleId], roughness: 0.2, clearcoat: 0.6 });
-  m.ceramic2 = phys({ color: { milano: '#1f1f21', nordic: '#b7c1bd', riviera: '#b5623b' }[styleId], roughness: 0.3, clearcoat: 0.5 });
+  m.ceramic2 = phys({ color: { milano: '#1f1f21', nordic: '#b7c1bd', riviera: '#a4664c' }[styleId], roughness: 0.3, clearcoat: 0.5 });
   m.cutlery = std({ color: styleId === 'milano' ? '#d6b27a' : '#dcdcdc', metalness: 1, roughness: 0.18, envMapIntensity: 1.3 });
-  m.napkin = std({ color: { milano: '#6b6258', nordic: '#dcd6cb', riviera: '#b5623b' }[styleId], map: linen, roughness: 1 });
+  m.napkin = std({ color: { milano: '#6b6258', nordic: '#dcd6cb', riviera: '#b98a6c' }[styleId], map: linen, roughness: 1 });
   m.fruit = std({ color: '#e0892c', roughness: 0.55 });
   m.fruit2 = std({ color: '#b7c43d', roughness: 0.5 });
   m.fruit3 = std({ color: '#8e1f24', roughness: 0.4 });
@@ -654,7 +769,7 @@ export function getMaterials(styleId = 'milano') {
   m.leaf2 = std({ map: tex(leafTex(styleId === 'riviera' ? '#8a9868' : '#4f7a35')), roughness: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.6 });
   m.stem = std({ color: '#5b4632', roughness: 0.8 });
   m.soil = std({ color: '#2b2018', roughness: 1 });
-  m.pot = phys({ color: { milano: '#1c1b1b', nordic: '#e9e6e0', riviera: '#b76a45' }[styleId], roughness: 0.45, clearcoat: 0.3 });
+  m.pot = phys({ color: { milano: '#1c1b1b', nordic: '#e9e6e0', riviera: '#a86a4c' }[styleId], roughness: 0.45, clearcoat: 0.3 });
   m.pot2 = std({ color: { milano: '#8a7d6d', nordic: '#b6aea3', riviera: '#d9c6a5' }[styleId], roughness: 0.8 });
   m.flower = std({ color: { milano: '#f3efe6', nordic: '#f6f2ea', riviera: '#f0c9a2' }[styleId], roughness: 0.8, side: THREE.DoubleSide });
 
@@ -680,13 +795,40 @@ export function getMaterials(styleId = 'milano') {
   const aoK = { milano: 0.72, nordic: 0.46, riviera: 0.52 }[styleId];
   m.ao = dec({ color: 0x000000, opacity: aoK });
   m.aoSoft = dec({ color: 0x000000, opacity: aoK * 0.42 });
+  // room-depth falloff: rooms darken away from the glazing (ceiling, floor, side walls) — the look of real daylight
+  m.shade = dec({ color: 0x000000, opacity: { milano: 0.42, nordic: 0.26, riviera: 0.32 }[styleId] });
   const gk = { milano: 1, nordic: 0.7, riviera: 0.8 }[styleId];
-  m.glow = dec({ color: L, opacity: 0.5 * gk, blending: THREE.AdditiveBlending, fog: false });
-  m.glowFaint = dec({ color: L, opacity: 0.2 * gk, blending: THREE.AdditiveBlending, fog: false });
-  m.daylight = dec({ color: new THREE.Color('#fff3e2'), opacity: 0.2 * gk, blending: THREE.AdditiveBlending, fog: false });
+  // Additive light is tinted a little redder than the lamps: ACES compresses the red channel first when bright
+  // light piles up on warm plaster, which otherwise drifts the pools towards a sickly yellow-green.
+  const GL = L.clone().lerp(new THREE.Color('#ff9f5c'), 0.35);
+  m.glow = dec({ color: GL, opacity: 0.44 * gk, blending: THREE.AdditiveBlending, fog: false });
+  m.glowFaint = dec({ color: GL, opacity: 0.18 * gk, blending: THREE.AdditiveBlending, fog: false });
+  m.daylight = dec({ color: new THREE.Color('#fff3e2'), opacity: 0.15 * gk, blending: THREE.AdditiveBlending, fog: false });
+  m.lampGlow = dec({ color: new THREE.Color(S.lightColor).lerp(new THREE.Color('#ffb870'), 0.25), opacity: 0.62 * gk, blending: THREE.AdditiveBlending, fog: false });
+  // Camera-facing halos around bulbs / shades (one billboard mesh per apartment, built in apartment.js).
+  // Each quad = 4 verts sharing the centre `position`; `corner` (±1,±1) and `bsize` expand it in view space.
+  m.bloom = new THREE.ShaderMaterial({
+    uniforms: { map: { value: (() => { const t = tex(bloomTex(), { srgb: false }); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; })() }, color: { value: new THREE.Color(S.lightColor).multiplyScalar(1.1 * gk + 0.3) } },
+    vertexShader: `attribute vec2 corner; attribute float bsize; attribute float bk; varying vec2 vUv; varying float vK;
+      void main(){ vUv = corner * 0.5 + 0.5; vK = bk; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        mv.xy += corner * bsize * 0.5; mv.z += bsize * 0.35; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D map; uniform vec3 color; varying vec2 vUv; varying float vK;
+      void main(){ float a = texture2D(map, vUv).a * vK; gl_FragColor = vec4(color * a, a); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  m.bloom.userData.noEnv = true;
+  // Export hints (glTF): the halo billboard is view-space shader magic → skip it; the decals are plain unlit
+  // MeshBasicMaterial quads (KHR_materials_unlit) — additive ones are marked so an exporter/viewer may drop or re-blend them.
+  m.bloom.userData.noExport = true;
+  for (const k of ['glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.additive = true;
+  for (const k of ['ao', 'aoSoft', 'shade', 'glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.decal = true;
 
   // name all materials (debug + stable bucket keys)
   for (const [k, v] of Object.entries(m)) if (v && v.isMaterial) v.name = `${styleId}.${k}`;
+  // facade glazing: the cheap transparent glass plus a faint daylight emission, so windows read as the brightest
+  // surface in the room (the eye adapts to the interior) without hiding the view
+  m.glazing = m.glass.clone(); m.glazing.name = `${styleId}.glazing`;
+  m.glazing.emissive = new THREE.Color('#dfe8f0'); m.glazing.emissiveIntensity = 0.1; m.glazing.opacity = 0.12;
   m.art.forEach((a, i) => a.name = `${styleId}.art${i}`);
   cache.set(styleId, m);
   return m;

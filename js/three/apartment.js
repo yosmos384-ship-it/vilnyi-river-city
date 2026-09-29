@@ -15,37 +15,53 @@ const PW = 0.1, CW = 0.15, FW = 0.2, TW = 0.1;   // party wall, corridor wall, f
 const DOOR_W = 0.82, DOOR_H = 2.1, ENTRY_W = 1.0, ENTRY_H = 2.2;
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 const PI = Math.PI, HALF = PI / 2;
-const KEEP_UV = /\.(rug|art\d|leaf2?|ao|aoSoft|glow|glowFaint|daylight)$/;
+const KEEP_UV = /\.(rug|art\d|leaf2?|rattanShade|ao|aoSoft|shade|glow|glowFaint|daylight|lampGlow)$/;
 
 // ------------------------------------------------------------------ baking (merge by material)
 const nonIndexed = new WeakMap();
 function flat(g) { let n = nonIndexed.get(g); if (!n) { n = g.index ? g.toNonIndexed() : g; nonIndexed.set(g, n); } return n; }
-const _n3 = new THREE.Matrix3(), _v = new THREE.Vector3(), _nv = new THREE.Vector3();
-function transformed(g, mtx, worldUV, color) {
-  const s = flat(g), P = s.attributes.position, N = s.attributes.normal, U = s.attributes.uv, C = s.attributes.color;
-  const n = P.count, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-  _n3.getNormalMatrix(mtx);
-  for (let i = 0; i < n; i++) {
-    _v.fromBufferAttribute(P, i).applyMatrix4(mtx);
-    pos[i * 3] = _v.x; pos[i * 3 + 1] = _v.y; pos[i * 3 + 2] = _v.z;
-    if (N) _nv.fromBufferAttribute(N, i).applyMatrix3(_n3).normalize(); else _nv.set(0, 1, 0);
-    nor[i * 3] = _nv.x; nor[i * 3 + 1] = _nv.y; nor[i * 3 + 2] = _nv.z;
-    if (worldUV) {
-      const ax = Math.abs(_nv.x), ay = Math.abs(_nv.y), az = Math.abs(_nv.z);
-      if (ay >= ax && ay >= az) { uv[i * 2] = _v.x; uv[i * 2 + 1] = _v.z; }
-      else if (ax >= az) { uv[i * 2] = _v.z; uv[i * 2 + 1] = _v.y; }
-      else { uv[i * 2] = _v.x; uv[i * 2 + 1] = _v.y; }
-    } else if (U) { uv[i * 2] = U.getX(i); uv[i * 2 + 1] = U.getY(i); }
+const _n3 = new THREE.Matrix3();
+// Bake core: writes list[i0..i1) (pairs of matrix, geometry) straight into one
+// preallocated buffer set with inlined matrix math (the bake is the bulk of the build time).
+function mergeInto(list, i0, i1, worldUV, color) {
+  let n = 0;
+  for (let i = i0; i < i1; i += 2) n += flat(list[i + 1]).attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), col = color ? new Float32Array(n * 3).fill(1) : null;
+  let o = 0, minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = i0; i < i1; i += 2) {
+    const s = flat(list[i + 1]), e = list[i].elements, P = s.attributes.position.array, N = s.attributes.normal ? s.attributes.normal.array : null;
+    const U = s.attributes.uv ? s.attributes.uv.array : null, C = s.attributes.color ? s.attributes.color.array : null, cnt = s.attributes.position.count;
+    const ne = _n3.getNormalMatrix(list[i]).elements;
+    const a0 = e[0], a1 = e[4], a2 = e[8], a3 = e[12], b0 = e[1], b1 = e[5], b2 = e[9], b3 = e[13], c0 = e[2], c1 = e[6], c2 = e[10], c3 = e[14];
+    const n0 = ne[0], n1 = ne[3], n2 = ne[6], m0 = ne[1], m1 = ne[4], m2 = ne[7], k0 = ne[2], k1 = ne[5], k2 = ne[8];
+    for (let j = 0; j < cnt; j++, o++) {
+      const x = P[j * 3], y = P[j * 3 + 1], z = P[j * 3 + 2];
+      const X = a0 * x + a1 * y + a2 * z + a3, Y = b0 * x + b1 * y + b2 * z + b3, Z = c0 * x + c1 * y + c2 * z + c3;
+      pos[o * 3] = X; pos[o * 3 + 1] = Y; pos[o * 3 + 2] = Z;
+      if (X < minX) minX = X; if (X > maxX) maxX = X; if (Y < minY) minY = Y; if (Y > maxY) maxY = Y; if (Z < minZ) minZ = Z; if (Z > maxZ) maxZ = Z;
+      let nx = 0, ny = 1, nz = 0;
+      if (N) {
+        const p = N[j * 3], q = N[j * 3 + 1], r = N[j * 3 + 2];
+        nx = n0 * p + n1 * q + n2 * r; ny = m0 * p + m1 * q + m2 * r; nz = k0 * p + k1 * q + k2 * r;
+        const l = 1 / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1); nx *= l; ny *= l; nz *= l;
+      }
+      nor[o * 3] = nx; nor[o * 3 + 1] = ny; nor[o * 3 + 2] = nz;
+      if (worldUV) {
+        const ax = nx < 0 ? -nx : nx, ay = ny < 0 ? -ny : ny, az = nz < 0 ? -nz : nz;
+        if (ay >= ax && ay >= az) { uv[o * 2] = X; uv[o * 2 + 1] = Z; }
+        else if (ax >= az) { uv[o * 2] = Z; uv[o * 2 + 1] = Y; }
+        else { uv[o * 2] = X; uv[o * 2 + 1] = Y; }
+      } else if (U) { uv[o * 2] = U[j * 2]; uv[o * 2 + 1] = U[j * 2 + 1]; }
+      if (col && C) { col[o * 3] = C[j * 3]; col[o * 3 + 1] = C[j * 3 + 1]; col[o * 3 + 2] = C[j * 3 + 2]; }
+    }
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  if (color) {
-    const col = new Float32Array(n * 3).fill(1);
-    if (C) for (let i = 0; i < n; i++) { col[i * 3] = C.getX(i); col[i * 3 + 1] = C.getY(i); col[i * 3 + 2] = C.getZ(i); }
-    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  }
+  if (col) out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.boundingBox = new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ));
+  out.boundingSphere = out.boundingBox.getBoundingSphere(new THREE.Sphere());
   return out;
 }
 // Merge every static mesh under `src` into one mesh per material (added to `dst`). Meshes flagged userData.keep
@@ -65,15 +81,10 @@ function bake(src, dst) {
   const meshes = [];
   for (const [mat, list] of buckets) {
     const worldUV = !KEEP_UV.test(mat.name || ''), color = !!mat.vertexColors;
-    const geos = [];
-    for (let i = 0; i < list.length; i += 2) geos.push(transformed(list[i + 1], list[i], worldUV, color));
     // split very large buckets so no single buffer gets unwieldy
-    const CHUNK = 400;
-    for (let i = 0; i < geos.length; i += CHUNK) {
-      const part = geos.slice(i, i + CHUNK);
-      const merged = part.length === 1 ? part[0] : mergeGeometries(part, false);
-      if (part.length > 1) part.forEach(g => g.dispose());
-      merged.computeBoundingSphere(); merged.computeBoundingBox();
+    const CHUNK = 800;
+    for (let i = 0; i < list.length; i += CHUNK * 2) {
+      const merged = mergeInto(list, i, Math.min(list.length, i + CHUNK * 2), worldUV, color);
       const mesh = new THREE.Mesh(merged, mat);
       mesh.name = 'baked:' + (mat.name || '?');
       mesh.matrixAutoUpdate = false;
@@ -129,7 +140,11 @@ function put(p, obj, u, v, face = '+v', y = 0) {
   const sb = obj.userData.solidBox;
   // baked contact shadow: a soft dark footprint just above the floor (above rugs too)
   const ao = obj.userData.ao || (sb && !obj.userData.noSolid ? { w: sb.w, d: sb.d, x: sb.x, z: sb.z } : null);
-  if (ao && CUR_M) FX.fxFlat(obj, CUR_M.ao, ao.cell || 'rect', ao.x || 0, 0.013, ao.z || 0, ao.w + 0.3, ao.d + 0.3);
+  if (ao && CUR_M) {
+    // two layers: a tight contact shadow and a broad soft penumbra (bounce light occluded by the piece)
+    FX.fxFlat(obj, CUR_M.ao, ao.cell || 'rect', ao.x || 0, 0.013, ao.z || 0, ao.w + 0.22, ao.d + 0.22);
+    if (!obj.userData.noSoftAO) FX.fxFlat(obj, CUR_M.aoSoft, 'soft', ao.x || 0, 0.012, ao.z || 0, ao.w * 1.25 + 0.9, ao.d * 1.25 + 0.9);
+  }
   if (sb && !obj.userData.noSolid) {
     const c = collider(obj, -sb.w / 2 + (sb.x || 0), 0.02, -sb.d / 2 + (sb.z || 0), sb.w / 2 + (sb.x || 0), Math.min(sb.h, 1.9), sb.d / 2 + (sb.z || 0));
     c.name = 'col-furniture';
@@ -498,6 +513,7 @@ function downlight(ctx, u, y, v) {
   const { m, sg } = ctx;
   FX.cyl(sg, 0.05, 0.05, 0.004, ctx.m.styleId === 'nordic' ? m.blackMetal : m.metal, u, y - 0.006, v, 20);
   FX.disc(sg, 0.036, m.lightEmit, u, y - 0.0065, v, [HALF, 0, 0], 16);
+  FX.bloom(sg, u, y - 0.03, v, 0.22, 0.5);
 }
 // Living: dropped perimeter bulkhead with a hidden LED cove and downlights in the drop.
 function coveCeiling(ctx, L, r, [a0, b0, a1, b1]) {
@@ -649,18 +665,24 @@ function buildFacade(ctx, L) {
         // sliding panel pushed over its neighbour (outside plane), leaving the opening free
         const dir = k + 1 < n ? 1 : -1;
         const q0 = p0 + dir * (pw - 0.06), q1 = q0 + pw;
-        box(sg, m.glass, q0 + 0.03, y0 + 0.06, vg + 0.05, q1 - 0.03, topY - 0.05, vg + 0.062);
+        box(sg, m.glazing, q0 + 0.03, y0 + 0.06, vg + 0.05, q1 - 0.03, topY - 0.05, vg + 0.062);
         box(sg, fr, q0, y0 + 0.012, vg + 0.04, q0 + 0.05, topY, vg + 0.072); box(sg, fr, q1 - 0.05, y0 + 0.012, vg + 0.04, q1, topY, vg + 0.072);
         box(sg, fr, q0, y0 + 0.012, vg + 0.04, q1, y0 + 0.06, vg + 0.072); box(sg, fr, q0, topY - 0.05, vg + 0.04, q1, topY, vg + 0.072);
         box(sg, m.metal, q0 + (dir > 0 ? 0.06 : pw - 0.08), y0 + 0.9, vg + 0.02, q0 + (dir > 0 ? 0.08 : pw - 0.06), y0 + 1.3, vg + 0.04);
         f.openU = [p0 + 0.03, p1 - 0.03];
         continue;
       }
-      box(sg, m.glass, p0 + 0.02, y0 + 0.05, vg - 0.006, p1 - 0.02, topY - 0.04, vg + 0.006);
+      box(sg, m.glazing, p0 + 0.02, y0 + 0.05, vg - 0.006, p1 - 0.02, topY - 0.04, vg + 0.006);
       collider(ctx.cg, p0, y0 + 0.02, vg - 0.05, p1, y0 + 2.2, vg + 0.05);
     }
     // daylight falling in through the bay: brightest at the glass, fading ~2.4 m into the room
-    if (!cut) FX.fxQuad(sg, m.daylight, 'grad', [(a + b) / 2, y0 + 0.006, vF - 1.2], [b - a + 0.3, 0, 0], [0, 0, 2.4]);
+    if (!cut && f.room && f.room.rect) roomFalloff(ctx, L, f.room);
+    if (!cut) {
+      FX.fxQuad(sg, m.daylight, 'grad', [(a + b) / 2, y0 + 0.006, vF - 1.2], [b - a + 0.3, 0, 0], [0, 0, 2.4]);
+      // …and grazing the side walls / partitions that meet the glazing, plus a soft bounce on the ceiling
+      for (const [uw, dir] of [[a, 1], [b, -1]]) FX.fxQuad(sg, m.daylight, 'grad', [uw + dir * 0.012, y0 + 1.25, vF - 0.9], [0, 2.5, 0], [0, 0, 1.8]);
+      FX.fxQuad(sg, m.daylight, 'grad', [(a + b) / 2, y0 + CH - 0.006, vF - 0.8], [b - a, 0, 0], [0, 0, 1.6]);
+    }
     // frame: mullions + rails
     for (let k = 0; k <= n; k++) { const x = a + k * pw; box(sg, fr, x - ft / 2, y0 + 0.012, vg - ft / 2, x + ft / 2, topY, vg + ft / 2); }
     box(sg, fr, a, y0 + 0.012, vg - ft / 2, b, y0 + 0.05, vg + ft / 2);
@@ -669,6 +691,42 @@ function buildFacade(ctx, L) {
   // slab band between the levels (outside view)
   if (P.duplex && L.lv === 0 && !cut) box(sg, m.exterior, 0, y0 + CH, vF, P.W, y0 + LH, D);
   if (L.hasOutdoor) buildOutdoor(ctx, L);
+}
+// Rooms lit from one glazed side fall off towards the back: gradient shade decals on the ceiling, floor and side walls
+// (dense at the corridor side, clear at the glass). Cheap stand-in for baked GI; unlit decals → merge into 1 draw call.
+function roomFalloff(ctx, L, r) {
+  const { P, m, sg } = ctx, [a0, b0, a1, b1] = clearRect(P, r), y0 = L.y, d = b1 - b0, w = a1 - a0, vm = (b0 + b1) / 2;
+  if (d < 2 || w < 1.5) return;
+  const cv0 = P.duplex && L.lv === 0 && r.kind === 'living' ? Math.max(b0, P.stair.v1) : b0, dc = b1 - cv0;
+  FX.fxQuad(sg, m.shade, 'fall', [(a0 + a1) / 2, y0 + CH - 0.006, (cv0 + b1) / 2], [w + 0.1, 0, 0], [0, 0, -dc]);
+  FX.fxQuad(sg, m.shade, 'fall', [(a0 + a1) / 2, y0 + 0.0115, vm], [w + 0.1, 0, 0], [0, 0, -d]);
+  // side walls: only where a real wall runs (openings to a kitchen / hall stay clear); each piece carries its slice
+  // of the room-long gradient
+  for (const s of ctx.segs[L.lv] || []) {
+    if (s.axis !== 'v') continue;
+    for (const f of s.faces) {
+      const face = s.c + f * s.t / 2, uq = face + f * 0.013;
+      if (!(Math.abs(face - a0) < 0.03 && f > 0) && !(Math.abs(face - a1) < 0.03 && f < 0)) continue;
+      const p0 = Math.max(b0, s.a0), p1 = Math.min(b1, s.a1);
+      if (p1 - p0 < 0.1) continue;
+      fxSlice(ctx, m.shade, 'fall', uq, y0 + CH / 2, CH + 0.2, p0, p1, b0, b1);
+    }
+  }
+  FX.fxQuad(sg, m.shade, 'soft', [(a0 + a1) / 2, y0 + CH / 2, b0 + 0.013], [w * 1.2, 0, 0], [0, CH * 1.6, 0]);
+}
+// Vertical decal on a wall of constant u, spanning v ∈ [p0, p1] but mapped as a slice of a cell stretched over
+// [g0 (dense edge), g1] — so pieces of one gradient line up across door openings.
+const FXC = { fall: [0, 2] };
+function fxSlice(ctx, mat, cell, u, yc, h, p0, p1, g0, g1) {
+  const [cx, cy] = FXC[cell], L = g1 - g0, t0 = (g1 - p0) / L, t1 = (g1 - p1) / L;   // t = cell v (1 = dense edge)
+  const geo = new THREE.BufferGeometry(), y0 = yc - h / 2, y1 = yc + h / 2;
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([u, y0, p0, u, y1, p0, u, y1, p1, u, y0, p1], 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0], 3));
+  const U = (x) => cx * 0.25 + x * 0.25, V = (t) => 0.75 - cy * 0.25 + t * 0.25;
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute([U(0.02), V(t0), U(0.98), V(t0), U(0.98), V(t1), U(0.02), V(t1)], 2));
+  geo.setIndex([0, 1, 2, 0, 2, 3]);
+  ctx.tmpGeos.push(geo);
+  const o = new THREE.Mesh(geo, mat); ctx.sg.add(o); return o;
 }
 function buildOutdoor(ctx, L) {
   const { P, m, sg, cut } = ctx;
@@ -733,6 +791,12 @@ function finishWalls(ctx, L) {
         ? FX.fxQuad(sg, mat, 'grad', [mid, y, off + f * wdt / 2], [len, 0, 0], [0, 0, -f * wdt])
         : FX.fxQuad(sg, mat, 'grad', [off + f * wdt / 2, y, mid], [0, 0, len], [-f * wdt, 0, 0]);
       if (len > 0.12) {
+        // vertical corner occlusion at both ends of the wall run (inside corners / door jambs)
+        if (!ctx.cut && len > 0.5) for (const [ae, sgn] of [[s.a0, 1], [s.a1, -1]]) {
+          const cw = 0.28, ca = ae + sgn * cw / 2;
+          if (s.axis === 'u') FX.fxQuad(sg, m.aoSoft, 'corner', [ca, y0 + CH / 2, off + f * 0.011], [0, CH, 0], [-sgn * cw, 0, 0]);
+          else FX.fxQuad(sg, m.aoSoft, 'corner', [off + f * 0.011, y0 + CH / 2, ca], [0, CH, 0], [0, 0, -sgn * cw]);
+        }
         Fl(y0 + 0.004, 0.32, m.ao);
         W(y0 + (bath ? 0.2 : 0.08 + 0.17), bath ? -0.4 : -0.34, 0.012, m.aoSoft);
         if (!ctx.cut) { Fl(y0 + CH - 0.004, 0.3, m.aoSoft); W(y0 + CH - 0.15, 0.3, 0.012, m.aoSoft); }
@@ -1044,7 +1108,7 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   put(g, F.plant(m, { h: 1.7, seed: 4 }), tvWall - t * 0.3, v1 + 0.2, '+v');       // facade corner of the TV wall
   if (farIsWall && !floating) artOn(ctx, g, farWall, lc, toTV, 1.1, 0.8, 0, 1.7);
   else if (farIsWall && Math.abs(farWall - sofaU) > 1.1) {
-    const sbl = Math.min(1.8, zd - 0.4); halo(ctx, put(g, F.sideboard(m, { len: sbl }), farWall + t * 0.24, lc, toTV), -sbl / 2 + 0.25, -0.235, 1.35);
+    const sbl = Math.min(1.8, zd - 0.4); halo(ctx, put(g, F.sideboard(m, { len: sbl }), farWall + t * 0.24, lc, toTV), -sbl / 2 + 0.25, -0.235, 1.2);
     artOn(ctx, g, farWall, lc, toTV, 1.2, 0.9, 0, 1.8);
   }
   ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
@@ -1122,7 +1186,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     const vcb = clamp((vmin + b1) / 2, vmin + bw / 2 + 0.5, b1 - bw / 2 - 0.45);
     put(g, F.bed(m, { w: bw }), a1 - 1.08, vcb, '-u');
     bedC = [a1 - 1.08, vcb];
-    for (const side of [-1, 1]) { const vv = vcb + side * (bw / 2 + 0.33); if (vv - 0.22 > vmin + 0.02 && vv + 0.22 < b1 - 0.05) halo(ctx, put(g, F.nightstand(m, { seed: side + idx }), a1 - 0.23, vv, '-u'), -0.07, -0.197); }
+    for (const side of [-1, 1]) { const vv = vcb + side * (bw / 2 + 0.33); if (vv - 0.22 > vmin + 0.02 && vv + 0.22 < b1 - 0.05) halo(ctx, put(g, F.nightstand(m, { seed: side + idx }), a1 - 0.23, vv, '-u'), -0.07, -0.197, 0.8); }
     featureWallBed(ctx, g, a1, vcb, '-u', Math.min(bw + 1.2, d - 0.1));
     artOn(ctx, g, a1, vcb, '-u', Math.min(1.2, bw), 0.7, 1 + idx, 1.55);
     let leftUsed = false;
@@ -1138,7 +1202,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     const bu = clamp((start + a1) / 2, a0 + bw / 2 + 0.02, a1 - bw / 2 - 0.02);
     put(g, F.bed(m, { w: bw }), bu, b0 + 1.08, '+v');
     bedC = [bu, b0 + 1.08];
-    if (a1 - (bu + bw / 2) > 0.46) halo(ctx, put(g, F.nightstand(m, { w: 0.42 }), a1 - 0.22, b0 + 0.22, '+v'), -0.06, -0.187);
+    if (a1 - (bu + bw / 2) > 0.46) halo(ctx, put(g, F.nightstand(m, { w: 0.42 }), a1 - 0.22, b0 + 0.22, '+v'), -0.06, -0.187, 0.8);
     featureWallBed(ctx, g, bu, b0, '+v', Math.min(bw + 0.5, a1 - start + 0.2));
     artOn(ctx, g, bu, b0, '+v', Math.min(1.1, bw), 0.6, 1 + idx, 1.65);
     const free = d - 2.2;
@@ -1151,9 +1215,10 @@ function furnishBedroom(ctx, L, g, r, idx) {
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.7, pri: 1 });
 }
 // warm halo on the wall behind a lamp that stands against it (x, z in the furniture's local frame)
+// (y = height of the lamp shade's centre: the hourglass of light escaping above and below the shade)
 function halo(ctx, obj, x, z, y = 1.0) {
   if (ctx.cut || !obj) return obj;
-  FX.fxQuad(obj, ctx.m.glow, 'disc', [x, y, z], [1.0, 0, 0], [0, 1.2, 0]);
+  FX.fxQuad(obj, ctx.m.lampGlow, 'lamp', [x, y, z], [1.35, 0, 0], [0, 1.9, 0]);
   return obj;
 }
 function featureWallBed(ctx, g, u, v, face, len) {
@@ -1178,9 +1243,11 @@ function buildLights(ctx) {
   const lights = [];
   for (const s of spots) {
     if (lights.length >= MAX) break;
-    const h = s.h ?? 2.3;
+    // hung at ~1.8 m (not just under the slab): a point light 40 cm below the ceiling burns a hot, hue-shifted
+    // spot onto it; lower and a little dimmer, the ceiling reads as the soft even wash of real downlights
+    const h = s.h ?? 1.8;
     if (lights.some(l => Math.abs(l.position.y - (s.y + h)) < 1 && Math.hypot(l.position.x - s.u, l.position.z - s.v) < 1.6)) continue;
-    const l = new THREE.PointLight(s.col ? new THREE.Color(s.col) : col, 5.5 * s.k * (ctx.opts.lightScale ?? 1), s.dist ?? 7.5, 1.6);
+    const l = new THREE.PointLight(s.col ? new THREE.Color(s.col) : col, (s.h == null ? 4.2 : 5.5) * s.k * (ctx.opts.lightScale ?? 1), s.dist ?? 7.5, 1.6);
     l.position.set(s.u, s.y + h, s.v);
     l.name = 'apt-light';
     lights.push(l);
@@ -1215,10 +1282,12 @@ function build(unit, styleId, opts = {}) {
     collider(cg, u + w - gw, L.y + 0.02, v + d - 0.03, u + w, L.y + 2.0, v + d + 0.03);
   }
   CUR_M = null;
-  // bake static geometry
+  // bake static geometry (halo markers first: they become one camera-facing billboard mesh)
   const baked = new THREE.Group(); baked.name = 'baked';
   root.add(baked);
+  const halos = opts.cutaway ? null : bloomMesh(sg, m);
   bake(sg, baked);
+  if (halos) baked.add(halos);
   // dispose temporary (non-cached) geometries used only as bake sources
   ctx.tmpGeos.forEach(g => g.dispose());
   cg.updateMatrixWorld(true);
@@ -1250,6 +1319,26 @@ function build(unit, styleId, opts = {}) {
   };
 }
 // cutaway of a duplex lower level: stair treads only
+// Collect userData.bloom markers under `src` into one billboard mesh (4 verts per halo, expanded in the shader).
+function bloomMesh(src, m) {
+  src.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(src.matrixWorld).invert(), list = [], v = new THREE.Vector3();
+  src.traverse(o => { if (o.userData.bloom) { v.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); list.push([v.x, v.y, v.z, o.userData.bloom.size, o.userData.bloom.k]); } });
+  if (!list.length) return null;
+  const n = list.length, pos = new Float32Array(n * 12), cor = new Float32Array(n * 8), sz = new Float32Array(n * 4), kk = new Float32Array(n * 4), idx = [];
+  const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  list.forEach(([x, y, z, s, k], i) => {
+    for (let j = 0; j < 4; j++) { const q = i * 4 + j; pos.set([x, y, z], q * 3); cor.set(C[j], q * 2); sz[q] = s; kk[q] = k; }
+    idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('corner', new THREE.BufferAttribute(cor, 2));
+  g.setAttribute('bsize', new THREE.BufferAttribute(sz, 1)); g.setAttribute('bk', new THREE.BufferAttribute(kk, 1)); g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(); g.computeBoundingSphere(); g.boundingSphere.radius += 1;
+  const mesh = new THREE.Mesh(g, m.bloom);
+  mesh.name = 'halos'; mesh.renderOrder = 3; mesh.matrixAutoUpdate = false; mesh.raycast = () => {}; mesh.userData.noExport = true;
+  return mesh;
+}
 function buildStairLow(ctx) {
   const { P, m, sg } = ctx, s = P.stair;
   const treadM = m.styleId === 'riviera' ? m.stone : m.styleId === 'milano' ? m.woodDark : m.woodLight;

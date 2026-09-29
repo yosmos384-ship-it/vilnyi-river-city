@@ -1,0 +1,69 @@
+{
+ "slides": [
+  {
+   "src": "ai/real-aerial-bluehour.jpg",
+   "caption": {
+    "en": "VILNYI RIVER CITY at blue hour — blocks C3 & C4 in the centre",
+    "ro": "VILNYI RIVER CITY la ora albastră — blocurile C3 și C4 în centru",
+    "he": "VILNYI RIVER CITY בשעה הכחולה — בניינים C3 ו-C4 במרכז",
+    "ru": "VILNYI RIVER CITY в синий час — корпуса C3 и C4 в центре",
+    "uk": "VILNYI RIVER CITY у синю годину — корпуси C3 і C4 у центрі",
+    "fr": "VILNYI RIVER CITY à l’heure bleue — blocs C3 et C4 au centre",
+    "it": "VILNYI RIVER CITY all’ora blu — edifici C3 e C4 al centro",
+    "de": "VILNYI RIVER CITY zur blauen Stunde — Blöcke C3 und C4 in der Mitte"
+   }
+  },
+  {
+   "src": "ai/real-aerial-golden.jpg",
+   "caption": {
+    "en": "Golden hour over the complex and the surrounding garden suburb",
+    "ro": "Ora de aur deasupra ansamblului și a cartierului de case",
+    "he": "שעת זהב מעל המתחם ושכונת הבתים שסביבו",
+    "ru": "Золотой час над комплексом и окружающим посёлком",
+    "uk": "Золота година над комплексом і довколишнім житловим районом",
+    "fr": "L’heure dorée sur la résidence et le quartier pavillonnaire",
+    "it": "L’ora d’oro sul complesso e sul quartiere di villette",
+    "de": "Goldene Stunde über dem Ensemble und der Gartenvorstadt"
+   }
+  },
+  {
+   "src": "ai/real-aerial-day.jpg",
+   "caption": {
+    "en": "The whole ensemble by day: C3 & C4 between Phase I and Phase III",
+    "ro": "Întregul ansamblu ziua: C3 și C4 între Faza I și Faza III",
+    "he": "המתחם כולו ביום: C3 ו-C4 בין שלב א׳ לשלב ג׳",
+    "ru": "Весь комплекс днём: C3 и C4 между I и III очередями",
+    "uk": "Увесь комплекс удень: C3 і C4 між I та III чергами",
+    "fr": "L’ensemble de jour : C3 et C4 entre la Phase I et la Phase III",
+    "it": "L’intero complesso di giorno: C3 e C4 tra la Fase I e la Fase III",
+    "de": "Das gesamte Ensemble bei Tag: C3 und C4 zwischen Phase I und Phase III"
+   }
+  },
+  {
+   "src": "ai/real-lake-foreground.jpg",
+   "caption": {
+    "en": "Lacul Morii lies just south of the complex",
+    "ro": "Lacul Morii se află chiar la sud de ansamblu",
+    "he": "אגם מוריי נמצא ממש מדרום למתחם",
+    "ru": "Озеро Морий — прямо к югу от комплекса",
+    "uk": "Озеро Морій — одразу на південь від комплексу",
+    "fr": "Le lac Morii s’étend juste au sud de la résidence",
+    "it": "Il lago Morii si trova subito a sud del complesso",
+    "de": "Der Morii-See liegt direkt südlich des Ensembles"
+   }
+  },
+  {
+   "src": "ai/real-street-eye.jpg",
+   "caption": {
+    "en": "Arriving from the quiet neighbouring streets",
+    "ro": "Sosire pe străzile liniștite din vecinătate",
+    "he": "הגעה מהרחובות השקטים הסמוכים",
+    "ru": "Подъезд по тихим соседним улицам",
+    "uk": "Під’їзд тихими сусідніми вулицями",
+    "fr": "Arrivée par les rues calmes du voisinage",
+    "it": "Arrivo dalle tranquille strade vicine",
+    "de": "Anfahrt über ruhige Nachbarstraßen"
+   }
+  }
+ ]
+}

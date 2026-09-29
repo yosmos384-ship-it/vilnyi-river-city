@@ -846,3 +846,11 @@ dialog.is-closing { animation: sheetOut .2s ease-in forwards; }
 
 #langMenu [role=option]{direction:ltr;justify-content:flex-start}
 #langMenu .lang-code-sm{margin-inline-start:auto;font-size:11px;letter-spacing:.12em;opacity:.55}
+
+/* v1.4 — clean hero: the moving image fills the first screen; the text starts at its bottom edge and continues below */
+.hero { min-height: 0; padding-top: calc(100svh - 150px); }
+.hero-media { inset: auto; top: 0; left: 0; right: 0; height: 100svh; }
+.hero-shade { background: linear-gradient(to bottom, rgba(6,7,10,0) 0%, rgba(6,7,10,0) 70%, rgba(6,7,10,.85) 92%, #06070a 100%) !important; }
+.hero-inner { padding-bottom: 48px; }
+.hero-inner::before { content: ""; position: absolute; inset: 60px -100vw -48px; background: #06070a; z-index: -1; }
+@media (min-width: 900px) { .hero { padding-top: calc(100svh - 170px); } }
