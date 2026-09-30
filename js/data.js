@@ -75,49 +75,73 @@ export const TYPES = {
 };
 export const TWO_ROOM_VARIANTS = ['2A', '2B', '2C', '2D', '2E', '2F'];
 
-// ---------- Building footprint (building-local) ----------
+// ---------- Building geometry (building-local) ----------
+// Traced from the permit CAD plans (Bloc C3 / C4, Plan Parter + Plan Etaj 10, 1:100) and the marketing floor plans:
+// each block is ONE long double-loaded bar (≈128 m × 17 m, 3 stair/lift cores) with a perpendicular WING at its NNE end
+// (the wing is as wide as the bar and sticks out 25 m on the courtyard side and 6 m on the street side). C3 and C4 are
+// mirror images: C4 stands west, C3 east, and their wings point at each other and meet (0.3 m expansion joint), so the pair
+// reads as a "U" open to the SSW — the continuous spine along the north street, the two bars running towards Intrarea Guliver.
+// Cores sit on the OUTER side of each bar (C4: WNW, C3: ESE); the 1st core ≈19.5 m, the 3rd ≈60 m from the SSW end, the 2nd
+// at the bar/wing junction.
+//
+// All geometry below is the CANONICAL block (= C4's own local frame): x runs along the bar from its SSW end (x = 0) to the
+// NNE facade of the wing (x = 128); z is across it with the cores on −z and the long wing arm on +z. A building with
+// `mirror: true` (C3) uses the same plan reflected z → −z: footprint / cores / corridors are reflected, every unit keeps a
+// RIGHT-HANDED frame (its U axis is reversed, so a segment runs in the opposite direction) — no negative scales anywhere.
+// Use footprintOf / coresOf / corridorsOf (true, per building); FOOTPRINT / CORES / CORRIDORS are the canonical copies.
+const BAR_L = 128, HALF_D = 8.5, CORR = 1.1, WX0 = 111, WING_IN = 25, WING_OUT = 6;
+const WZ0 = -HALF_D - WING_OUT, WZ1 = HALF_D + WING_IN;            // wing ends: −14.5 (street side), +33.5 (courtyard tip)
+const WCX0 = WX0 + 7.4, WCX1 = WCX0 + 2 * CORR;                    // wing corridor x 118.4 … 120.6
 export const GEOM = {
-  barLength: 84, depth: 17, corridorHalf: 1.1, unitDepth: 7.4,
-  wing: { x0: 67, x1: 84, z0: -38, z1: -8.5, corridorX: 75.5 },
+  barLength: BAR_L, depth: 2 * HALF_D, corridorHalf: CORR, unitDepth: 7.4,
+  wing: { x0: WX0, x1: BAR_L, z0: WZ0, z1: WZ1, corridorX: (WCX0 + WCX1) / 2, cx0: WCX0, cx1: WCX1 },
   balconyDepth: 1.6,
 };
-// Footprint polygon of one building (x,z), used for massing / roof / parking outline
-export const FOOTPRINT = [[0, -8.5], [67, -8.5], [67, -38], [84, -38], [84, 8.5], [0, 8.5]];
+// Footprint polygon (x,z), canonical
+export const FOOTPRINT = [[0, -HALF_D], [WX0, -HALF_D], [WX0, WZ0], [BAR_L, WZ0], [BAR_L, WZ1], [WX0, WZ1], [WX0, HALF_D], [0, HALF_D]];
 
-// Corridors per typical floor (axis-aligned rects: x0,x1,z0,z1)
+// Corridors per typical floor (axis-aligned rects: x0,x1,z0,z1), canonical
 export const CORRIDORS = [
-  { id: 'bar', x0: 0.6, x1: 76.6, z0: -1.1, z1: 1.1 },
-  { id: 'wing', x0: 74.4, x1: 76.6, z0: -37.4, z1: 1.1 },
+  { id: 'bar', x0: 0.6, x1: WCX1, z0: -CORR, z1: CORR },
+  { id: 'wing', x0: WCX0, x1: WCX1, z0: WZ0 + 0.6, z1: WZ1 - 0.6 },
 ];
 
 // Facade segments. U = unit width direction, V = corridor→facade (outward). (U, Y, V) is right-handed.
-// origin(s) gives the corridor-side point at running distance s along the segment.
-// The compass facing of each segment is derived from V and COMPASS (see below), not hard-coded:
-// with the real site orientation S1 faces E (≈108°), S2 W (≈288°), S4 S (≈198°, towards Lacul Morii), S5 N (≈18°).
+// origin(s) gives the corridor-side point at running distance s along the segment. Canonical frames:
+//   S1 bar, non-core side (+z)            S2 bar, core side (−z; runs from the wing towards the SSW end)
+//   S4 wing arm, SSW face (courtyard)     S5 wing, NNE face (whole length, tip → street end)
+//   S6 wing stub beyond the core side, SSW face
+// The true compass facing of every unit comes from its (mirrored) frame and COMPASS, never hard-coded.
 const SEGMENTS = {
-  S1: { len: 84, o: s => [s, 1.1], U: [1, 0], V: [0, 1] },
-  S2: { len: 67, o: s => [67 - s, -1.1], U: [-1, 0], V: [0, -1] },
-  S4: { len: 29.5, o: s => [74.4, -38 + s], U: [0, 1], V: [-1, 0] },
-  S5: { len: 36.9, o: s => [76.6, -1.1 - s], U: [0, -1], V: [1, 0] },
+  S1: { len: WCX0, o: s => [s, CORR], U: [1, 0], V: [0, 1] },
+  S2: { len: WX0, o: s => [WX0 - s, -CORR], U: [-1, 0], V: [0, -1] },
+  S4: { len: WZ1 - HALF_D, o: s => [WCX0, HALF_D + s], U: [0, 1], V: [-1, 0] },
+  S5: { len: WZ1 - WZ0, o: s => [WCX1, WZ1 - s], U: [0, -1], V: [1, 0] },
+  S6: { len: WING_OUT, o: s => [WCX0, WZ0 + s], U: [0, 1], V: [-1, 0] },
 };
-// Cores: stair + 2 lifts. Rect in building-local coords; liftDoor = point on corridor wall, liftNormal = direction into corridor.
+const SEG_ORDER = ['S1', 'S2', 'S4', 'S5', 'S6'];
+// Cores: stair + 2 lifts. Rect in building-local coords; liftDoor = point on corridor wall, liftNormal = direction into
+// corridor; entrance = ground-floor lobby door on the facade; zOut = that facade line (core 2 opens through the wing stub).
 export const CORES = [
-  { stair: 1, x0: 17.6, x1: 25.6, z0: -8.5, z1: -1.1, liftDoors: [[20.1, -1.1], [23.1, -1.1]], liftNormal: [0, 1], entrance: [21.6, -8.5] },
-  { stair: 3, x0: 41.4, x1: 49.4, z0: -8.5, z1: -1.1, liftDoors: [[43.9, -1.1], [46.9, -1.1]], liftNormal: [0, 1], entrance: [45.4, -8.5] },
-  { stair: 2, x0: 67.0, x1: 74.4, z0: -8.5, z1: -1.1, liftDoors: [[69.2, -1.1], [72.2, -1.1]], liftNormal: [0, 1], entrance: [70.7, -8.5] },
+  { stair: 1, x0: 15.5, x1: 23.5, z0: -HALF_D, z1: -CORR, liftDoors: [[18.0, -CORR], [21.0, -CORR]], liftNormal: [0, 1], entrance: [19.5, -HALF_D], zOut: -HALF_D },
+  { stair: 3, x0: 56.0, x1: 64.0, z0: -HALF_D, z1: -CORR, liftDoors: [[58.5, -CORR], [61.5, -CORR]], liftNormal: [0, 1], entrance: [60.0, -HALF_D], zOut: -HALF_D },
+  { stair: 2, x0: WX0, x1: WCX0, z0: -HALF_D, z1: -CORR, liftDoors: [[WX0 + 2.2, -CORR], [WX0 + 5.2, -CORR]], liftNormal: [0, 1], entrance: [(WX0 + WCX0) / 2, WZ0], zOut: WZ0 },
 ];
-// Which scară serves a building-local point
-export function stairFor(x, z) { if (x > 60 || z < -8.5) return 2; return x < 33.5 ? 1 : 3; }
+// Which scară serves a canonical building-local point (sign of z is irrelevant, so true coords of a mirrored block work too)
+export function stairFor(x, z) { if (x > 87 || Math.abs(z) > HALF_D) return 2; return x < 40 ? 1 : 3; }
 
-// Floor programmes: per segment an ordered list of 'type-class' tokens. '#core' = gap reserved for a core, 'X:<name>:<len>' = non-residential block.
+// Floor programmes (permit: parter 4×1c + 5×2c; floors 1–9 3×1c + 23×2c; floor 10 + 10D duplex 2×2c + 17×3c + 7×4c
+// = 269 per block, 538 in all). Per segment an ordered list of 'type-class' tokens. '#core' = gap reserved for a core,
+// 'X:<name>:<len>' = non-residential block. S2 is read from the wing towards the SSW end; its core gaps sit on the CORES rects.
 const NOMINAL = { '1': 4.8, '2': 7.4, '3': 9.2, '4': 11.0 };
 const PROGRAM = {
-  typical: { S1: ['3', '2', '2', '2', '2', '2', '2', '2', '2', '2', '3'], S2: ['2', '1', '#core:8', '2', '2', '#core:8', '1', '2'], S4: ['2', '1', '2', '2'], S5: ['2', '2', '2', '2', '2'] },
-  ground: { S1: ['1', '2', '2', '1', '2', 'X:amenity:44'], S2: ['X:parking:17.6', '#core:8', 'X:parking:15.8', '#core:8', 'X:storage:17.6'], S4: ['X:storage:29.5'], S5: ['1', '2', '2', '1'] },
-  top: { S1: ['4', '3', '3', '3', '3', '3', '3', '3', '3', '3', '4'], S2: ['4', '3', '#core:8', '3', '3', '#core:8', '2', '3'], S4: ['4', '2', '3', '3'], S5: ['4', '3', '4', '3', '4'] },
+  typical: { S1: ['2', '2', '2', '2', '2', '2', '2', '2', '2', '2', 'X:stair:7.4'], S2: ['2', '2', '1', '2', '2', '#core:8', '2', '1', '2', '#core:8', '2'],
+    S4: ['2', '2'], S5: ['2', '2', '2', '2'], S6: ['1'] },
+  ground: { S1: ['X:amenity:44', 'X:parking:56', '2', 'X:stair:7.4'], S2: ['X:parking:47', '#core:8', 'X:parking:32.5', '#core:8', 'X:storage:15.5'],
+    S4: ['1', '2'], S5: ['2', '1', '1', '2', '1', '2'], S6: ['X:lobby:6'] },
+  top: { S1: ['4', '3', '3', '3', '3', '3', '3', '3', '3', '4', 'X:stair:7.4'], S2: ['4', '3', '3', '2', '3', '#core:8', '3', '2', '3', '#core:8', '4'],
+    S4: ['3', '4'], S5: ['4', '3', '3', '4'], S6: ['3'] },
 };
-// S2 order runs from x=67 toward x=0 (U = -x), so the lists above are read in that direction.
-// Core gaps in S2 are positioned by the core rects, not by nominal length — see layoutSegment.
 
 // ---------- Compass & geography (from the Google Maps satellite view + the permit site plan) ----------
 // The world frame IS the building frame (rotY = 0 for both buildings, so walkthrough, commons and the shared basement
@@ -143,33 +167,66 @@ export function worldToGeo(x, z) {
 }
 
 // ---------- Buildings in the site (world placement) ----------
-// rotY stays 0: the world frame is the building frame and true north comes from COMPASS (bars run NNE–SSW, arms' ends
-// face SSW towards Intrarea Guliver, the wings form the spine along the north). Unit azimuths are true bearings.
+// rotY stays 0: the world frame is the building frame and true north comes from COMPASS (bars run NNE–SSW, their ends face
+// SSW towards Intrarea Guliver, the two wings form the spine along the north street). Unit azimuths are true bearings.
+// Placement (permit A.C. 252/2025 "Amplasament"): SSW ends 29.1 m from the south property limit (≈ 34 m from the Intrarea
+// Guliver centre line, world x ≈ −47), the spine 11.5 m from the north limit (north street x ≈ 131), C3's wing stub
+// 23.3 m from Faza I (C1) and C4's wing stub ≈ 25 m from Faza III (C5 bar at 30.6 m).
 export const BUILDINGS = {
-  C3: { id: 'C3', origin: [0, 0], rotY: 0, ground: 'amenity', label: 'Bloc C3' },
-  C4: { id: 'C4', origin: [0, -64], rotY: 0, ground: 'kindergarten', label: 'Bloc C4' },
+  C3: { id: 'C3', origin: [-13, 0], rotY: 0, mirror: true, ground: 'amenity', label: 'Bloc C3' },
+  C4: { id: 'C4', origin: [-13, -67.3], rotY: 0, mirror: false, ground: 'kindergarten', label: 'Bloc C4' },
 };
 export function localToWorld(bId, x, z) {
   const b = BUILDINGS[bId]; const c = Math.cos(b.rotY), s = Math.sin(b.rotY);
   return [b.origin[0] + x * c + z * s, b.origin[1] - x * s + z * c];
 }
+// Per-building (true) plan geometry: canonical, reflected z → −z for a mirrored block.
+export const isMirrored = bId => !!(BUILDINGS[bId] && BUILDINGS[bId].mirror);
+const mzOf = bId => (isMirrored(bId) ? -1 : 1);
+const _geoCache = {};
+function trueGeo(bId) {
+  if (_geoCache[bId]) return _geoCache[bId];
+  const m = mzOf(bId);
+  const rect = r => (m > 0 ? { ...r } : { ...r, z0: -r.z1, z1: -r.z0 });
+  const fp = FOOTPRINT.map(([x, z]) => [x, m * z]);
+  const cores = CORES.map(c => ({ ...rect(c), stair: c.stair, liftDoors: c.liftDoors.map(([x, z]) => [x, m * z]), liftNormal: [c.liftNormal[0], m * c.liftNormal[1]],
+    entrance: [c.entrance[0], m * c.entrance[1]], zOut: m * c.zOut }));
+  return (_geoCache[bId] = { footprint: m > 0 ? fp : fp.reverse(), cores, corridors: CORRIDORS.map(rect), mz: m });
+}
+export const footprintOf = bId => trueGeo(bId).footprint;
+export const coresOf = bId => trueGeo(bId).cores;
+export const corridorsOf = bId => trueGeo(bId).corridors;
+// canonical ↔ true building-local (the reflection is its own inverse)
+export const canonToLocal = (bId, x, z) => [x, mzOf(bId) * z];
 // The whole plot (traced from the sketch, geo metres): Str. Murelor on the west, the north street, the east street by
 // the Aqua City pin, Str. Grigore H. Grandea / Intrarea Guliver on the south.
 export const PLOT = [[-123,-162], [-69,-140], [-33,-112], [39,-79], [111,-52], [174,-25], [188,-17], [178,18], [151,63], [129,106], [117,119], [93,94], [57,86], [3,74], [-47,63], [-101,46], [-133,34], [-134,-27], [-130,-94]]
   .map(([gx, gz]) => geoToWorld(gx, gz).map(v => +v.toFixed(1)));
-// Context (delivered phases, other blocks) as simple massing: footprint rect (world, axis-aligned with the buildings) + floors.
-// Faza I "Aqua City" (delivered, east): U-shaped courtyard block, long bars facing SSW/NNE, open towards C3, P+12, beige.
-// Faza III (west, towards Str. Murelor): two slender NNE bars joined by a spine at the north end, P+11, dark grey/brown.
-// P: two-level parking deck along Intrarea Guliver in front of C3/C4 (the round spiral car ramp stands in front of the courtyard).
+// Context (delivered phases, other blocks) as simple massing: footprint rects (world, axis-aligned with the buildings) + floors,
+// after the permit's phase key plan (FAZA I C1, C2 · FAZA II C3, C4 · FAZA III C5, C6) and the developer renders.
+// Faza I "Aqua City" (delivered, east): a closed courtyard ring — C2 the long bar facing SSW onto Intrarea Guliver, C1 the
+//   north bar + east arm + a west arm facing C3 (the ring is open at its north-west corner), P+12, beige.
+// Faza III (west, towards Str. Murelor): C5 and C6, two bars joined by a spine at the north end (C5's arm runs on towards
+//   C4, like our wings: 30.6 m between the two arm ends), P+11, dark grey/brown. The developer render draws C6 ≈ 40 m further
+//   west, which would put it on Str. Murelor as traced from the satellite view, so C6 is kept inside the plot here.
+// P: two-level parking deck along Intrarea Guliver in front of C4/C3, with the round spiral car ramp on its street side.
 export const CONTEXT_BLOCKS = [
-  { id: 'F1-S', x0: -2, x1: 15, z0: 30, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
-  { id: 'F1-N', x0: 67, x1: 84, z0: 30, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
-  { id: 'F1-E', x0: 15, x1: 67, z0: 115, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
-  { id: 'F3-A', x0: 10, x1: 94, z0: -127, z1: -114, floors: 12, phase: 'III', tone: 'dark' },
-  { id: 'F3-B', x0: 18, x1: 94, z0: -152, z1: -139, floors: 12, phase: 'III', tone: 'dark' },
-  { id: 'F3-N', x0: 94, x1: 107, z0: -152, z1: -114, floors: 12, phase: 'III', tone: 'dark' },
-  { id: 'P', x0: -38, x1: -26, z0: -98, z1: 4, floors: 1, parking: true },
+  { id: 'F1-C2', x0: -13, x1: 4, z0: 37.8, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
+  { id: 'F1-W', x0: 4, x1: 70, z0: 37.8, z1: 54.8, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
+  { id: 'F1-E', x0: 4, x1: 98, z0: 115, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
+  { id: 'F1-C1', x0: 98, x1: 115, z0: 37.8, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
+  { id: 'F3-C5', x0: -13, x1: 99, z0: -137.4, z1: -121.4, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'F3-C6', x0: 30, x1: 99, z0: -162, z1: -148, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'F3-N', x0: 99, x1: 115, z0: -162, z1: -112.8, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'P', x0: -33, x1: -21, z0: -62, z1: 30, floors: 1, parking: true },
 ];
+// Site features shared by the site plan, the context, the car park and the outdoor colliders (world coords):
+// the spiral car ramp on the street side of the P deck (in front of C3's west half, as in the render), and the underground car-park
+// ramp at the back of the courtyard (descends from the courtyard towards +z, foot inside the basement).
+export const SPIRAL = { x: -34.5, z: -6, r0: 3.4, r1: 8.6, r: 9 };
+export const RAMP = { x0: 84.6, x1: 88.8, z0: -54, z1: -30, open: -42 };
+// The shared basement (P4) under both blocks and the courtyard, world rect
+export const BASEMENT = { x0: -14, x1: 116, z0: -83, z1: 15.5 };
 // Lacul Morii (lake + island park with fountain), world coords. The shore is a polygon traced from the map (its
 // north-east corner lies ~120 m south of Str. Grandea, ~250 m SSW of the buildings); center/rx/rz is a world-axis ellipse
 // approximation for schematics.
@@ -195,23 +252,19 @@ function variantFor(cls, seed) {
   return 'D4';
 }
 function topVariant(cls) { return cls === '2' ? 'D2' : cls === '3' ? 'D3' : 'D4'; }
-// True compass bearing of a segment's outward facade normal (V) in a building, and the nearest N/E/S/W letter.
-function segAzimuth(seg, bId) {
-  const r = BUILDINGS[bId].rotY, [vx, vz] = seg.V;
-  return bearingOf(vx * Math.cos(r) + vz * Math.sin(r), -vx * Math.sin(r) + vz * Math.cos(r));
-}
 const facingOf = az => 'NESW'[Math.round(az / 90) % 4];
+// Canonical frame → true (building-local) frame of a mirrored block: the reflected rectangle with a right-handed frame
+// (U reversed, origin at the reflected far end), so unit-local (u, v) keeps the same meaning for apartment.js.
+function trueFrame(fr, w, m) {
+  if (m > 0) return fr;
+  return { o: [fr.o[0] + fr.U[0] * w, -(fr.o[1] + fr.U[1] * w)], U: [-fr.U[0], fr.U[1]], V: [fr.V[0], -fr.V[1]] };
+}
+function worldDir(bId, [vx, vz]) { const r = BUILDINGS[bId].rotY; return [vx * Math.cos(r) + vz * Math.sin(r), -vx * Math.sin(r) + vz * Math.cos(r)]; }
 
 function layoutSegment(segId, tokens, floor, bId, out, counter) {
-  const seg = SEGMENTS[segId];
-  // total nominal residential length vs available (fixed blocks keep their length)
-  let fixed = 0, nominal = 0;
-  for (const t of tokens) {
-    if (t.startsWith('#core') || t.startsWith('X:')) fixed += parseFloat(t.split(':').pop());
-    else nominal += NOMINAL[t];
-  }
+  const seg = SEGMENTS[segId], m = mzOf(bId);
   // Core gaps must sit exactly on CORES rects: scale each run of units between cores to fit its own span.
-  const coreSpans = segId === 'S2' ? CORES.filter(c => c.z1 <= -1.1 && c.x1 <= 67).map(c => [67 - c.x1, 67 - c.x0]).sort((a, b) => a[0] - b[0]) : [];
+  const coreSpans = segId === 'S2' ? CORES.filter(c => c.z1 <= -CORR + 1e-6 && c.x1 <= WX0 + 1e-6).map(c => [WX0 - c.x1, WX0 - c.x0]).sort((a, b) => a[0] - b[0]) : [];
   const groups = [[]]; for (const t of tokens) { if (t.startsWith('#core')) groups.push([]); else groups[groups.length - 1].push(t); }
   const spanOf = gi => { const a = gi === 0 ? 0 : coreSpans[gi - 1][1]; const b = gi < coreSpans.length ? coreSpans[gi][0] : seg.len; return [a, b]; };
   const kOf = gi => { const g = groups[gi]; let fx = 0, nm = 0; for (const t of g) { if (t.startsWith('X:')) fx += parseFloat(t.split(':').pop()); else nm += NOMINAL[t]; } const [a, b] = coreSpans.length ? spanOf(gi) : [0, seg.len]; return nm ? (b - a - fx) / nm : 1; };
@@ -221,21 +274,25 @@ function layoutSegment(segId, tokens, floor, bId, out, counter) {
     if (t.startsWith('#core')) { gi++; s = coreSpans.length ? spanOf(gi)[0] : s + parseFloat(t.split(':')[1]); k = kOf(gi); continue; }
     if (t.startsWith('X:')) {
       const [, name, len] = t.split(':'); const L = parseFloat(len);
-      out.blocks.push({ seg: segId, kind: name === 'amenity' ? (BUILDINGS[bId].ground) : name, s0: s, s1: s + L, frame: frameOf(seg, s), width: L, depth: GEOM.unitDepth, floor, building: bId });
+      const cf = frameOf(seg, s);
+      out.blocks.push({ seg: segId, kind: name === 'amenity' ? (BUILDINGS[bId].ground) : name, s0: s, s1: s + L, frame: trueFrame(cf, L, m), cframe: cf, width: L, depth: GEOM.unitDepth, floor, building: bId });
       s += L; continue;
     }
     const w = NOMINAL[t] * k;
     const n = counter.n++;
     const type = floor === TOP_FLOOR ? topVariant(t) : variantFor(t, n * 7 + floor * 3 + (bId === 'C4' ? 2 : 0));
-    const fr = frameOf(seg, s);
+    const cf = frameOf(seg, s), fr = trueFrame(cf, w, m);
     const cx = fr.o[0] + fr.U[0] * w / 2 + fr.V[0] * GEOM.unitDepth / 2, cz = fr.o[1] + fr.U[1] * w / 2 + fr.V[1] * GEOM.unitDepth / 2;
-    const az = segAzimuth(seg, bId);
+    const az = bearingOf(...worldDir(bId, fr.V));
+    const du = +(w * (t === '1' ? 0.3 : 0.22)).toFixed(3);
     const unit = {
       building: bId, floor, seg: segId, facing: facingOf(az), azimuth: Math.round(az),
       stair: stairFor(cx, cz), type, rooms: TYPES[type].rooms,
       frame: fr, width: +w.toFixed(3), depth: GEOM.unitDepth,
-      door: { u: +(w * (t === '1' ? 0.3 : 0.22)).toFixed(3) }, // entrance door centre along U, on corridor wall (v=0)
+      door: { u: du },   // entrance door centre along U, on corridor wall (v=0)
       center: [cx, cz],
+      // canonical copies (commons.js builds the corridors in the canonical frame and reflects its output)
+      cframe: cf, cdoor: { u: m > 0 ? du : +(w - du).toFixed(3) },
     };
     out.units.push(unit);
     s += w;
@@ -250,13 +307,13 @@ const FACING_FACTOR = { N: 1, S: 1, E: 1, W: 1 };
 export const PRICE_PER_M2 = 2500; // € per m² of total useful area (suprafață utilă totală, incl. balcony/loggia/terrace)
 
 export const UNITS = [];
-export const BLOCKS = [];      // non-residential ground-floor blocks
+export const BLOCKS = [];      // non-residential blocks (ground-floor amenity / parking / storage / lobby, the corner stair cell)
 (function build() {
   for (const bId of Object.keys(BUILDINGS)) {
     let apNo = 1;
     for (let floor = 0; floor <= TOP_FLOOR; floor++) {
       const prog = programFor(floor); const out = { units: [], blocks: [] }; const counter = { n: 0 };
-      for (const segId of ['S1', 'S2', 'S4', 'S5']) layoutSegment(segId, prog[segId], floor, bId, out, counter);
+      for (const segId of SEG_ORDER) layoutSegment(segId, prog[segId], floor, bId, out, counter);
       out.units.forEach((u, i) => {
         u.index = i + 1; u.apNo = apNo++;
         u.id = `${bId}-${floor === 0 ? 'P' : floor}-${String(u.index).padStart(2, '0')}`;

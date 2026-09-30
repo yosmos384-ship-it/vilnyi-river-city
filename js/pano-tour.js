@@ -15,7 +15,7 @@
 //   pos is unit-local (types) or building-local x/z (commons); y = floor height of the level; the camera sat at y + eye.
 // Projection: image centre = +v (+z) of the scene frame, left quarter = +u; yaw = three.js camera rotation.y (+ yawOffset).
 import * as THREE from 'three';
-import { unitById, unitLabel, CORRIDORS, CORES } from './data.js';
+import { unitById, unitLabel, CORRIDORS, CORES, corridorsOf, coresOf } from './data.js';
 import { tt, RTL } from './i18n-tour.js';
 
 const MANIFEST_URL = new URL('../assets/tour/tour.json', import.meta.url);
@@ -399,7 +399,7 @@ export async function openPanoTour(container, opts = {}) {
       }
     } else {
       mctx.strokeStyle = 'rgba(230,201,135,.55)'; mctx.lineWidth = 2; mctx.fillStyle = 'rgba(255,255,255,.07)';
-      const rects = S.key === 'parking' ? [] : [...CORRIDORS, ...CORES];
+      const rects = S.key === 'parking' ? [] : d.building ? [...corridorsOf(d.building), ...coresOf(d.building)] : [...CORRIDORS, ...CORES];
       for (const r of rects) { mctx.fillRect(X(r.x0), Z(r.z0), (r.x1 - r.x0) * s, (r.z1 - r.z0) * s); mctx.strokeRect(X(r.x0), Z(r.z0), (r.x1 - r.x0) * s, (r.z1 - r.z0) * s); }
     }
     for (const p of P) {

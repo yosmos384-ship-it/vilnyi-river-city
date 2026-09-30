@@ -818,7 +818,7 @@ export function createLake({ lowDetail = false } = {}) {
 
   // ---------------- 10. fountain jet: camera-facing ribbons (core, veil, crown, base mist) + their reflections
   const F = LAKE.fountain, FH = 72;
-  let fountainMesh, sprayPts;
+  let fountainMesh, sprayPts, disposedL = false;
   {
     const quad = (wb, wt, h, kind, seg = 12) => { const g = new THREE.PlaneGeometry(1, 1, 1, seg); g.translate(0, 0.5, 0); const n = g.attributes.position.count; const a = new Float32Array(n * 4); for (let i = 0; i < n; i++) a.set([wb, wt, h, kind], i * 4); g.setAttribute('aP', new THREE.BufferAttribute(a, 4)); g.deleteAttribute('normal'); g.deleteAttribute('uv'); return g; };
     const parts = [quad(4.6, 2.4, FH, 0), quad(22, 7, FH * 0.95, 1), quad(40, 26, 20, 2), quad(9, 18, 11, 3)];
@@ -919,7 +919,9 @@ export function createLake({ lowDetail = false } = {}) {
     });
     sprayPts = new THREE.Points(g, pm); sprayPts.position.set(F[0], WY, F[1]); sprayPts.frustumCulled = false; sprayPts.renderOrder = 7; sprayPts.name = 'lake-spray';
     sprayPts.onBeforeRender = trackVp;
-    group.add(sprayPts);
+    // lowDetail (phones): the spray joins a few seconds later, so its shader compiles after the first frames
+    if (LOW) { const sp = sprayPts; setTimeout(() => { if (!disposedL) group.add(sp); else { sp.geometry.dispose(); sp.material.dispose(); } }, 4000); }
+    else group.add(sprayPts);
   }
 
   // ---------------- 12. light reflections on the water (lamps, fountain floodlights, far windows) — dusk/night
@@ -1034,6 +1036,7 @@ export function createLake({ lowDetail = false } = {}) {
   }
 
   function dispose() {
+    disposedL = true;
     if (group.parent) group.parent.remove(group);
     const mats = new Set();
     group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) mats.add(o.material); });

@@ -1,7 +1,7 @@
 // Live 3D complex for the hero and the finder "live view". One renderer/scene is shared: the canvas moves into
 // whichever host (hero or finder) is on screen, so a phone only ever holds one WebGL context for this.
 // If three.js or Agent B's modules are missing/fail, it reports failure and the page keeps its static imagery.
-import { BUILDINGS, FOOTPRINT, TOP_FLOOR, floorY, localToWorld } from './data.js';
+import { BUILDINGS, TOP_FLOOR, floorY, localToWorld, footprintOf } from './data.js';
 
 const TAU = Math.PI * 2;
 
@@ -16,7 +16,7 @@ function v3(THREE, a) {
 // Axis-aligned world box of the whole complex from data (used when DEFAULT_VIEW is absent)
 function complexBox() {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-  for (const id of Object.keys(BUILDINGS)) for (const [x, z] of FOOTPRINT) {
+  for (const id of Object.keys(BUILDINGS)) for (const [x, z] of footprintOf(id)) {
     const [wx, wz] = localToWorld(id, x, z); x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz);
   }
   return { x0, x1, z0, z1, top: floorY(TOP_FLOOR + 1) + 3 };
@@ -122,7 +122,7 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
         if (mn && mx) return mn.add(mx).multiplyScalar(0.5);
       }
     } catch (e) { /* fall through */ }
-    const [wx, wz] = localToWorld(b, 50, -10);
+    const [wx, wz] = localToWorld(b, 60, 0);
     return new THREE.Vector3(wx, floorY(f) + 1.5, wz);
   }
   function placeFinderCamera(dt, snap) {

@@ -78,6 +78,8 @@ function fbmFn(base, oct, seed) {
   return (x, y) => { let v = 0, a = 0.5, n = 0; for (const l of ls) { v += l(x, y) * a; n += a; a *= 0.5; } return v / n; };
 }
 function canvas(w, h = w) {
+  // OffscreenCanvas inside the texture worker (./tex-worker.js); a DOM canvas on the page.
+  if (typeof document === 'undefined') return new OffscreenCanvas(w, h);
   const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
 // sRGB 0–255 components for canvas painting. (THREE.Color stores linear values, so reading .r/.g/.b directly would
@@ -94,8 +96,22 @@ function pixels(size, fn, h = size) {
   }
   ctx.putImageData(img, 0, 0); return c;
 }
+// Phones upload a ≤ 512 px copy of the (identically generated) canvas: ¼ of the GPU memory and upload time.
+const TEX_MAX = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) ? 512 : 0;
+const _small = new WeakMap();
+function uploadSize(c) {
+  if (!TEX_MAX || typeof document === 'undefined' || !(c.width > TEX_MAX || c.height > TEX_MAX)) return c;
+  let d = _small.get(c);
+  if (!d) {
+    const k = TEX_MAX / Math.max(c.width, c.height);
+    d = canvas(Math.max(1, Math.round(c.width * k)), Math.max(1, Math.round(c.height * k)));
+    const x = d.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, d.width, d.height);
+    _small.set(c, d);
+  }
+  return d;
+}
 function tex(c, { srgb = true, repeat = 1, repeatY } = {}) {
-  const t = new THREE.CanvasTexture(c);
+  const t = new THREE.CanvasTexture(uploadSize(c));
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeatY ?? repeat);
   t.anisotropy = 8;
@@ -602,6 +618,119 @@ function paperBooksTex(size = 64) { // subtle page edges for book blocks
   return pixels(size, (u, v, x, y) => { const g = y % 2 ? 236 : 222; return [g, g - 4, g - 12]; });
 }
 
+
+// ---------------------------------------------------------------- texture cache (generation is deterministic)
+// Every generator above is memoised by name + arguments (canvas arguments by their cache tag). The page can be
+// handed the results ahead of time — generated off the main thread by ./tex-worker.js (OffscreenCanvas) and kept in
+// IndexedDB for returning visitors — so getMaterials() only copies finished pixels instead of computing them.
+// The pixels are identical either way: the look does not change.
+const TEXMEM = new Map();     // key → live result (canvas, or object of canvases)
+const TEXSTORE = new Map();   // key → [[path, ImageBitmap]] (prewarmed, not yet restored)
+let TEXREC = null;            // Set of keys touched while recording (worker)
+const isCanvas = v => !!v && typeof v === 'object' && typeof v.getContext === 'function' && typeof v.width === 'number';
+function texKey(name, args) {
+  let ok = true;
+  const k = name + JSON.stringify(args, (_, v) => { if (isCanvas(v)) { if (!v.__tk) ok = false; return '§' + v.__tk; } return v; });
+  return ok ? k : null;
+}
+function texParts(res, pre = '', out = []) {   // [[path, canvas]] — the canvas itself ('') and canvas-valued props
+  if (isCanvas(res)) out.push([pre, res]);
+  if (res && typeof res === 'object') for (const [k, v] of Object.entries(res)) if (k !== '__tk' && isCanvas(v)) texParts(v, pre ? pre + '.' + k : k, out);
+  return out;
+}
+function texTag(res, key) { for (const [p, c] of texParts(res)) c.__tk = p ? key + '/' + p : key; return res; }
+function texRestore(key, parts) {
+  const byPath = new Map(parts.map(([p, bm]) => {
+    const c = canvas(bm.width, bm.height); c.getContext('2d').drawImage(bm, 0, 0); return [p, c];
+  }));
+  let root = byPath.get('') || {};
+  for (const [p, c] of [...byPath].filter(([p]) => p).sort((a, b) => a[0].length - b[0].length)) {
+    const ks = p.split('.'); let o = root; for (const k of ks.slice(0, -1)) o = o[k]; o[ks[ks.length - 1]] = c;
+  }
+  for (const [, bm] of parts) try { bm.close(); } catch { /* */ }
+  return texTag(root, key);
+}
+function memoTex(name, fn) {
+  return function (...args) {
+    const key = texKey(name, args);
+    if (!key) return fn.apply(this, args);
+    if (TEXREC) TEXREC.add(key);
+    let r = TEXMEM.get(key);
+    if (r) return r;
+    const st = TEXSTORE.get(key);
+    if (st) { TEXSTORE.delete(key); try { r = texRestore(key, st); } catch (e) { r = null; } }
+    if (!r) r = texTag(fn.apply(this, args), key);
+    TEXMEM.set(key, r);
+    return r;
+  };
+}
+herringbone = memoTex('herringbone', herringbone); widePlanks = memoTex('widePlanks', widePlanks);
+stoneTex = memoTex('stoneTex', stoneTex); marbleTex = memoTex('marbleTex', marbleTex); woodTile = memoTex('woodTile', woodTile);
+tileTex = memoTex('tileTex', tileTex); fabricTex = memoTex('fabricTex', fabricTex); weaveHeight = memoTex('weaveHeight', weaveHeight);
+fxAtlas = memoTex('fxAtlas', fxAtlas); bloomTex = memoTex('bloomTex', bloomTex); plasterTex = memoTex('plasterTex', plasterTex);
+limewashTex = memoTex('limewashTex', limewashTex); caneTex = memoTex('caneTex', caneTex); rattanWeave = memoTex('rattanWeave', rattanWeave);
+rugTex = memoTex('rugTex', rugTex); artTex = memoTex('artTex', artTex); leafTex = memoTex('leafTex', leafTex);
+paperBooksTex = memoTex('paperBooksTex', paperBooksTex); normalFromHeight = memoTex('normalFromHeight', normalFromHeight);
+
+/** Worker side: generate every texture of a style; returns [[key, [[path, canvas]]]] for all keys the style uses. */
+export function generateStyleTextures(styleId = 'milano') {
+  TEXREC = new Set();
+  try { cache.delete(styleId); getMaterials(styleId); } finally { cache.delete(styleId); }
+  const keys = [...TEXREC]; TEXREC = null;
+  return keys.map(k => [k, texParts(TEXMEM.get(k))]);
+}
+/** Page side: hand over pre-generated textures ([[key, [[path, ImageBitmap]]]]); unknown keys are ignored later. */
+export function adoptTextures(entries) {
+  let n = 0;
+  for (const [k, parts] of entries || []) if (!TEXMEM.has(k) && !TEXSTORE.has(k)) { TEXSTORE.set(k, parts); n++; }
+  return n;
+}
+export function hasMaterials(styleId) { return cache.has(styleId); }
+
+// Pre-warm: textures of a style arrive from the worker (or IndexedDB) without blocking the page. Resolves (never
+// rejects) once they are adopted, or at once when workers / OffscreenCanvas are unavailable — getMaterials() then
+// generates on the main thread as before.
+const _prewarm = new Map();
+let _worker = null, _wseq = 0;
+const _wwait = new Map();
+function texWorker() {
+  if (_worker !== null) return _worker;
+  _worker = false;
+  try {
+    if (typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function') return false;
+    const oc = new OffscreenCanvas(1, 1); if (!oc.getContext('2d')) return false;
+    _worker = new Worker(new URL('./tex-worker.js', import.meta.url), { type: 'module' });
+    _worker.onmessage = ({ data }) => { const w = _wwait.get(data.id); if (w) { _wwait.delete(data.id); w(data); } };
+    _worker.onerror = e => { e.preventDefault && e.preventDefault(); for (const w of _wwait.values()) w({ error: 'worker' }); _wwait.clear(); try { _worker.terminate(); } catch { /* */ } _worker = false; };
+  } catch (e) { _worker = false; }
+  return _worker;
+}
+// cacheOnly: generate + store in IndexedDB without handing the pixels to the page (for designs not needed yet).
+export function prewarmTextures(styleId = 'milano', { cacheOnly = false } = {}) {
+  if (!STYLES.find(s => s.id === styleId)) styleId = 'milano';
+  if (cache.has(styleId)) return Promise.resolve(true);
+  if (_prewarm.has(styleId)) return _prewarm.get(styleId);
+  const w = texWorker();
+  if (!w) return Promise.resolve(false);
+  if (cacheOnly) {
+    return new Promise(res => {
+      const id = ++_wseq; _wwait.set(id, data => res(!!(data && data.cached)));
+      w.postMessage({ id, styleId, cacheOnly: true, src: new URL('./materials.js', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
+    });
+  }
+  try { performance.mark('walk:tex-request'); } catch { /* */ }
+  const p = new Promise(res => {
+    const id = ++_wseq;
+    _wwait.set(id, data => {
+      try { performance.mark('walk:tex-arrived'); } catch { /* */ }
+      if (data && data.entries) { adoptTextures(data.entries); res(true); } else { _prewarm.delete(styleId); res(false); }
+    });
+    w.postMessage({ id, styleId, src: new URL('./materials.js', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
+  });
+  _prewarm.set(styleId, p);
+  return p;
+}
+
 // ---------------------------------------------------------------- materials
 const cache = new Map();
 const std = (o) => new THREE.MeshStandardMaterial(o);
@@ -659,13 +788,13 @@ export function getMaterials(styleId = 'milano') {
     const tr = stoneTex(1024, '#dcc6a0', '#b8966a', { bands: 14, pores: 0.08, seed: 7, contrast: 0.95 });
     const tt = tileTex({ size: 1024, tilesX: 2, tilesY: 2, colors: ['#d2b994', '#cbb08a', '#d8c19e', '#c9ad86'], grout: '#b59c78', groutW: 3, surface: tr, glaze: 0.06 });
     // floor height = tile grid + the travertine pores
-    const th = canvas(1024), thc = th.getContext('2d'); thc.drawImage(tt.bump, 0, 0); thc.globalCompositeOperation = 'multiply'; thc.drawImage(tr.height_, 0, 0);
+    const th = canvas(1024), thc = th.getContext('2d'); thc.drawImage(tt.bump, 0, 0); thc.globalCompositeOperation = 'multiply'; thc.drawImage(tr.height_, 0, 0); th.__tk = 'rivieraFloorH';
     m.floor = std({ map: tex(tt.map, { repeat: 1 / 1.6 }), normalMap: nrm(th, 2.2, 1 / 1.6), roughnessMap: smudge(0.6), roughness: 0.62 / 0.59, envMapIntensity: 0.42 });
     const trN = nrm(tr.height_, 1.6, 1 / 1.4);
     m.marble = std({ map: tex(tr, { repeat: 1 / 1.4 }), normalMap: trN, roughnessMap: smudge(0.8), roughness: 0.45 / 0.59, envMapIntensity: 0.6 });
     const zel = tileTex({ size: 512, tilesX: 8, tilesY: 8, colors: ['#ebe1cf', '#e7dcc8', '#eee5d5', '#e4d8c2', '#e9dfcc'], grout: '#dccdb3', groutW: 3, glaze: 0.035 });
     // zellige: hand-made undulating glaze → low-frequency height on top of the grout grid
-    const zh = canvas(512), zhc = zh.getContext('2d'); zhc.drawImage(zel.bump, 0, 0); zhc.globalAlpha = 0.35; zhc.drawImage(plasterTex(31, 0.9, 512), 0, 0); zhc.globalAlpha = 1;
+    const zh = canvas(512), zhc = zh.getContext('2d'); zhc.drawImage(zel.bump, 0, 0); zhc.globalAlpha = 0.35; zhc.drawImage(plasterTex(31, 0.9, 512), 0, 0); zhc.globalAlpha = 1; zh.__tk = 'rivieraZelligeH';
     m.wallBath = phys({ map: tex(zel.map, { repeat: 1 / 0.8 }), normalMap: nrm(zh, 2.2, 1 / 0.8), roughness: 0.32, clearcoat: 0.45, clearcoatRoughness: 0.22, envMapIntensity: 0.85 });
     const bt = tileTex({ size: 512, tilesX: 6, tilesY: 6, colors: ['#b8653f', '#c07049', '#ad5d39', '#c47a55', '#b26a44'], grout: '#d9c7aa', groutW: 3, glaze: 0.1 });
     m.floorBath = std({ map: tex(bt.map, { repeat: 1 / 1.2 }), normalMap: nrm(bt.bump, 1.6, 1 / 1.2), roughness: 0.62 });
@@ -693,7 +822,7 @@ export function getMaterials(styleId = 'milano') {
   // tile ≈ 0.9 m; the grain runs along the texture's u → along world X/Z (horizontal) after the bake's world-UV projection
   // o.vertical: grain runs up the texture (cabinet fronts, doors, wall panels are veneered with vertical grain; the
   // bake's world-UV projection maps texture v to world Y on vertical faces)
-  const rot90 = (src) => { const d = canvas(src.height, src.width), x = d.getContext('2d'); x.translate(d.width, 0); x.rotate(Math.PI / 2); x.drawImage(src, 0, 0); return d; };
+  const rot90 = (src) => { const d = canvas(src.height, src.width), x = d.getContext('2d'); x.translate(d.width, 0); x.rotate(Math.PI / 2); x.drawImage(src, 0, 0); if (src.__tk) d.__tk = src.__tk + '|rot90'; return d; };
   const woodM = (col, seed, rough, rep = 1.1, o = {}) => { let c = woodFurnitureTex(hex(col), seed, 512, o); if (o.vertical) { const r = rot90(c); r.rough_ = rot90(c.rough_); r.height_ = rot90(c.height_); c = r; } return std({ map: tex(c, { repeat: rep }), normalMap: tex(normalFromHeight(c.height_, 1.4), { srgb: false, repeat: rep }), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: tex(c.rough_, { srgb: false, repeat: rep }), roughness: rough, envMapIntensity: 0.6 }); };
   m.wood = woodM(woodBase, 5, 0.6);
   m.woodDark = woodM({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35' }[styleId], 6, 0.55, 1.1, { contrast: 0.3, vertical: true });
@@ -892,5 +1021,6 @@ export function getMaterials(styleId = 'milano') {
   m.glazing.emissive = new THREE.Color('#dfe8f0'); m.glazing.emissiveIntensity = 0.1; m.glazing.opacity = 0.12;
   m.art.forEach((a, i) => a.name = `${styleId}.art${i}`);
   cache.set(styleId, m);
+  if (typeof document !== 'undefined' && !TEXREC) TEXMEM.clear();   // the textures now own their canvases
   return m;
 }

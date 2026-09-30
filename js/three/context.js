@@ -6,7 +6,7 @@
 // Balcony slabs, parapets, the deck and the ramp are merged vertex-coloured meshes. ~15 draw calls in total.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CONTEXT_BLOCKS, LEVELS } from '../data.js';
+import { CONTEXT_BLOCKS, LEVELS, SPIRAL as SPIRAL_D } from '../data.js';
 import { createCarInstances, pickCar, carRng } from './cars.js';
 
 const TAU = Math.PI * 2;
@@ -14,19 +14,20 @@ const GH = LEVELS.groundH, FH = LEVELS.typicalH;
 const heightOf = floors => GH + (floors - 1) * FH;
 const floorBase = k => (k === 0 ? 0 : GH + (k - 1) * FH);
 
-// Same spiral as environment.js used (in front of the C3–C4 courtyard mouth) and the same car-park layout.
-const SPIRAL = { x: -16, z: -32, r0: 3.4, r1: 8.6, turns: 3.25, y0: LEVELS.parkingY };   // P −1 → deck roof
+// Same spiral as environment.js (data.js SPIRAL: street side of the P deck, in front of the C3–C4 courtyard mouth) and the
+// same car-park layout (environment.js SITE_LOTS).
+const SPIRAL = { x: SPIRAL_D.x, z: SPIRAL_D.z, r0: SPIRAL_D.r0, r1: SPIRAL_D.r1, turns: 3.25, y0: LEVELS.parkingY };   // P −1 → deck roof
 const P_DECK = CONTEXT_BLOCKS.find(b => b.parking);
 const DECK_H = 6.6;
 const PODIUM_Y = 0.9;
 // open-air lots: [x0, x1, z0, z1, bay rows [[xa, xb]...]] (perpendicular 2.5 m × 5 m bays, cars along x)
 const LOTS = [
-  [-25, -3, -100, -46, [[-25, -20], [-8, -3]]],   // in front of C4, towards Intrarea Guliver
-  [-25, -3, -18, 26, [[-25, -20], [-8, -3]]],     // in front of C3
-  [0.5, 15.5, -53, -11, [[0.5, 5.5], [10.5, 15.5]]], // C3–C4 courtyard mouth
-  [-30, -9, 34, 112, [[-30, -25], [-14, -9]]],    // in front of Faza I
+  [-12, 10, -54, -13, [[-12, -7], [5, 10]]],                          // C3–C4 courtyard mouth
+  [-12, 40, 19, 35, [[-12, -7], [-1, 4], [4, 9], [15, 20], [20, 25], [35, 40]]],   // between C3 and Faza I
+  [-12, 24, -104, -88, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],       // between C4 and Faza III
+  [-38, -17, 40, 120, [[-38, -33], [-22, -17]]],                      // in front of Faza I, along Intrarea Guliver
 ];
-const AISLES = [[-26, 0, -46, -18]];              // drive aisle round the spiral ramp
+const AISLES = [[-21, -13.2, -64, 32], [SPIRAL.x - SPIRAL.r1 - 1.5, -33, SPIRAL.z - SPIRAL.r1 - 2, SPIRAL.z + SPIRAL.r1 + 2]];   // drive lane in front of the blocks, round the spiral
 
 const PHASES = {
   I: {
@@ -404,7 +405,7 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
     for (const [y, pr] of [[0, 0.55], [3.3, 0.6], [DECK_H, 0.62]]) for (const xc of [x0 + 2.9, x1 - 2.9]) for (let z = z0 + 6; z < z1 - 5; z += 2.5) if (rnd() < pr) carSpots.push([xc, y, z, rnd() < 0.5 ? 0 : Math.PI]);
 
     // spiral: helical ramp slab + outer parapet ribbon + inner curb, from the ground up to the deck roof, ending towards the deck
-    const S = SPIRAL, n = Math.round((low ? 60 : 110) * S.turns), th0 = Math.PI / 2, th1 = th0 + S.turns * TAU;
+    const S = SPIRAL, n = Math.round((low ? 60 : 110) * S.turns), th0 = S.x < x0 ? -Math.PI / 2 : Math.PI / 2, th1 = th0 + S.turns * TAU;   // the helix tops out facing the deck
     const yAt = t => S.y0 + (DECK_H - S.y0) * t;
     const at = (t, r, dy = 0) => { const th = th0 + (th1 - th0) * t, y = yAt(t); return [S.x + Math.cos(th) * r, y + dy, S.z + Math.sin(th) * r]; };
     const hel = (geo, col, k) => concrete.push(colorAttr(geo, col, k));
@@ -422,8 +423,9 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
       let t = ((a - th0) / TAU % 1 + 1) % 1; while (t / S.turns + 1 / S.turns <= 1) t += 1; const top = yAt(t / S.turns) - 0.35;
       const c = new THREE.CylinderGeometry(0.22, 0.22, top, 8); c.translate(x, top / 2, z); c.deleteAttribute('uv'); concrete.push(colorAttr(c, '#cfc9be'));
     }
-    // bridge from the top of the helix onto the deck roof
-    boxC(concrete, x1 - 0.2, S.x - S.r1 + 0.3, DECK_H - 0.35, DECK_H, S.z - 3.2, S.z + 3.2, '#a9a49b');
+    // bridge from the top of the helix onto the deck roof (the spiral stands on whichever long side of the deck)
+    if (S.x < x0) boxC(concrete, S.x + S.r1 - 0.3, x0 + 0.2, DECK_H - 0.35, DECK_H, S.z - 3.2, S.z + 3.2, '#a9a49b');
+    else boxC(concrete, x1 - 0.2, S.x - S.r1 + 0.3, DECK_H - 0.35, DECK_H, S.z - 3.2, S.z + 3.2, '#a9a49b');
     // the ramp continues below the plaza level into the underground car park (P −1) — the ground plane hides that part
   }
 
@@ -451,7 +453,7 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
     for (let z = z0 + 7; z < z1 - 4; z += 18) poles.push([xm, z]);
   }
   for (const [x0, x1, z0, z1] of AISLES) quad(x0, x1, z0, z1, 0.01, '#3a3b3f');
-  poles.push([-4, -42], [-4, -22], [-24, -44]);
+  poles.push([-17, -60], [-17, -8], [-17, 10], [SPIRAL.x - 2, SPIRAL.z - SPIRAL.r1 - 1.5]);
   poles.push(...deckPoles);
   {
     const asphalt = (() => {

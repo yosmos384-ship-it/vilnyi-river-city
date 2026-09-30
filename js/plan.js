@@ -1,10 +1,14 @@
-// Floor-plan SVG drawn purely from data.js geometry (building-local metres; svg x = x, svg y = z, so north = up).
-import { UNITS, TYPES, GEOM, FOOTPRINT, CORRIDORS, CORES, BUILDINGS, LAKE, TOP_FLOOR,
-  unitsOn, blocksOn, unitToLocal, localToWorld, money, PRICE_PER_M2 } from './data.js';
+// Floor-plan SVG drawn purely from data.js geometry (building-local metres; svg x = x along the bar, svg y = z), i.e. the
+// same orientation as the permit CAD plans: bar horizontal, wing at the right — C3's wing up, C4's (mirror image) down.
+// The north arrow points to true north.
+import { UNITS, TYPES, GEOM, BUILDINGS, LAKE, TOP_FLOOR, COMPASS,
+  unitsOn, blocksOn, unitToLocal, localToWorld, money, PRICE_PER_M2, footprintOf, corridorsOf, coresOf, isMirrored } from './data.js';
 import { t } from './i18n.js';
 
 const NS = 'http://www.w3.org/2000/svg';
-const BOUNDS = { x: -5, y: -45, w: 96, h: 60 };      // full-floor view box
+// full-floor view box per block (136 × 85 = the CSS 1.6 aspect): the free side of the bar carries title, north, scale, lake
+const boundsOf = b => (isMirrored(b) ? { x: -4, y: -51, w: 136, h: 85 } : { x: -4, y: -34, w: 136, h: 85 });
+let BOUNDS = boundsOf('C3');
 const f1 = n => (Math.round(n * 100) / 100).toString();
 const fmtArea = n => n.toFixed(1);
 
@@ -31,7 +35,7 @@ function centroid(poly) { let x = 0, y = 0; poly.forEach(p => { x += p[0]; y += 
 
 // Direction from the building towards the lake centre (world), for the "Lacul Morii" hint arrow.
 function lakeBearing(bId) {
-  const [wx, wz] = localToWorld(bId, 42, -15);
+  const [wx, wz] = localToWorld(bId, 60, 0);
   const dx = LAKE.center[0] - wx, dz = LAKE.center[1] - wz; const L = Math.hypot(dx, dz);
   return [dx / L, dz / L];
 }
@@ -60,7 +64,8 @@ function drawCore(g, c, floor) {
     el('line', { x1: x - 0.6, y1: z - 0.02, x2: x + 0.6, y2: z - 0.02, class: 'pl-lift-door' }, cg);
   }
   // stair: two flights along x with a landing, in the part of the core away from the corridor
-  const sx0 = c.x0 + 0.5, sx1 = c.x1 - 0.5, sz0 = c.z0 + 0.45, sz1 = c.z1 - 2.6;
+  const cp = c.liftNormal[1] > 0;   // corridor on +z of the core
+  const sx0 = c.x0 + 0.5, sx1 = c.x1 - 0.5, sz0 = cp ? c.z0 + 0.45 : c.z0 + 2.6, sz1 = cp ? c.z1 - 2.6 : c.z1 - 0.45;
   const mid = (sz0 + sz1) / 2, run0 = sx0 + 1.4, run1 = sx1 - 0.4;
   el('rect', { x: sx0, y: sz0, width: sx1 - sx0, height: sz1 - sz0, class: 'pl-stair-box' }, cg);
   el('line', { x1: run0, y1: mid, x2: run1, y2: mid, class: 'pl-stair-mid' }, cg);
@@ -70,19 +75,22 @@ function drawCore(g, c, floor) {
   el('path', { d: `M${f1(run1 - 0.2)} ${f1(sz0 + (mid - sz0) / 2)}H${f1(run0 + 0.4)}M${f1(run0 + 0.4)} ${f1(mid + (sz1 - mid) / 2)}H${f1(run1 - 0.4)}`, class: 'pl-stair-arrow', 'marker-end': null }, cg);
   el('circle', { cx: run1 - 0.4, cy: mid + (sz1 - mid) / 2, r: 0.18, class: 'pl-stair-dot' }, cg);
   // building entrance (north facade) exists on the ground floor only; upper floors just name the stair inside the core
-  const [ex, ez] = c.entrance;
+  const [ex, ez] = c.entrance, es = ez < 0 ? 1 : -1;   // entrance arrow points into the building
   if (floor === 0) {
-    el('path', { d: `M${ex - 0.9} ${ez - 1.6}L${ex} ${ez - 0.25}L${ex + 0.9} ${ez - 1.6}Z`, class: 'pl-entry' }, cg);
-    const tl = el('text', { x: ex, y: ez - 2.4, class: 'pl-core-label', 'text-anchor': 'middle', direction: document.documentElement.dir }, cg);
+    el('path', { d: `M${ex - 0.9} ${ez - es * 1.6}L${ex} ${ez - es * 0.25}L${ex + 0.9} ${ez - es * 1.6}Z`, class: 'pl-entry' }, cg);
+    const tl = el('text', { x: ex, y: ez - es * 2.4 + (es < 0 ? 0.9 : 0), class: 'pl-core-label', 'text-anchor': 'middle', direction: document.documentElement.dir }, cg);
     tl.textContent = `${t('ul.stair')} ${c.stair}`;
   } else {
-    const tl = el('text', { x: (c.x0 + c.x1) / 2, y: c.z0 + 0.25 + (c.z1 - c.z0 - 2.6) / 2 + 0.5, class: 'pl-core-label in', 'text-anchor': 'middle', direction: document.documentElement.dir }, cg);
+    const tl = el('text', { x: (c.x0 + c.x1) / 2, y: (sz0 + sz1) / 2 + 0.5, class: 'pl-core-label in', 'text-anchor': 'middle', direction: document.documentElement.dir }, cg);
     tl.textContent = `${t('ul.stair')} ${c.stair}`;
   }
 }
 
-function drawNorth(g, x, y) {
-  const n = el('g', { class: 'pl-north', transform: `translate(${x} ${y})` }, g);
+function drawNorth(g, x, y, bId) {
+  // true north in building-local (x, z) = svg (x, y): the needle is drawn along −y and turned onto it
+  const a = (0 - COMPASS.negZ) * Math.PI / 180, [nx, nz] = [Math.sin(a), -Math.cos(a)];
+  const rot = Math.atan2(nx, -nz) * 180 / Math.PI;
+  const n = el('g', { class: 'pl-north', transform: `translate(${x} ${y}) rotate(${f1(rot)})` }, g);
   el('circle', { cx: 0, cy: 0, r: 2.3, class: 'pl-north-ring' }, n);
   el('path', { d: 'M0 -2.9L0.85 0.6L0 0.1L-0.85 0.6Z', class: 'pl-north-needle' }, n);
   el('path', { d: 'M0 2.9L0.85 -0.6L0 -0.1L-0.85 -0.6Z', class: 'pl-north-tail' }, n);
@@ -127,13 +135,16 @@ export function createPlan(host, opts = {}) {
   function draw() {
     root.innerHTML = ''; unitEls = new Map();
     const { b, f } = cur;
+    const CORES = coresOf(b), mir = isMirrored(b);   // C3 is drawn with its wing up, C4 (mirror image) with it down
     // footprint slab
-    el('polygon', { points: pts(FOOTPRINT), class: 'pl-slab' }, root);
+    el('polygon', { points: pts(footprintOf(b)), class: 'pl-slab' }, root);
     // corridors
-    for (const c of CORRIDORS) {
+    const wing = corridorsOf(b).find(c => c.id === 'wing');
+    for (const c of corridorsOf(b)) {
       el('rect', { x: c.x0, y: c.z0, width: c.x1 - c.x0, height: c.z1 - c.z0, class: 'pl-corr' }, root);
     }
-    el('path', { d: `M1.6 0H${f1(75.5)}V-36.4`, class: 'pl-corr-axis' }, root);
+    const wx = (wing.x0 + wing.x1) / 2;
+    el('path', { d: `M1.6 0H${f1(wx)}M${f1(wx)} ${f1(wing.z0 + 0.6)}V${f1(wing.z1 - 0.6)}`, class: 'pl-corr-axis' }, root);
     const ct = el('text', { x: 11.5, y: 0.45, class: 'pl-corr-t', 'text-anchor': 'middle' }, root); ct.textContent = t('plan.corridor');
 
     // ground-floor non-residential blocks
@@ -144,7 +155,7 @@ export function createPlan(host, opts = {}) {
       el('polygon', { points: pts(poly), class: 'pl-block-body' }, g);
       const [cx, cy] = centroid(poly);
       const tx = el('text', { x: cx, y: cy + 0.5, 'text-anchor': 'middle', class: 'pl-block-t' }, g);
-      tx.textContent = t('plan.' + bl.kind);
+      tx.textContent = bl.kind === 'stair' || bl.kind === 'lobby' ? `${t('ul.stair')} 2` : t('plan.' + bl.kind);
       const vertical = Math.abs(bl.frame.U[1]) > 0.5; // S4/S5 blocks run along z
       if (vertical) tx.setAttribute('transform', `rotate(-90 ${f1(cx)} ${f1(cy + 0.5)})`);
     }
@@ -182,14 +193,14 @@ export function createPlan(host, opts = {}) {
     // Titles mix Latin ids with the UI language, so they follow the page direction (start edge stays at x=1)
     const rtl = document.documentElement.dir === 'rtl';
     const tAttr = rtl ? { direction: 'rtl', 'text-anchor': 'end' } : {};
-    const title = el('text', { x: 1, y: -33.2, class: 'pl-title', ...tAttr }, root);
+    const title = el('text', { x: 1, y: mir ? -35.2 : 21.8, class: 'pl-title', ...tAttr }, root);
     title.textContent = `${b} · ${f === 0 ? t('unit.ground') : t('unit.floor', { n: f === TOP_FLOOR ? '10 / 10D' : f })}`;
-    const sub = el('text', { x: 1, y: -30.3, class: 'pl-sub', ...tAttr }, root);
+    const sub = el('text', { x: 1, y: mir ? -32.3 : 24.7, class: 'pl-sub', ...tAttr }, root);
     sub.textContent = f === 0 ? '' : `${list.length} · ${t('finder.avail', { n: list.filter(u => statusOf(u) === 'available').length })}`;
-    drawNorth(root, 61, -32.5);
-    drawScale(root, 1.5, -22.5);
+    drawNorth(root, 92, mir ? -34 : 22, b);
+    drawScale(root, 1.5, mir ? -24 : 34);
     const [lx, lz] = lakeBearing(b);
-    const lg = el('g', { class: 'pl-lake', transform: `translate(47 -17)` }, root);
+    const lg = el('g', { class: 'pl-lake', transform: `translate(62 ${mir ? -23 : 36})` }, root);
     const ang = Math.atan2(lz, lx) * 180 / Math.PI;
     el('path', { d: 'M-3 0H3M1.6 -1.1L3 0L1.6 1.1', class: 'pl-lake-arrow', transform: `rotate(${f1(ang)})` }, lg);
     const lt2 = el('text', { x: 0, y: 3.8, 'text-anchor': 'middle', class: 'pl-lake-t' }, lg); lt2.textContent = t('plan.lake');
@@ -311,7 +322,7 @@ export function createPlan(host, opts = {}) {
 
   draw();
   return {
-    show(b, f) { cur = { b, f }; setView({ ...BOUNDS }); hideCard(); draw(); },
+    show(b, f) { cur = { b, f }; BOUNDS = boundsOf(b); setView({ ...BOUNDS }); hideCard(); draw(); },
     refresh() { draw(); },
     applyMatches,
     select,
@@ -324,16 +335,18 @@ const UNITS_BY_ID = new Map(UNITS.map(u => [u.id, u]));
 export function keyPlanSVG(unit) {
   const us = unitsOn(unit.building, unit.floor);
   const p = a => a.map(q => `${f1(q[0])},${f1(q[1])}`).join(' ');
-  let s = `<svg class="keyplan" viewBox="-2 -41 90 53" role="img" aria-label="${t('unit.keyplan')}" direction="ltr">`;
-  s += `<polygon points="${p(FOOTPRINT)}" class="kp-slab"/>`;
-  for (const c of CORRIDORS) s += `<rect x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}" class="kp-corr"/>`;
-  for (const c of CORES) s += `<rect x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}" class="kp-core"/>`;
+  const b = unit.building, mir = isMirrored(b);
+  let s = `<svg class="keyplan" viewBox="${mir ? '-3 -37 134 54' : '-3 -17 134 54'}" role="img" aria-label="${t('unit.keyplan')}" direction="ltr">`;
+  s += `<polygon points="${p(footprintOf(b))}" class="kp-slab"/>`;
+  for (const c of corridorsOf(b)) s += `<rect x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}" class="kp-corr"/>`;
+  for (const c of coresOf(b)) s += `<rect x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}" class="kp-core"/>`;
   for (const u of us) {
     const on = u.id === unit.id;
     s += `<polygon points="${p(unitPoly(u))}" class="kp-u${on ? ' on' : ''}"/>`;
     if (on) s += `<polygon points="${p(outdoorPoly(u))}" class="kp-u on out"/>`;
   }
-  s += `<g transform="translate(6 -33)"><circle r="2.4" class="kp-n"/><path d="M0 -3L.9 .6 0 .1-.9 .6Z" class="kp-nn"/></g>`;
+  { const a = (0 - COMPASS.negZ) * Math.PI / 180, rot = Math.atan2(Math.sin(a), Math.cos(a)) * 180 / Math.PI;
+    s += `<g transform="translate(6 ${mir ? -30 : 30}) rotate(${f1(rot)})"><circle r="2.4" class="kp-n"/><path d="M0 -3L.9 .6 0 .1-.9 .6Z" class="kp-nn"/></g>`; }
   s += `</svg>`;
   return s;
 }

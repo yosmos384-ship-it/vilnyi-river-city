@@ -4,12 +4,17 @@
 //
 // Frames: the returned `group` sits at the building origin (y = 0) and holds a child at y = floorY(floor);
 // all coordinates are building-local. Lift groups are building-local with absolute y (they are children of `group`).
+// Mirrored blocks (data.js: C3 is C4 reflected z → −z): floors are built in the CANONICAL frame (data.js CORES /
+// CORRIDORS / unit.cframe) and reflected on output — merged geometry is reflected with flipped winding (no negative
+// scales anywhere), text quads are pre-flipped in their own x so they still read correctly, and individually placed
+// objects (door leaves, call plates, art, sliding doors) get z → −z, yaw → π − yaw. Lifts use the true cores directly.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createCarInstances, carSpec, pickCar, carRng } from './cars.js';
 import {
-  CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
+  CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, BASEMENT, RAMP as RAMP_D, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
+  coresOf, isMirrored,
 } from '../data.js';
 
 const TAU = Math.PI * 2;
@@ -400,11 +405,22 @@ function flipWinding(g) {   // non-indexed: swap the 2nd/3rd vertex of every tri
     att.needsUpdate = true;
   }
 }
+// ---- reflection of a mirrored block (see the header). MZ = mirror plane z of the build in progress (null: none).
+let MZ = null;
+const BAKED = new WeakSet(), NOMIRROR = new WeakSet();
+const TEXT_MATS = new Set(['wordmark', 'mailbox', 'signs']);
+const _flipX = new THREE.Matrix4().makeScale(-1, 1, 1);
+function mirrorMatrix(z0) { return new THREE.Matrix4().makeTranslation(0, 0, z0).multiply(new THREE.Matrix4().makeScale(1, 1, -1)).multiply(new THREE.Matrix4().makeTranslation(0, 0, -z0)); }
+function mirrorGeo(g, z0) { g.applyMatrix4(mirrorMatrix(z0)); flipWinding(g); return g; }
+function mirrorObj(o, z0) { o.position.z = 2 * z0 - o.position.z; o.rotation.y = Math.PI - o.rotation.y; }
 class Batch {
-  constructor() { this.parts = new Map(); }
+  // mz: mirror plane (z) applied at flush, default = the build in progress; text: every quad carries text / numerals
+  constructor(mz = MZ, text = false) { this.parts = new Map(); this.mz = mz; this.text = text; }
   add(mat, geo, matrix) {
+    const key = typeof mat === 'string' ? mat : null;
     if (typeof mat === 'string') mat = M(mat);
     let g = clean(geo);
+    if (this.mz != null && (this.text || TEXT_MATS.has(key))) { g.applyMatrix4(_flipX); flipWinding(g); }   // reads correctly once reflected
     if (matrix) g.applyMatrix4(matrix);
     if (mat.userData.uv) worldUV(g, mat.userData.uv);
     if (!this.parts.has(mat)) this.parts.set(mat, []);
@@ -415,19 +431,20 @@ class Batch {
   flush(parent, ud = {}) {
     const out = [];
     for (const [mat, list] of this.parts) {
+      if (this.mz != null) for (const g of list) mirrorGeo(g, this.mz);
       const geo = list.length === 1 ? list[0] : mergeGeometries(list, false);
       if (list.length > 1) list.forEach(g => g.dispose());
       geo.computeBoundingSphere(); geo.computeBoundingBox();
       const mesh = new THREE.Mesh(geo, mat); Object.assign(mesh.userData, ud); mesh.matrixAutoUpdate = false; mesh.updateMatrix();
       if (mat.transparent) mesh.renderOrder = 2;
-      parent.add(mesh); out.push(mesh);
+      BAKED.add(mesh); parent.add(mesh); out.push(mesh);
     }
     this.parts.clear(); return out;
   }
 }
 // Invisible colliders, chunked spatially so walk.js's proximity filter stays cheap.
 class Colliders {
-  constructor(cell = 14) { this.cell = cell; this.solid = new Map(); this.floor = new Map(); }
+  constructor(cell = 14, mz = MZ) { this.cell = cell; this.mz = mz; this.solid = new Map(); this.floor = new Map(); }
   _k(x, z) { return Math.floor(x / this.cell) + ',' + Math.floor(z / this.cell); }
   _put(map, k, g) { if (!map.has(k)) map.set(k, []); map.get(k).push(g); }
   box(x0, x1, y0, y1, z0, z1) {
@@ -453,10 +470,11 @@ class Colliders {
   geoFloor(g) { g = clean(g); g.computeBoundingBox(); const c = g.boundingBox.getCenter(new THREE.Vector3()); this._put(this.floor, this._k(c.x, c.z), g); }
   flush(parent) {
     for (const [map, flag] of [[this.solid, 'solid'], [this.floor, 'floor']]) for (const list of map.values()) {
+      if (this.mz != null) for (const g of list) mirrorGeo(g, this.mz);
       const geo = list.length === 1 ? list[0] : mergeGeometries(list, false); if (list.length > 1) list.forEach(g => g.dispose());
       geo.computeBoundingBox(); geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, M('hidden')); m.userData[flag] = true; m.userData.collider = true; m.name = 'vrc-' + flag;
-      m.matrixAutoUpdate = false; parent.add(m);
+      m.matrixAutoUpdate = false; BAKED.add(m); parent.add(m);
     }
     this.solid.clear(); this.floor.clear();
   }
@@ -466,11 +484,12 @@ class Colliders {
 function instanced(parent, geo, mat, matrices, colors) {
   if (!matrices.length) return null;
   if (typeof mat === 'string') mat = M(mat);
+  if (MZ != null) { const S = mirrorMatrix(MZ); matrices = matrices.map(m => S.clone().multiply(m).multiply(S)); }   // reflected placement, object not mirrored
   const im = new THREE.InstancedMesh(geo, mat, matrices.length);
   matrices.forEach((m, i) => im.setMatrixAt(i, m));
   if (colors) { colors.forEach((c, i) => im.setColorAt(i, c)); im.instanceColor.needsUpdate = true; }
   im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); if (im.computeBoundingBox) im.computeBoundingBox();
-  parent.add(im); return im;
+  BAKED.add(im); parent.add(im); return im;
 }
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 function mat4(x, y, z, ry = 0, sx = 1, sy = 1, sz = 1, rx = 0) { return new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, 0)), _s.set(sx, sy, sz)); }
@@ -498,7 +517,7 @@ function lightRig() {
 }
 function claimRig(root, spots, hemi = 0.12) {
   const R = lightRig(); root.add(R.group);
-  R.pts.forEach((l, i) => { const s = spots[i]; if (s) { l.position.set(s[0], s[1], s[2]); l.intensity = s[3] ?? 7; l.color.setHex(s[4] ?? 0xffd4a0); l.distance = s[5] ?? 11; } else l.intensity = 0; });
+  R.pts.forEach((l, i) => { const s = spots[i]; if (s) { l.position.set(s[0], s[1], MZ != null ? 2 * MZ - s[2] : s[2]); l.intensity = s[3] ?? 7; l.color.setHex(s[4] ?? 0xffd4a0); l.distance = s[5] ?? 11; } else l.intensity = 0; });
   R.hemi.intensity = hemi; R.car.intensity = 0; R.carOwner = null;
 }
 
@@ -649,7 +668,7 @@ export class Lift {
   // opts.rear: also build a rear landing (ground floor lobbies); opts.decor: static, not registered.
   constructor(bId, core, doorIndex, floor = 0, opts = {}) {
     this.bId = bId; this.core = typeof core === 'number' ? core : CORES.indexOf(core);
-    const C = CORES[this.core];
+    const C = coresOf(bId)[this.core];   // true (reflected for C3) core: the lift is placed directly, never reflected
     this.stair = C.stair; this.doorIndex = doorIndex; this.floor = floor; this.homeFloor = floor;
     this.doorsOpen = false; this.moving = false; this.rear = !!opts.rear; this.target = null;
     this.occupied = false;          // set by the walker while someone stands in the car (keeps it visible with doors shut)
@@ -929,7 +948,7 @@ function callPlate(ctx, x, y, z, yaw, act) {   // brass hall-call plate with up/
   g.add(plate); ctx.root.add(g); return g;
 }
 function framedArt(ctx, x, y, z, yaw, w, h, k) {   // canvas in a slim bronze frame + picture light
-  const b = new Batch();
+  const b = new Batch(null);
   b.box('bronze', -w / 2 - 0.035, w / 2 + 0.035, -h / 2 - 0.035, h / 2 + 0.035, 0, 0.03);
   b.add('art' + (k % 3), new THREE.PlaneGeometry(w, h).translate(0, 0, 0.032));
   b.box('brass', -w * 0.3, w * 0.3, h / 2 + 0.07, h / 2 + 0.1, 0.02, 0.12);
@@ -991,22 +1010,27 @@ function chandelier(ctx, x, y, z, R = 0.9) {   // three bronze rings with glowin
 }
 
 // ============================================================ floor geometry helpers
+// canonical unit-local → canonical building-local (commons works in the canonical frame, see the header)
+function cLocal(u, uu, vv) { const f = u.cframe || u.frame; return [f.o[0] + f.U[0] * uu + f.V[0] * vv, f.o[1] + f.U[1] * uu + f.V[1] * vv]; }
+const WING = () => CORRIDORS.find(c => c.id === 'wing');
 function coreGap(bId, floor, ci) {   // free interval along x on the core side of the bar (between S2 units/blocks)
   const c = CORES[ci];
   const ivs = [];
-  for (const u of unitsOn(bId, floor)) if (u.seg === 'S2') { const [a] = unitToLocal(u, 0, 0), [b] = unitToLocal(u, u.width, 0); ivs.push([Math.min(a, b), Math.max(a, b)]); }
-  for (const bl of blocksOn(bId, floor)) if (bl.seg === 'S2') { const a = bl.frame.o[0], b = a - bl.width; ivs.push([Math.min(a, b), Math.max(a, b)]); }
+  for (const u of unitsOn(bId, floor)) if (u.seg === 'S2') { const [a] = cLocal(u, 0, 0), [b] = cLocal(u, u.width, 0); ivs.push([Math.min(a, b), Math.max(a, b)]); }
+  for (const bl of blocksOn(bId, floor)) if (bl.seg === 'S2') { const a = (bl.cframe || bl.frame).o[0], b = a - bl.width; ivs.push([Math.min(a, b), Math.max(a, b)]); }
   const mid = (c.liftDoors[0][0] + c.liftDoors[1][0]) / 2;
   let g0 = -1e9, g1 = 1e9;
   for (const [a, b] of ivs) { if (b <= mid + 0.01 && b > g0) g0 = b; if (a >= mid - 0.01 && a < g1) g1 = a; }
   if (g0 < -1e8) g0 = c.x0; if (g1 > 1e8) g1 = c.x1;
-  g1 = Math.min(g1, 74.4);
+  g1 = Math.min(g1, WING().x0);
   return [Math.max(g0, c.x0 - 2.5), Math.min(g1, c.x1 + 2.5)];
 }
-function doorInfo(u) {
-  const [x, z] = unitToLocal(u, u.door.u, 0);
-  return { unitId: u.id, apNo: u.apNo, seg: u.seg, x, z, a: (u.seg === 'S1' || u.seg === 'S2') ? x : z, yaw: unitYaw(u), U: u.frame.U, V: u.frame.V };
+function doorInfo(u) {   // canonical
+  const f = u.cframe || u.frame, [x, z] = cLocal(u, (u.cdoor || u.door).u, 0);
+  return { unitId: u.id, apNo: u.apNo, seg: u.seg, x, z, a: (u.seg === 'S1' || u.seg === 'S2') ? x : z, yaw: Math.atan2(f.V[0], f.V[1]), U: f.U, V: f.V };
 }
+// the doors as walk.js sees them: true building-local positions
+const trueDoors = units => units.map(u => { const [x, z] = unitToLocal(u, u.door.u, 0); return { unitId: u.id, x, z, yaw: unitYaw(u) }; });
 // Place a door leaf + number plate for a door on a wall run
 function placeDoor(ctx, d, run, plateIdx) {
   const alongX = run.axis === 'x';
@@ -1151,19 +1175,26 @@ function signPlane(ctx, idx, x, y, z, yaw, w = 0.26, h = 0.26) {
 }
 
 // ============================================================ context
-function makeCtx(bId, floor, H) {
+function makeCtx(bId, floor, H, mirrorable = true) {
   const group = new THREE.Group(); group.name = `vrc-commons-${bId}-${floor}`;
   const root = new THREE.Group(); root.position.y = floorY(floor); group.add(root);
   const geos = new Map();
+  MZ = mirrorable && isMirrored(bId) ? 0 : null;   // reflect about the bar axis (building-local z = 0)
   return {
-    bId, floor, H, group, root, B: new Batch(), C: new Colliders(), signB: new Batch(), leaves: [], lifts: [], doors: [], ownTex: [],
+    bId, floor, H, group, root, mz: MZ, B: new Batch(), C: new Colliders(), signB: new Batch(MZ, true), leaves: [], lifts: [], doors: [], ownTex: [],
     geo(key, make) { if (!geos.has(key)) geos.set(key, make()); return geos.get(key); },
     _geos: geos,
   };
 }
 function finish(ctx, spawn) {
+  if (ctx.mz != null) {   // reflect the individually placed objects, the sliding doors and the spawn point
+    for (const o of [...ctx.root.children]) if (!BAKED.has(o) && !NOMIRROR.has(o) && o !== RIG.group) mirrorObj(o, ctx.mz);
+    for (const d of ctx.autoDoors || []) d.z = 2 * ctx.mz - d.z;
+    if (spawn) spawn = { ...spawn, z: 2 * ctx.mz - spawn.z, yaw: Math.PI - (spawn.yaw || 0) };
+  }
   ctx.B.flush(ctx.root); ctx.C.flush(ctx.root); ctx.signB.flush(ctx.root);
   if (ctx.plateB) ctx.plateB.flush(ctx.root);
+  MZ = null;
   for (const L of ctx.lifts) ctx.group.add(L.group);
   ctx.group.updateMatrixWorld(true);
   const { group, lifts, doors } = ctx;
@@ -1188,7 +1219,7 @@ function finish(ctx, spawn) {
 function setupPlates(ctx, labels) {
   ctx.plates = plateAtlas(labels); ctx.ownTex.push(ctx.plates.tex);
   ctx.plateMat = new THREE.MeshStandardMaterial({ map: ctx.plates.tex, metalness: 0.9, roughness: 0.3 });
-  ctx.plateB = new Batch();
+  ctx.plateB = new Batch(ctx.mz, true);
 }
 
 // ============================================================ typical floor (1..10)
@@ -1197,21 +1228,23 @@ function buildTypical(bId, floor) {
   const ctx = makeCtx(bId, floor, H);
   const { B, C, root } = ctx;
   const units = unitsOn(bId, floor), doors = units.map(doorInfo);
-  ctx.doors = doors.map(d => ({ unitId: d.unitId, x: d.x, z: d.z, yaw: d.yaw }));
+  ctx.doors = trueDoors(units);
   setupPlates(ctx, [...doors.map(d => String(d.apNo)), String(floor)]);
-  const bar = CORRIDORS.find(c => c.id === 'bar'), wing = CORRIDORS.find(c => c.id === 'wing');
-  const s1 = doors.filter(d => d.seg === 'S1'), s2 = doors.filter(d => d.seg === 'S2'), s4 = doors.filter(d => d.seg === 'S4'), s5 = doors.filter(d => d.seg === 'S5');
-  const xEnd = Math.max(bar.x1, ...s1.map(d => d.a + DOOR_W / 2 + 0.3));
-  const A = { x0: bar.x0, x1: xEnd, z0: bar.z0, z1: bar.z1 }, Wg = { x0: wing.x0, x1: wing.x1, z0: wing.z0, z1: bar.z0 };
+  const bar = CORRIDORS.find(c => c.id === 'bar'), wing = CORRIDORS.find(c => c.id === 'wing'), WX0 = wing.x0;
+  const s1 = doors.filter(d => d.seg === 'S1'), s2 = doors.filter(d => d.seg === 'S2'), s4 = doors.filter(d => d.seg === 'S4'), s5 = doors.filter(d => d.seg === 'S5'), s6 = doors.filter(d => d.seg === 'S6');
+  // bar corridor (runs on to the wing's far wall), the wing stub beside core 2 (−z) and the wing arm (+z)
+  const A = { x0: bar.x0, x1: wing.x1, z0: bar.z0, z1: bar.z1 };
+  const Wn = { x0: wing.x0, x1: wing.x1, z0: wing.z0, z1: bar.z0 }, Wp = { x0: wing.x0, x1: wing.x1, z0: bar.z1, z1: wing.z1 };
   // floors
-  for (const r of [A, Wg]) { B.box('stone', r.x0, r.x1, -0.3, 0, r.z0, r.z1); C.rect(r.x0, r.x1, r.z0, r.z1, 0); }
+  for (const r of [A, Wn, Wp]) { B.box('stone', r.x0, r.x1, -0.3, 0, r.z0, r.z1); C.rect(r.x0, r.x1, r.z0, r.z1, 0); }
   runner(ctx, A.x0 + 0.5, A.x1 - 0.45, -0.6, 0.6, true);
-  runner(ctx, Wg.x0 + 0.5, Wg.x1 - 0.5, Wg.z0 + 0.5, -0.6, false);
-  ceilingRect(ctx, A, true, H); ceilingRect(ctx, Wg, false, H);
+  runner(ctx, Wn.x0 + 0.5, Wn.x1 - 0.5, Wn.z0 + 0.5, -0.6, false);
+  runner(ctx, Wp.x0 + 0.5, Wp.x1 - 0.5, 0.6, Wp.z1 - 0.5, false);
+  ceilingRect(ctx, A, true, H); ceilingRect(ctx, Wn, false, H); ceilingRect(ctx, Wp, false, H);
   const doorOp = ds => ds.map(d => ({ c: d.a, w: DOOR_W, h: DOOR_H, kind: 'door' }));
   const portals = ds => ds.map(d => ({ a0: d.a - 0.95, a1: d.a + 0.95, mat: 'walnut' }));
   // cores: lifts, marble lobby cladding, stair halls
-  const nOps = [...doorOp(s2)], nZones = [...portals(s2)], wOps = [...doorOp(s4)], wZones = [...portals(s4)];
+  const nOps = [...doorOp(s2)], nZones = [...portals(s2)], wOps = [...doorOp(s6)], wZones = [...portals(s6)];
   const featureSpots = [];
   CORES.forEach((c, ci) => {
     const [L0, L1] = [c.liftDoors[0][0], c.liftDoors[1][0]];
@@ -1229,10 +1262,10 @@ function buildTypical(bId, floor) {
     // stair hall behind the lifts
     const zFront = -3.62, zBack = -8.38, shaft0 = L0 - POCKET - 0.1, shaft1 = L1 + POCKET + 0.1;
     let hx0 = g0 + 0.14, hx1 = g1 - 0.14;
-    if (c.stair === 2) { hx0 = Math.max(hx0, c.x0 + 0.14); hx1 = 74.4 - 0.3; }
+    if (c.stair === 2) { hx0 = Math.max(hx0, c.x0 + 0.14); hx1 = WX0 - 0.3; }
     const rise = floorY(floor + 1) - floorY(floor), below = floorY(floor) - floorY(floor - 1);
     stairHall(ctx, hx0, hx1, zFront, zBack, rise, below, c.stair === 2 ? [-6.625, -5.375] : null);
-    if (c.stair === 2) { B.box('stone', hx1, 74.4, -0.3, 0, -6.625, -5.375); C.rect(hx1, 74.4, -6.625, -5.375, 0); B.box('plaster', hx1, 74.3, 2.35, 2.4, -6.625, -5.375); }
+    if (c.stair === 2) { B.box('stone', hx1, WX0, -0.3, 0, -6.625, -5.375); C.rect(hx1, WX0, -6.625, -5.375, 0); B.box('plaster', hx1, WX0 - 0.1, 2.35, 2.4, -6.625, -5.375); }
     // closing walls between shafts and around the hall front
     B.box('plasterW', shaft0, shaft1, -0.3, H + 0.3, zFront, zFront + 0.12);   // hall front behind the lift shafts
     B.box('plasterW', L0 + POCKET + 0.1, L1 - POCKET - 0.1, 0, H, -1.1 - WALL_T, zFront);
@@ -1261,46 +1294,45 @@ function buildTypical(bId, floor) {
     } else {
       B.box('plasterW', hx0 - 0.1, hx1 + 0.02, 0, rise, zFront, zFront + 0.12); C.box(hx0 - 0.1, hx1, 0, 2.6, zFront, zFront + 0.12);
       wOps.push({ c: -6.0, w: 1.25, h: 2.35, kind: 'pass' });
-      signPlane(ctx, 0, 74.4 + FACE + SKIN + 0.02, 2.5, -6.0, Math.PI / 2, 0.2, 0.2);
+      signPlane(ctx, 0, WX0 + FACE + SKIN + 0.02, 2.5, -6.0, Math.PI / 2, 0.2, 0.2);
     }
     featureSpots.push({ a: xm, zone: [g0, g1] });
   });
-  // plate for the floor numeral (last atlas cell)
   // wall runs
   const sOps = doorOp(s1), sZones = portals(s1);
   // art niches opposite each lift lobby (on the S1 wall) where no door is within reach
   for (const f of featureSpots) {
-    if (s1.some(d => Math.abs(d.a - f.a) < 1.55)) continue;
+    if (f.a > WX0 - 1.5 || s1.some(d => Math.abs(d.a - f.a) < 1.55)) continue;
     sZones.push({ a0: f.a - 1.2, a1: f.a + 1.2, mat: 'walnut' });
     framedArt(ctx, f.a, 1.62, 1.1 - FACE - SKIN - 0.002, Math.PI, 0.8, 1.0, Math.round(f.a) % 3);
     consoleTable(B, f.a, 1.1 - 0.22, Math.PI, 1.3);
     C.box(f.a - 0.65, f.a + 0.65, 0, 0.8, 1.1 - 0.4, 1.1);
   }
   const sc = (a0, a1, step = 2.6) => { const out = []; for (let a = a0 + 1.4; a < a1 - 1; a += step) out.push(a); return out; };
-  wallRun(ctx, { axis: 'x', c: 1.1, side: -1, a0: A.x0, a1: A.x1, openings: sOps, zones: sZones, scallops: sc(A.x0, A.x1) });
-  wallRun(ctx, { axis: 'x', c: -1.1, side: 1, a0: A.x0, a1: wing.x0, openings: nOps, zones: nZones, scallops: sc(A.x0, wing.x0) });
-  if (A.x1 > wing.x1 + 0.01) wallRun(ctx, { axis: 'x', c: -1.1, side: 1, a0: wing.x1, a1: A.x1 });
-  wallRun(ctx, { axis: 'z', c: wing.x0, side: 1, a0: wing.z0, a1: -1.1, openings: wOps, zones: wZones, scallops: sc(wing.z0, -1.1) });
-  wallRun(ctx, { axis: 'z', c: wing.x1, side: -1, a0: wing.z0, a1: -1.1, openings: doorOp(s5), zones: portals(s5), scallops: sc(wing.z0, -1.1) });
-  // ends: west window + bench; east end wall; wing end window
+  wallRun(ctx, { axis: 'x', c: 1.1, side: -1, a0: A.x0, a1: WX0, openings: sOps, zones: sZones, scallops: sc(A.x0, WX0) });
+  wallRun(ctx, { axis: 'x', c: -1.1, side: 1, a0: A.x0, a1: WX0, openings: nOps, zones: nZones, scallops: sc(A.x0, WX0) });
+  wallRun(ctx, { axis: 'z', c: WX0, side: 1, a0: wing.z0, a1: -1.1, openings: wOps, zones: wZones, scallops: sc(wing.z0, -1.1) });
+  wallRun(ctx, { axis: 'z', c: WX0, side: 1, a0: 1.1, a1: wing.z1, openings: doorOp(s4), zones: portals(s4), scallops: sc(1.1, wing.z1) });
+  wallRun(ctx, { axis: 'z', c: wing.x1, side: -1, a0: wing.z0, a1: wing.z1, openings: doorOp(s5), zones: portals(s5), scallops: sc(wing.z0, wing.z1) });
+  // ends: SSW window + bench; the wing stub's street window; the wing arm ends at the other block (solid)
   endWindow(ctx, 'x', A.x0, 1, -1.1, 1.1);
-  wallRun(ctx, { axis: 'z', c: A.x1, side: -1, a0: -1.1, a1: 1.1, finish: 'walnut' });
   endWindow(ctx, 'z', wing.z0, 1, wing.x0, wing.x1);
+  wallRun(ctx, { axis: 'x', c: wing.z1, side: -1, a0: wing.x0, a1: wing.x1, finish: 'walnut' });
   // doors + plates
   let pi = 0;
-  const runs = { S1: { axis: 'x', c: 1.1, side: -1 }, S2: { axis: 'x', c: -1.1, side: 1 }, S4: { axis: 'z', c: wing.x0, side: 1 }, S5: { axis: 'z', c: wing.x1, side: -1 } };
+  const runs = { S1: { axis: 'x', c: 1.1, side: -1 }, S2: { axis: 'x', c: -1.1, side: 1 }, S4: { axis: 'z', c: WX0, side: 1 }, S5: { axis: 'z', c: wing.x1, side: -1 }, S6: { axis: 'z', c: WX0, side: 1 } };
   for (const d of doors) placeDoor(ctx, d, runs[d.seg], pi++);
   // downlights over every door + along the corridor, and soft pools on the floor
   const dl = [];
   for (const d of [...s1, ...s2]) dl.push([d.a, d.seg === 'S1' ? 0.78 : -0.78]);
-  for (const d of [...s4, ...s5]) dl.push([d.seg === 'S4' ? wing.x0 + 0.33 : wing.x1 - 0.33, d.a]);
+  for (const d of [...s4, ...s5, ...s6]) dl.push([d.seg === 'S5' ? wing.x1 - 0.33 : wing.x0 + 0.33, d.a]);
   for (const c of CORES) for (const [x] of c.liftDoors) dl.push([x, -0.78]);
   downlights(ctx, dl);
-  floorPools(ctx, dl.map(([x, z]) => [x, z * 0.7]), 1.9);
-  // light rig: the three lift lobbies + wing
+  floorPools(ctx, dl.map(([x, z]) => [x, Math.abs(z) < 1.2 ? z * 0.7 : z]), 1.9);
+  // light rig: the three lift lobbies + wing arm
   const Y = 2.3;
   claimRig(root, [[(CORES[0].liftDoors[0][0] + CORES[0].liftDoors[1][0]) / 2, Y, 0.2, 7], [(CORES[1].liftDoors[0][0] + CORES[1].liftDoors[1][0]) / 2, Y, 0.2, 7],
-    [(CORES[2].liftDoors[0][0] + CORES[2].liftDoors[1][0]) / 2, Y, 0.2, 7], [75.5, Y, -20, 6, 0xffd4a0, 16]], 0.18);
+    [(CORES[2].liftDoors[0][0] + CORES[2].liftDoors[1][0]) / 2, Y, 0.2, 7], [(wing.x0 + wing.x1) / 2, Y, (1.1 + wing.z1) / 2, 6, 0xffd4a0, 16]], 0.18);
   const sp = CORES[0]; const sx = (sp.liftDoors[0][0] + sp.liftDoors[1][0]) / 2;
   return finish(ctx, { x: sx + 2.6, z: 0.35, yaw: Math.PI / 2 + 0.35 });
 }
@@ -1330,20 +1362,21 @@ function buildGround(bId) {
   const { B, C, root } = ctx;
   root.position.y += 0.01;   // stay clear of the site-plan ground plane (y = 0) that runs under the footprints
   const units = unitsOn(bId, floor), doors = units.map(doorInfo);
-  ctx.doors = doors.map(d => ({ unitId: d.unitId, x: d.x, z: d.z, yaw: d.yaw }));
+  ctx.doors = trueDoors(units);
   setupPlates(ctx, doors.map(d => String(d.apNo)));
-  const bar = CORRIDORS.find(c => c.id === 'bar'), wing = CORRIDORS.find(c => c.id === 'wing');
-  const s1 = doors.filter(d => d.seg === 'S1'), s5 = doors.filter(d => d.seg === 'S5');
-  const A = { x0: bar.x0, x1: bar.x1, z0: bar.z0, z1: bar.z1 }, Wg = { x0: wing.x0, x1: wing.x1, z0: wing.z0, z1: bar.z0 };
-  for (const r of [A, Wg]) { B.box('marbleFloor', r.x0, r.x1, -0.3, 0, r.z0, r.z1); C.rect(r.x0, r.x1, r.z0, r.z1, 0); }
+  const bar = CORRIDORS.find(c => c.id === 'bar'), wing = CORRIDORS.find(c => c.id === 'wing'), WX0 = wing.x0;
+  const s1 = doors.filter(d => d.seg === 'S1'), s4 = doors.filter(d => d.seg === 'S4'), s5 = doors.filter(d => d.seg === 'S5'), s6 = doors.filter(d => d.seg === 'S6');
+  const A = { x0: bar.x0, x1: wing.x1, z0: bar.z0, z1: bar.z1 };
+  const Wn = { x0: wing.x0, x1: wing.x1, z0: wing.z0, z1: bar.z0 }, Wp = { x0: wing.x0, x1: wing.x1, z0: bar.z1, z1: wing.z1 };
+  for (const r of [A, Wn, Wp]) { B.box('marbleFloor', r.x0, r.x1, -0.3, 0, r.z0, r.z1); C.rect(r.x0, r.x1, r.z0, r.z1, 0); }
   // nero border inlay along the spine
   for (const z of [-0.62, 0.6]) B.box('nero', A.x0 + 0.4, A.x1 - 0.4, 0, 0.004, z, z + 0.02);
-  ceilingRect(ctx, A, true, H, 1.2); ceilingRect(ctx, Wg, false, H, 1.0);
+  ceilingRect(ctx, A, true, H, 1.2); ceilingRect(ctx, Wn, false, H, 1.0); ceilingRect(ctx, Wp, false, H, 1.0);
   const doorOp = ds => ds.map(d => ({ c: d.a, w: DOOR_W, h: DOOR_H, kind: 'door' }));
   const portals = ds => ds.map(d => ({ a0: d.a - 0.95, a1: d.a + 0.95, mat: 'walnut' }));
   const nOps = [], nZones = [];
-  const blk = blocksOn(bId, 0);
-  const amen = blk.find(b => b.seg === 'S1');
+  const blk = blocksOn(bId, 0), cf = b => b.cframe || b.frame;
+  const amen = blk.find(b => b.seg === 'S1' && (b.kind === 'amenity' || b.kind === 'kindergarten'));
   // lobbies
   CORES.forEach((c, ci) => {
     const [L0, L1] = [c.liftDoors[0][0], c.liftDoors[1][0]];
@@ -1351,7 +1384,7 @@ function buildGround(bId) {
     for (const L of [L0, L1]) nOps.push({ c: L, w: LIFT_W, h: LIFT_H, kind: 'lift' });
     nZones.push({ a0: c.x0, a1: c.x1, mat: 'marble' });
     // side passages from the spine into the lobby
-    const pL = [c.x0 + 0.02, sh0], pR = [sh1, Math.min(c.x1, 74.4) >= 74.39 ? 74.22 : c.x1 - 0.02];
+    const pL = [c.x0 + 0.02, sh0], pR = [sh1, Math.min(c.x1, WX0) >= WX0 - 0.01 ? WX0 - 0.18 : c.x1 - 0.02];
     for (const [p0, p1] of [pL, pR]) if (p1 - p0 > 0.7) nOps.push({ c: (p0 + p1) / 2, w: p1 - p0, h: 2.6, kind: 'pass' });
     callPlate(ctx, (L0 + L1) / 2, 1.12, -1.1 + FACE + SKIN + 0.006, 0, { type: 'liftCall', building: bId, stair: c.stair });
     c.liftDoors.forEach((_, di) => ctx.lifts.push(new Lift(bId, ci, di, 0, { rear: true })));
@@ -1360,35 +1393,38 @@ function buildGround(bId) {
   // spine walls
   const sOps = doorOp(s1), sZones = portals(s1);
   if (amen) {
-    const a0 = amen.frame.o[0], a1 = Math.min(a0 + amen.width, A.x1);
+    const a0 = cf(amen).o[0], a1 = Math.min(a0 + amen.width, WX0);
     sOps.push({ c: (a0 + a1) / 2, w: a1 - a0 - 0.3, h: H, kind: 'pass', noTrim: true });
     storefront(ctx, a0 + 0.15, a1 - 0.15, amen.kind);
   }
   const sc = (a0, a1, step = 2.8) => { const out = []; for (let a = a0 + 1.4; a < a1 - 1; a += step) out.push(a); return out; };
-  wallRun(ctx, { axis: 'x', c: 1.1, side: -1, a0: A.x0, a1: A.x1, openings: sOps, zones: sZones, scallops: sc(A.x0, amen ? amen.frame.o[0] : A.x1) });
-  // N spine wall: parking/storage blocks get walnut rhythm and art
+  wallRun(ctx, { axis: 'x', c: 1.1, side: -1, a0: A.x0, a1: WX0, openings: sOps, zones: sZones, scallops: sc(amen ? cf(amen).o[0] + amen.width : A.x0, WX0) });
+  // car-park / storage side of the spine: walnut rhythm and art between the lobbies (and on the S1 car-park stretch)
   for (const b of blk.filter(b => b.seg === 'S2')) {
-    const x1 = b.frame.o[0], x0 = x1 - b.width;
+    const x1 = cf(b).o[0], x0 = x1 - b.width;
     for (let x = x0 + 2.2; x < x1 - 2; x += 4.4) { nZones.push({ a0: x - 1.1, a1: x + 1.1, mat: 'walnut' }); framedArt(ctx, x, 1.6, -1.1 + FACE + SKIN + 0.002, 0, 0.9, 1.15, Math.round(x)); }
   }
-  wallRun(ctx, { axis: 'x', c: -1.1, side: 1, a0: A.x0, a1: wing.x0, openings: nOps, zones: nZones, scallops: sc(A.x0, wing.x0) });
-  wallRun(ctx, { axis: 'z', c: wing.x0, side: 1, a0: wing.z0, a1: -1.1, zones: [], scallops: sc(wing.z0, -1.1) });
-  wallRun(ctx, { axis: 'z', c: wing.x1, side: -1, a0: wing.z0, a1: 1.1, openings: doorOp(s5), zones: portals(s5), scallops: sc(wing.z0, -1.1) });
+  wallRun(ctx, { axis: 'x', c: -1.1, side: 1, a0: A.x0, a1: WX0, openings: nOps, zones: nZones, scallops: sc(A.x0, WX0) });
+  wallRun(ctx, { axis: 'z', c: WX0, side: 1, a0: wing.z0, a1: -1.1, openings: doorOp(s6), zones: portals(s6), scallops: sc(wing.z0, -1.1) });
+  wallRun(ctx, { axis: 'z', c: WX0, side: 1, a0: 1.1, a1: wing.z1, openings: doorOp(s4), zones: portals(s4), scallops: sc(1.1, wing.z1) });
+  wallRun(ctx, { axis: 'z', c: wing.x1, side: -1, a0: wing.z0, a1: wing.z1, openings: doorOp(s5), zones: portals(s5), scallops: sc(wing.z0, wing.z1) });
   endWindow(ctx, 'x', A.x0, 1, -1.1, 1.1);
   endWindow(ctx, 'z', wing.z0, 1, wing.x0, wing.x1);
-  for (let z = -12; z > -36; z -= 7) framedArt(ctx, wing.x0 + FACE + SKIN + 0.002, 1.6, z, Math.PI / 2, 0.9, 1.15, Math.round(-z));
+  wallRun(ctx, { axis: 'x', c: wing.z1, side: -1, a0: wing.x0, a1: wing.x1, finish: 'walnut' });
+  // art on the closed stretch of the wing arm's west wall (the corner stair cell) where no door is near
+  for (const z of [3.2, 6.4]) if (!s4.some(d => Math.abs(d.a - z) < 1.6)) framedArt(ctx, WX0 + FACE + SKIN + 0.002, 1.6, z, Math.PI / 2, 0.9, 1.15, Math.round(z * 3));
   let pi = 0;
-  const runs = { S1: { axis: 'x', c: 1.1, side: -1 }, S5: { axis: 'z', c: wing.x1, side: -1 } };
+  const runs = { S1: { axis: 'x', c: 1.1, side: -1 }, S4: { axis: 'z', c: WX0, side: 1 }, S5: { axis: 'z', c: wing.x1, side: -1 }, S6: { axis: 'z', c: WX0, side: 1 } };
   for (const d of doors) placeDoor(ctx, d, runs[d.seg], pi++);
   const dl = [];
   for (const d of s1) dl.push([d.a, 0.8]);
-  for (const d of s5) dl.push([wing.x1 - 0.33, d.a]);
+  for (const d of [...s4, ...s5, ...s6]) dl.push([d.seg === 'S5' ? wing.x1 - 0.33 : wing.x0 + 0.33, d.a]);
   for (let x = 3; x < A.x1 - 1; x += 3.2) dl.push([x, -0.8]);
   downlights(ctx, dl);
-  floorPools(ctx, dl.map(([x, z]) => [x, z * 0.7]), 2.0);
+  floorPools(ctx, dl.map(([x, z]) => [x, Math.abs(z) < 1.2 ? z * 0.7 : z]), 2.0);
   const cx = c => (c.liftDoors[0][0] + c.liftDoors[1][0]) / 2;
-  claimRig(root, [[cx(CORES[0]), 2.6, -6, 4.5], [cx(CORES[1]), 2.6, -6, 4.5], [cx(CORES[2]), 2.6, -6.0, 5], [cx(CORES[2]), 2.6, 0, 4]], 0.15);
-  return finish(ctx, { x: cx(CORES[2]), z: -7.7, yaw: Math.PI });
+  claimRig(root, [[cx(CORES[0]), 2.6, -6, 4.5], [cx(CORES[1]), 2.6, -6, 4.5], [cx(CORES[2]), 2.6, CORES[2].zOut + 5, 5], [cx(CORES[2]), 2.6, 0, 4]], 0.15);
+  return finish(ctx, { x: cx(CORES[2]), z: CORES[2].zOut + 0.8, yaw: Math.PI });
 }
 function storefront(ctx, a0, a1, kind) {   // glazed amenity / kindergarten front along the spine (S1 side)
   const { B, C } = ctx; const z = 1.1, H = ctx.H;
@@ -1404,7 +1440,8 @@ function storefront(ctx, a0, a1, kind) {   // glazed amenity / kindergarten fron
 }
 function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   const { B, C } = ctx; const H = ctx.H;
-  const x0 = c.x0, x1 = Math.min(c.x1, 74.4) >= 74.39 ? 74.24 : Math.min(c.x1, 74.4), zF = -8.5 + 0.12, zL = -3.5;   // facade glass line, lift wall line
+  const WX0 = WING().x0;
+  const x0 = c.x0, x1 = Math.min(c.x1, WX0) >= WX0 - 0.01 ? WX0 - 0.16 : Math.min(c.x1, WX0), zF = (c.zOut ?? -8.5) + 0.12, zL = -3.5;   // facade glass line, lift wall line
   const xm = (L0 + L1) / 2;
   // floor: calacatta with nero border + passages
   B.box('marbleFloor', x0, x1, -0.3, 0, zF - 0.12, -1.1); C.rect(x0, x1, zF, -1.1, 0);
@@ -1538,24 +1575,28 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
 // ============================================================ parking (-1)
 function buildParking(bId) {
   const floor = -1, H = 3.1;
-  const ctx = makeCtx(bId, floor, H);
+  const ctx = makeCtx(bId, floor, H, false);   // world-frame basement: only the lobbies of a mirrored block are reflected
   const { root } = ctx;
   const O = BUILDINGS[bId].origin;
-  // Parking is one basement under both buildings; it is modelled in WORLD coordinates in a sub-group offset by -origin.
+  // Parking is one basement under both buildings and the courtyard; it is modelled in WORLD coordinates in a sub-group offset by -origin.
   const W = new THREE.Group(); W.position.set(-O[0], 0, -O[1]); root.add(W);
-  const wctx = { ...ctx, root: W, B: new Batch(), C: new Colliders(16), signB: new Batch() };
+  const wctx = { ...ctx, root: W, B: new Batch(null), C: new Colliders(16, null), signB: new Batch(null, true) };
   const { B, C } = wctx;
-  const X0 = -1, X1 = 92, Z0 = -102.5, Z1 = 12.4;
-  // obstacles (world): cores + glass lobbies, ramp
+  const X0 = BASEMENT.x0, X1 = BASEMENT.x1, Z0 = BASEMENT.z0, Z1 = BASEMENT.z1;
+  // obstacles (world): cores + glass lobbies, ramp. A lobby is built in the canonical frame (`canon`, extending +z from the
+  // lift wall) and reflected about the block's axis (z = oz) for a mirrored block; `x0…z1` / `front` / `dir` are the true rect.
   const obst = [];
   const lobbies = [];
-  for (const [id, b] of Object.entries(BUILDINGS)) for (const c of CORES) {
-    const oz = b.origin[1], ox = b.origin[0];
-    obst.push([ox + c.x0, ox + c.x1, oz + c.z0, oz + c.z1]);
-    const lob = { id, c, x0: ox + c.x0, x1: ox + Math.min(c.x1, 74.4), z0: oz + c.z1, z1: oz + c.z1 + 2.0, ox, oz };
-    lobbies.push(lob); obst.push([lob.x0 - 0.2, lob.x1 + 0.2, lob.z0, lob.z1 + 0.6]);
-  }
-  const RAMP = [84.6, 88.8, -54, -30], RAMP_OPEN = -42;   // world; matches the open ramp drawn by environment.js
+  const WX0 = WING().x0;
+  for (const [id, b] of Object.entries(BUILDINGS)) CORES.forEach((c, ci) => {
+    const oz = b.origin[1], ox = b.origin[0], m = isMirrored(id) ? -1 : 1, tc = coresOf(id)[ci];
+    obst.push([ox + tc.x0, ox + tc.x1, oz + tc.z0, oz + tc.z1]);
+    const canon = { id, c, x0: ox + c.x0, x1: ox + Math.min(c.x1, WX0), z0: oz + c.z1, z1: oz + c.z1 + 2.0, ox, oz };
+    const zA = oz + m * c.z1, zB = oz + m * (c.z1 + 2.0);
+    const lob = { id, c, ci, canon, mirror: m < 0, x0: canon.x0, x1: canon.x1, z0: Math.min(zA, zB), z1: Math.max(zA, zB), front: zB, dir: m, ox, oz };
+    lobbies.push(lob); obst.push([lob.x0 - 0.2, lob.x1 + 0.2, m > 0 ? lob.z0 : lob.z0 - 0.6, m > 0 ? lob.z1 + 0.6 : lob.z1]);
+  });
+  const RAMP = [RAMP_D.x0, RAMP_D.x1, RAMP_D.z0, RAMP_D.z1], RAMP_OPEN = RAMP_D.open;   // world; matches the open ramp drawn by environment.js
   obst.push([RAMP[0] - 0.4, RAMP[1], RAMP[2], RAMP[3] + 0.8]);
   const hit = (a0, a1, b0, b1) => obst.some(([x0, x1, z0, z1]) => a0 < x1 && a1 > x0 && b0 < z1 && b1 > z0);
   // floor, ceiling, perimeter walls
@@ -1565,11 +1606,11 @@ function buildParking(bId) {
   // wall dado band
   B.box('paintGreen', X0, X0 + 0.01, 0, 1.1, Z0, Z1); B.box('paintGreen', X1 - 0.01, X1, 0, 1.1, Z0, Z1);
   B.box('paintGreen', X0, X1, 0, 1.1, Z0, Z0 + 0.01); B.box('paintGreen', X0, X1, 0, 1.1, Z1 - 0.01, Z1);
-  const aisles = []; for (let k = 0; k < 7; k++) aisles.push(3.9 - 16 * k);
+  const aisles = []; for (let k = 0; k < 9; k++) { const a = 3.9 - 16 * k; if (a > Z0 + 3 && a < Z1 - 3) aisles.push(a); }
   // columns
   const colM = [], colBand = [];
-  const colXs = []; for (let x = 0.5; x < X1 - 1; x += 8.1) colXs.push(x);
-  const backLines = [11.9, ...aisles.map(a => a - 8)];
+  const colXs = []; for (let x = X0 + 1.5; x < X1 - 1; x += 8.1) colXs.push(x);
+  const backLines = [aisles[0] + 8, ...aisles.map(a => a - 8)];
   for (const z of backLines) for (const x of colXs) {
     if (z < Z0 + 0.5 || z > Z1 - 0.3) continue;
     if (hit(x - 0.35, x + 0.35, z - 0.35, z + 0.35)) continue;
@@ -1589,7 +1630,7 @@ function buildParking(bId) {
       const x0 = xc + 0.3 + j * 2.5, x1 = x0 + 2.5;
       if (x1 > X1 - 0.3) continue;
       if (hit(x0, x1, b0, b1)) continue;
-      if (x0 < 8.4 || (x1 > 81.9 && b1 > RAMP[3] - 1.5)) continue;   // north–south drive lanes (west; east down to the ramp foot)
+      if (x0 < X0 + 9.4 || (x1 > RAMP[0] - 2.7 && x0 < RAMP[1] + 3.5 && b1 > RAMP[3] - 1.5)) continue;   // drive lanes (along the SSW wall; from the ramp foot)
       bays.push({ x0, x1, z0: b0, z1: b1, dir, no: no++, ac });
     }
   }
@@ -1636,14 +1677,14 @@ function buildParking(bId) {
   instanced(W, ctx.geo('ev', () => mergeGeometries([clean(boxGeo(-0.14, 0.14, 0, 1.45, -0.09, 0.09)), clean(boxGeo(-0.18, 0.18, 1.45, 1.5, -0.12, 0.12))], false)), 'white', evM);
   instanced(W, ctx.geo('evL', () => new THREE.TorusGeometry(0.07, 0.012, 8, 24)), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 2.2, 0.9) }), evLight);
   // drive lanes linking the aisles: dashed centre lines
-  for (let z = Z0 + 2; z < Z1 - 2; z += 3) if (!hit(3.8, 5.2, z, z + 1.6)) B.box('paintYellow', 4.5 - 0.06, 4.5 + 0.06, 0.001, 0.004, z, z + 1.6);
-  for (let z = RAMP[3] + 1; z < Z1 - 2; z += 3) if (!hit(85.0, 86.4, z, z + 1.6)) B.box('paintYellow', 85.6 - 0.06, 85.6 + 0.06, 0.001, 0.004, z, z + 1.6);
+  { const lx = X0 + 5.5; for (let z = Z0 + 2; z < Z1 - 2; z += 3) if (!hit(lx - 0.7, lx + 0.7, z, z + 1.6)) B.box('paintYellow', lx - 0.06, lx + 0.06, 0.001, 0.004, z, z + 1.6); }
+  { const lx = (RAMP[0] + RAMP[1]) / 2 - 1.1; for (let z = RAMP[3] + 1; z < Z1 - 2; z += 3) if (!hit(lx - 0.6, lx + 0.8, z, z + 1.6)) B.box('paintYellow', lx - 0.06, lx + 0.06, 0.001, 0.004, z, z + 1.6); }
   // aisle markings: dashed centre line + arrows + zebra crossings at lobbies
   for (const ac of aisles) for (let x = X0 + 2; x < X1 - 3; x += 3) if (!hit(x, x + 1.6, ac - 0.1, ac + 0.1)) B.box('paintYellow', x, x + 1.6, 0.001, 0.004, ac - 0.06, ac + 0.06);
   for (const L of lobbies) {
     const xm = (L.x0 + L.x1) / 2;
-    const ac = aisles.reduce((a, b) => Math.abs(b - L.z1) < Math.abs(a - L.z1) ? b : a);
-    for (let k = -3; k <= 3; k++) B.box('paint', xm + k * 0.5 - 0.2, xm + k * 0.5 + 0.2, 0.001, 0.004, L.z1 + 0.6, ac + 3);
+    const ac = aisles.reduce((a, b) => Math.abs(b - L.front) < Math.abs(a - L.front) ? b : a);
+    for (let k = -3; k <= 3; k++) B.box('paint', xm + k * 0.5 - 0.2, xm + k * 0.5 + 0.2, 0.001, 0.004, L.front + L.dir * 0.6, ac - L.dir * 3);
   }
   // LED battens over the aisles and bays, sprinkler mains
   const bat = [];
@@ -1687,10 +1728,17 @@ function buildParking(bId) {
   // barrier at the ramp foot
   B.box('white', rx1 - 0.6, rx1 - 0.3, 0, 1.05, rz1 - 0.3, rz1 - 0.1);
   for (let k = 0; k < 6; k++) B.box(k % 2 ? 'white' : 'pipeRed', rx1 - 0.49, rx1 - 0.41, 1.03 + k * 0.33, 1.03 + (k + 1) * 0.33, rz1 - 0.24, rz1 - 0.16);   // boom raised
-  // lobbies (glass boxes) + core volumes
-  for (const L of lobbies) parkingLobby(wctx, ctx, L, L.id === bId);
+  // lobbies (glass boxes) + core volumes; a mirrored block's lobbies are built canonically and reflected about its axis
+  for (const L of lobbies) {
+    if (!L.mirror) { parkingLobby(wctx, ctx, L.canon, L.id === bId); continue; }
+    const before = new Set(W.children);
+    const lw = { ...wctx, B: new Batch(L.oz), C: new Colliders(16, L.oz), signB: new Batch(L.oz, true) };
+    parkingLobby(lw, ctx, L.canon, L.id === bId);
+    lw.B.flush(W); lw.C.flush(W); lw.signB.flush(W);
+    for (const o of [...W.children]) if (!before.has(o) && !BAKED.has(o) && !NOMIRROR.has(o)) mirrorObj(o, L.oz);
+  }
   // hanging pictogram signs over the aisles (P, lift, exit)
-  for (const ac of aisles) for (const x of [12, 46, 80]) {
+  for (const ac of aisles) for (const x of [X0 + 13, (X0 + X1) / 2, X1 - 13]) {
     if (hit(x - 1, x + 1, ac - 1, ac + 1)) continue;
     B.box('bronzeDark', x - 0.02, x + 0.02, H - 0.35, H, ac - 0.02, ac + 0.02);
     B.box('blackGlass', x - 0.56, x + 0.56, H - 0.62, H - 0.34, ac - 0.03, ac + 0.03);
@@ -1701,13 +1749,14 @@ function buildParking(bId) {
   // parking light rig: current building's lobbies + aisle
   const my = lobbies.filter(L => L.id === bId);
   const toLocal = (x, z) => [x - O[0], z - O[1]];
-  const spots = my.map(L => { const [x, z] = toLocal((L.x0 + L.x1) / 2, L.z0 + 1.0); return [x, 2.5, z, 5, 0xffd9ae, 7]; });
-  const [ax, az] = toLocal(60, 3.9 + O[1] - (bId === 'C3' ? 0 : 0));
+  const spots = my.map(L => { const [x, z] = toLocal((L.x0 + L.x1) / 2, (L.z0 + L.z1) / 2); return [x, 2.5, z, 5, 0xffd9ae, 7]; });
+  const aisleNear = aisles.reduce((a, b) => Math.abs(b - O[1]) < Math.abs(a - O[1]) ? b : a);
+  const [ax, az] = toLocal((X0 + X1) / 2, aisleNear);
   spots.push([ax, 1.9, az, 4, 0xf2f4ff, 18]);
   claimRig(root, spots, 0.3);
   const lob2 = my.find(L => L.c.stair === 2) || my[0];
-  const [spx, spz] = toLocal((lob2.x0 + lob2.x1) / 2 - 7.5, lob2.z1 + 3.0);
-  const res = finish(ctx, { x: spx, z: spz, yaw: Math.PI / 2 + 0.25 });
+  const [spx, spz] = toLocal((lob2.x0 + lob2.x1) / 2 - 7.5, lob2.front + lob2.dir * 3.0);
+  const res = finish(ctx, { x: spx, z: spz, yaw: lob2.dir > 0 ? Math.PI / 2 + 0.25 : Math.PI / 2 - 0.25 });
   const d0 = res.dispose;
   res.dispose = () => { d0(); for (const m of ctx.ownMat) m.dispose(); };
   return res;
@@ -1749,7 +1798,7 @@ function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core
   if (own) c.liftDoors.forEach((_, di) => ctx.lifts.push(new Lift(L.id, CORES.indexOf(c), di, -1)));
   else {
     // decorative lifts of the other building (closed), positioned via the world sub-group
-    for (let di = 0; di < 2; di++) { const Lf = new Lift(L.id, CORES.indexOf(c), di, -1, { decor: true }); Lf.group.position.set(b.origin[0], floorY(-1) * 0 - floorY(-1), b.origin[1]); w.root.add(Lf.group); ctx.decor = ctx.decor || []; ctx.decor.push(Lf); }
+    for (let di = 0; di < 2; di++) { const Lf = new Lift(L.id, CORES.indexOf(c), di, -1, { decor: true }); Lf.group.position.set(b.origin[0], floorY(-1) * 0 - floorY(-1), b.origin[1]); NOMIRROR.add(Lf.group); w.root.add(Lf.group); ctx.decor = ctx.decor || []; ctx.decor.push(Lf); }
   }
   // "P −1" level pictogram on the lobby glass above the doors
   signPlane(w, 2, xm, h - 0.35, z1 + 0.02, 0, 0.28, 0.28);
@@ -1760,9 +1809,11 @@ export function buildFloorCommons(bId, floor, styleId = 'lobby') {
   if (!BUILDINGS[bId]) bId = 'C3';
   floor = Math.max(-1, Math.min(TOP_FLOOR, floor | 0));
   let res;
-  if (floor === -1) res = buildParking(bId);
-  else if (floor === 0) res = buildGround(bId);
-  else res = buildTypical(bId, floor);
+  try {
+    if (floor === -1) res = buildParking(bId);
+    else if (floor === 0) res = buildGround(bId);
+    else res = buildTypical(bId, floor);
+  } finally { MZ = null; }
   res.styleId = styleId;
   return res;
 }

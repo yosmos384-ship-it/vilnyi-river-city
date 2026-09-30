@@ -6,7 +6,7 @@
 // and a distant Bucharest skyline ring. Everything is procedural; repeats are instanced or merged (~70 draw calls).
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, LAKE, LEVELS, PLOT, COMPASS, localToWorld, geoToWorld } from '../data.js';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, LEVELS, PLOT, COMPASS, SPIRAL as SPIRAL_D, RAMP, localToWorld, geoToWorld, footprintOf } from '../data.js';
 
 // Uniforms shared with exterior.js (window glow etc. follow the environment mode).
 export const SHARED = {
@@ -560,9 +560,9 @@ function inLake(x, z, m = 0) {
 const nearPoly = (poly, x, z, m) => inPoly(poly, x, z) || (m > 0 && distPoly(poly, x, z) < m);
 
 // Project massing (world): our buildings, the context blocks, the P deck + spiral ramp
-const BLD_POLYS = Object.keys(BUILDINGS).map(id => FOOTPRINT.map(([x, z]) => localToWorld(id, x, z)));
+const BLD_POLYS = Object.keys(BUILDINGS).map(id => footprintOf(id).map(([x, z]) => localToWorld(id, x, z)));
 const P_DECK = CONTEXT_BLOCKS.find(b => b.parking);
-const SPIRAL = { x: -16, z: -32, r: 9, h: 7.2 };   // in front of the C3–C4 courtyard mouth, towards Intrarea Guliver
+const SPIRAL = { x: SPIRAL_D.x, z: SPIRAL_D.z, r: SPIRAL_D.r, h: 7.2 };   // street side of the P deck, in front of the C3–C4 courtyard mouth
 function nearBuilding(x, z, m) {
   for (const p of BLD_POLYS) if (nearPoly(p, x, z, m)) return true;
   for (const b of CONTEXT_BLOCKS) if (x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m) return true;
@@ -852,30 +852,41 @@ function offsetPolyXZ(poly, d) {
 
 // Site plan canvas (world-axis rect around the plot and its four streets, painted at high resolution)
 const SITE = { x0: -64, x1: 160, z0: -206, z1: 164 };
+// Landscaping of the plot (world). C4 (x −13…115, z −75.8…−58.8) and C3 (z −8.5…8.5) enclose the courtyard (z −58.8…−8.5,
+// open to the SSW, closed by the two wings at x 98…115); Faza I is the ring east of C3, Faza III the pair west of C4.
+const YARD = { x: 58, z: -33.6 };                                    // courtyard garden centre (ring path, plaza, pool)
+const PLAY = [14, 30, -53, -41];                                     // kindergarten playground (by C4's kindergarten)
 // Lawns [x0, x1, z0, z1, corner radius] and footpaths [[x, z]…, width] of the plot (painted, and used to plant trees/shrubs)
 const LAWNS = [
-  [17, 64, -51.5, -12.5, 6],                                         // C3–C4 courtyard
-  [-7.5, 36, 12, 21.5, 2.5], [42, 60, 17.5, 21.5, 1.2], [66, 86, 17.5, 21.5, 1.2],   // C3–Faza I promenade
-  [3, 64, -106, -76.5, 6],                                           // C4–Faza III garden
-  [69, 82, -52, -41, 3],
-  [20, 62, 36, 110, 5],                                              // Faza I courtyard
-  [21, 91, -136.5, -129.5, 2],                                       // Faza III garden between the bars
-  [99, 114, -108, 18, 3],                                            // green strip along the north street
+  [14, 30, -37.5, -13, 3],                                           // courtyard, in front of C3's amenity
+  [34, 82, -52, -13, 6],                                             // courtyard garden
+  [91, 96.5, -28, -13, 2],                                           // courtyard, by the wing tips
+  [44, 96, 19, 35.5, 3],                                             // C3–Faza I promenade garden
+  [28, 96, -104, -88, 5],                                            // C4–Faza III garden
+  [8, 94, 59, 111, 5],                                               // Faza I courtyard
+  [2, 97, -136.5, -129, 2],                                          // Faza III garden between the bars
 ];
 const PATHS = [
-  [[[21.6, -12], [22.5, -20], [27, -25.5]], 2.4], [[[45.4, -12], [44.5, -20], [40, -25.5]], 2.4],
-  [[[49.5, -32], [64, -32]], 2.2], [[[33.5, -44], [33.5, -52]], 2.2],
-  [[[21.6, -76], [21.6, -106]], 2.4], [[[45.4, -76], [45.4, -106]], 2.4], [[[3, -92], [64, -92]], 2.2],
-  [[[10, 24], [10, 11]], 2], [[[28, 24], [28, 11]], 2],
-  [[[20, 72], [62, 72]], 2.4], [[[41, 30], [41, 110]], 2.4],
-  [[[20, -133], [92, -133]], 2], [[[56, -139], [56, -127]], 2],
+  [[[-12, 16], [101.7, 16]], 2.6], [[[-12, -85], [101.7, -85]], 2.6],   // promenades along the lobby fronts (outer sides)
+  [[[10, YARD.z], [YARD.x - 16, YARD.z]], 2.2], [[[YARD.x + 16, YARD.z], [84, YARD.z]], 2.2],
+  [[[YARD.x, YARD.z - 12], [YARD.x, -52]], 2.2], [[[YARD.x, YARD.z + 12], [YARD.x, -13]], 2.2],
+  [[[62, -86], [62, -104]], 2.4], [[[28, -96], [96, -96]], 2.2],
+  [[[8, 85], [94, 85]], 2.4], [[[51, 59], [51, 111]], 2.4],
+  [[[2, -132.7], [97, -132.7]], 2], [[[50, -136.5], [50, -129]], 2],
 ];
-const PLAZAS = [[33.5, -32, 8.6], [33.5, -92, 6.2], [41, 72, 7.4], [54, -44.5, 9]];   // incl. the kindergarten playground
+const PLAZAS = [[YARD.x, YARD.z, 8.6], [62, -96, 6.2], [51, 85, 7.4], [(PLAY[0] + PLAY[1]) / 2, (PLAY[2] + PLAY[3]) / 2, 9]];   // incl. the kindergarten playground
 function nearPath(x, z, m) {
   for (const [pts, w] of PATHS) for (let i = 0; i < pts.length - 1; i++) if (distSeg(x, z, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < w / 2 + m) return true;
-  const e = Math.hypot((x - 33.5) / 16, (z + 32) / 12); if (Math.abs(e - 1) * 13 < 1.2 + m) return true;   // courtyard ring path
+  const e = Math.hypot((x - YARD.x) / 16, (z - YARD.z) / 12); if (Math.abs(e - 1) * 13 < 1.2 + m) return true;   // courtyard ring path
   return PLAZAS.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r + m);
 }
+// Open-air car parks [x0, x1, z0, z1, rows [[xa, xb]…]] (perpendicular 2.5 m × 5 m bays, cars along x) — same list as context.js
+const SITE_LOTS = [
+  [-12, 10, -54, -13, [[-12, -7], [5, 10]]],                          // courtyard mouth
+  [-12, 40, 19, 35, [[-12, -7], [-1, 4], [4, 9], [15, 20], [20, 25], [35, 40]]],   // between C3 and Faza I
+  [-12, 24, -104, -88, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],       // between C4 and Faza III
+  [-38, -17, 40, 120, [[-38, -33], [-22, -17]]],                      // in front of Faza I, along Intrarea Guliver
+];
 
 // ================================================================== createEnvironment
 export function createEnvironment(scene, renderer, opts = {}) {
@@ -1167,15 +1178,15 @@ export function createEnvironment(scene, renderer, opts = {}) {
       const pRect = (x0, x1, z0, z1) => paved.rect(x0, z0, x1 - x0, z1 - z0);
       for (const p of BLD_POLYS) { const q = offsetPolyXZ(p, 5); q.forEach(([x, z], i) => i ? paved.lineTo(x, z) : paved.moveTo(x, z)); paved.closePath(); }
       for (const b of CONTEXT_BLOCKS) pRect(b.x0 - 5, b.x1 + 5, b.z0 - 5, b.z1 + 5);
-      pRect(0, 67, -55.5, -8.5); pRect(-2, 86, 8.5, 30); pRect(15, 67, 30, 115); pRect(84, 97, -110, 26); pRect(10, 94, -139, -127);
+      pRect(-13, 98, -58.8, -8.5); pRect(-13, 115, 8.5, 37.8); pRect(4, 98, 54.8, 115); pRect(-13, 115, -112.4, -75.8); pRect(0, 99, -138, -127.4);
       g.fillStyle = '#c9bfae'; g.fill(paved);
       g.save(); g.clip(paved);
       g.strokeStyle = 'rgba(80,70,55,0.12)'; g.lineWidth = 0.05;
       for (let x = SITE.x0; x < SITE.x1; x += 1.2) { g.beginPath(); g.moveTo(x, SITE.z0); g.lineTo(x, SITE.z1); g.stroke(); }
       for (let z = SITE.z0; z < SITE.z1; z += 0.6) { g.beginPath(); g.moveTo(SITE.x0, z); g.lineTo(SITE.x1, z); g.stroke(); }
       g.restore();
-      // service lane along the north-east boundary (underground car park ramp, deliveries)
-      R(89, 96, -150, 26, '#3a3b3e');
+      // courtyard service lane along C4 to the underground car-park ramp (deliveries, residents' cars)
+      R(-13, RAMP.x1 + 0.3, -58.6, RAMP.z0, '#3a3b3e');
       g.restore();
       // plot kerb
       g.strokeStyle = '#8e897f'; g.lineWidth = 0.5; polyPath(g, PLOT); g.stroke();
@@ -1202,20 +1213,21 @@ export function createEnvironment(scene, renderer, opts = {}) {
         polyPath(g, pts, false); g.stroke(); g.strokeStyle = c; g.lineWidth = w; g.stroke();
       };
       for (const [pts, w] of PATHS) path(pts, w);
-      g.strokeStyle = 'rgba(120,110,95,0.5)'; g.lineWidth = 2.75; g.beginPath(); g.ellipse(33.5, -32, 16, 12, 0, 0, TAU); g.stroke();
+      g.strokeStyle = 'rgba(120,110,95,0.5)'; g.lineWidth = 2.75; g.beginPath(); g.ellipse(YARD.x, YARD.z, 16, 12, 0, 0, TAU); g.stroke();
       g.strokeStyle = '#dcd3c2'; g.lineWidth = 2.4; g.stroke();
       // plazas
       const disc = (x, z, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(x, z, r, 0, TAU); g.fill(); };
-      disc(33.5, -32, 8.2, '#e3dccd'); disc(33.5, -32, 5.2, '#bdb3a0');
+      disc(YARD.x, YARD.z, 8.2, '#e3dccd'); disc(YARD.x, YARD.z, 5.2, '#bdb3a0');
       g.strokeStyle = 'rgba(120,105,85,0.35)'; g.lineWidth = 0.06;
-      for (let r = 5.8; r < 8.2; r += 0.6) { g.beginPath(); g.arc(33.5, -32, r, 0, TAU); g.stroke(); }
-      disc(33.5, -92, 5.8, '#e3dccd'); disc(33.5, -92, 2.4, '#b9ae99');
-      disc(41, 72, 7, '#e3dccd'); disc(41, 72, 3.2, '#9fb6a8');
-      // kindergarten playground
-      g.fillStyle = '#b0563f'; g.beginPath(); g.roundRect(46, -50.5, 16, 12, 2.5); g.fill();
-      disc(50, -46.5, 2.2, '#3f8686'); disc(57.5, -42, 2.6, '#d8a33c'); disc(58, -48, 1.6, '#4f7fb0');
-      g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 0.1; g.beginPath(); g.roundRect(46, -50.5, 16, 12, 2.5); g.stroke();
-      for (let x = 44; x <= 86; x += 8) { R(x - 0.9, x + 0.9, 14.1, 15.9, '#5b4a37'); g.strokeStyle = '#8b8577'; g.lineWidth = 0.1; g.strokeRect(x - 0.9, 14.1, 1.8, 1.8); }
+      for (let r = 5.8; r < 8.2; r += 0.6) { g.beginPath(); g.arc(YARD.x, YARD.z, r, 0, TAU); g.stroke(); }
+      disc(62, -96, 5.8, '#e3dccd'); disc(62, -96, 2.4, '#b9ae99');
+      disc(51, 85, 7, '#e3dccd'); disc(51, 85, 3.2, '#9fb6a8');
+      // kindergarten playground (by C4's kindergarten, at the courtyard mouth)
+      { const [px0, px1, pz0, pz1] = PLAY, ox = px0 - 46, oz = pz0 + 50.5;
+        g.fillStyle = '#b0563f'; g.beginPath(); g.roundRect(px0, pz0, px1 - px0, pz1 - pz0, 2.5); g.fill();
+        disc(50 + ox, -46.5 + oz, 2.2, '#3f8686'); disc(57.5 + ox, -42 + oz, 2.6, '#d8a33c'); disc(58 + ox, -48 + oz, 1.6, '#4f7fb0');
+        g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 0.1; g.beginPath(); g.roundRect(px0, pz0, px1 - px0, pz1 - pz0, 2.5); g.stroke(); }
+      for (let x = 46; x <= 94; x += 8) { R(x - 0.9, x + 0.9, 17.4, 19.2, '#5b4a37'); g.strokeStyle = '#8b8577'; g.lineWidth = 0.1; g.strokeRect(x - 0.9, 17.4, 1.8, 1.8); }
       // open-air car parks: asphalt, bays (perpendicular, 2.5 m × 5 m) → parked cars
       const lot = (x0, x1, z0, z1, rows) => {
         g.fillStyle = noisePattern(g, '#3a3b3f', 'rgba(0,0,0,0.2)', 'rgba(255,255,255,0.05)', 300, 32); g.fillRect(x0, z0, x1 - x0, z1 - z0);
@@ -1225,17 +1237,15 @@ export function createEnvironment(scene, renderer, opts = {}) {
           for (let z = z0 + 0.5; z < z1 - 0.5; z += 2.5) { g.beginPath(); g.moveTo(a, z); g.lineTo(b, z); g.stroke(); bays.push([(a + b) / 2, z + 1.25, yaw]); }
         }
       };
-      lot(-25, -3, -100, -46, [[-25, -20, 0], [-8, -3, 0]]);        // in front of C4, towards Intrarea Guliver
-      lot(-25, -3, -18, 26, [[-25, -20, 0], [-8, -3, 0]]);          // in front of C3
-      lot(0.5, 15.5, -53, -11, [[0.5, 5.5, 0], [10.5, 15.5, 0]]);   // courtyard mouth
-      lot(-30, -9, 34, 112, [[-30, -25, 0], [-14, -9, 0]]);        // in front of Faza I
-      g.fillStyle = '#3a3b3f'; g.fillRect(-26, -46, 26, 28);        // drive aisle round the spiral ramp
+      for (const [x0, x1, z0, z1, rows] of SITE_LOTS) lot(x0, x1, z0, z1, rows.map(([a, b]) => [a, b, 0]));
+      g.fillStyle = '#3a3b3f'; g.fillRect(P_DECK.x1, P_DECK.z0 - 2, -13 - P_DECK.x1, P_DECK.z1 - P_DECK.z0 + 4);   // drive lane between the P deck and the blocks
+      g.fillRect(SPIRAL.x - SPIRAL.r - 1.5, SPIRAL.z - SPIRAL.r - 2, P_DECK.x0 - SPIRAL.x + SPIRAL.r + 1.5, 2 * SPIRAL.r + 4);   // round the spiral ramp
       // P deck + spiral footprint, underground car-park ramp
       g.fillStyle = '#6b665d'; g.fillRect(P_DECK.x0, P_DECK.z0, P_DECK.x1 - P_DECK.x0, P_DECK.z1 - P_DECK.z0);
       disc(SPIRAL.x, SPIRAL.z, SPIRAL.r + 0.5, '#6b665d');
       for (const p of BLD_POLYS) { g.fillStyle = '#6b665d'; polyPath(g, p); g.fill(); }
-      const rg = g.createLinearGradient(84, 0, 92, 0); rg.addColorStop(0, '#0e0e10'); rg.addColorStop(1, '#3a3a3d');
-      g.fillStyle = rg; g.fillRect(84.6, -54, 4.2, 12);
+      const rg = g.createLinearGradient(0, RAMP.open, 0, RAMP.z0); rg.addColorStop(0, '#0e0e10'); rg.addColorStop(1, '#3a3a3d');
+      g.fillStyle = rg; g.fillRect(RAMP.x0, RAMP.z0, RAMP.x1 - RAMP.x0, RAMP.open - RAMP.z0);
       // streets on top
       paintRoads(g, true, ppm);
       // zebra crossings at the plot entrances
@@ -1516,18 +1526,17 @@ export function createEnvironment(scene, renderer, opts = {}) {
     // ---- trees on the plot (courtyards, promenade, gardens) + street trees along the streets around it
     const site = [];
     const addSite = (x, z, s = 1) => { if (!nearBuilding(x, z, 3.2) && inPoly(PLOT, x, z)) site.push([x, z, s]); };
-    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU + 0.26; addSite(33.5 + Math.cos(a) * 21, -32 + Math.sin(a) * 16, 1.05); }
-    for (const [x, z] of [[59, -16], [60, -24], [26, -48], [20, -46], [58, -46]]) addSite(x, z, 1.15);
-    for (const [x, z] of [[10, -84], [28, -84], [39, -84], [56, -84], [10, -102], [28, -101], [39, -101], [56, -102], [6, -92], [61, -92]]) addSite(x, z, 1.1);
-    for (const [x, z] of [[2, 17], [16, 17.5], [22, 16.5], [-5, 16]]) addSite(x, z, 1);
-    for (let x = 44; x <= 86; x += 8) addSite(x, 15, 0.85);
-    for (const [x, z] of [[72, -46.5], [79, -46.5]]) addSite(x, z, 0.9);
-    for (let z = 36; z <= 110; z += 11) addSite(-6, z, 1.05);
-    for (const [x, z] of [[24, 44], [58, 44], [24, 102], [58, 102], [30, 60], [52, 86], [28, 88], [55, 58]]) addSite(x, z, 1.1);
-    for (let x = 24; x <= 90; x += 11) addSite(x, -133, 1);
-    for (let x = 26; x <= 92; x += 10) addSite(x, -156.5, 0.95);
+    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU + 0.26; addSite(YARD.x + Math.cos(a) * 21, YARD.z + Math.sin(a) * 16, 1.05); }
+    for (const [x, z] of [[20, -17], [26, -30], [93, -17], [93, -25], [36, -50]]) addSite(x, z, 1.15);
+    for (const [x, z] of [[34, -90], [46, -90], [78, -90], [90, -90], [34, -102], [46, -102], [78, -102], [90, -102], [30, -96], [94, -96]]) addSite(x, z, 1.1);
+    for (const [x, z] of [[-10, 17], [30, 17], [42, 17], [12, 36.5]]) addSite(x, z, 1);
+    for (let x = 46; x <= 94; x += 8) addSite(x, 18.3, 0.85);
+    for (let z = 42; z <= 128; z += 11) addSite(-15.5, z, 1.05);
+    for (const [x, z] of [[24, 64], [80, 64], [24, 106], [80, 106], [34, 75], [68, 96], [30, 96], [72, 74]]) addSite(x, z, 1.1);
+    for (let x = 6; x <= 94; x += 11) addSite(x, -132.7, 1);
+    for (let x = 6; x <= 96; x += 10) addSite(x, -157, 0.95);
     for (let z = -140; z <= 120; z += 10) addSite(-39.5, z, 0.95);
-    for (let z = -106; z <= 16; z += 10) addSite(106, z, 0.9);
+    for (let z = -100; z <= 12; z += 10) addSite(119, z, 0.9);
     treeSets.push({ pts: site.concat(L.sTrees.filter(([x, z]) => Math.hypot(x - SITE_CENTER[0], z - SITE_CENTER[1]) < 260)), leafy: true, h: [6, 9], r: [1.7, 2.7], trunk: [2.3, 3.1], cast: shadows, uplight: true, hue: 'site' });
     // young trees scattered over the lawns (off the paths), shrubs and flowering beds along the lawn edges
     const young = [], shrubs = [];
@@ -1563,15 +1572,15 @@ export function createEnvironment(scene, renderer, opts = {}) {
 
     // ---- lamps: street (9 m), courtyard posts (4.2 m), bollards (0.9 m)
     const street = L.lamps, posts = [], bollards = [];
-    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + 0.39; posts.push([33.5 + Math.cos(a) * 17.6, -32 + Math.sin(a) * 13.4]); }
-    for (const [x, z] of [[21.6, -14], [45.4, -14], [63, -32], [33.5, -50.5], [19.4, -80], [47.6, -80], [19.4, -104], [47.6, -104], [4.5, -92], [62.5, -92], [22, 40], [60, 40], [22, 106], [60, 106], [41, 58], [30, -133], [70, -133], [98, -60], [98, -10], [98, -110], [-13, -8], [-13, -58], [-19, 60], [-19, 90]]) if (!nearBuilding(x, z, 1)) posts.push([x, z]);
-    for (let x = 0; x <= 36; x += 6) bollards.push([x, 11.2]);
-    for (let z = -118; z <= 8; z += 7) bollards.push([86.2, z]);
-    for (let z = -79; z >= -104; z -= 6) { bollards.push([23.3, z]); bollards.push([43.7, z]); }
-    for (let x = 6; x <= 62; x += 6) { if (Math.abs(x - 33.5) > 7) bollards.push([x, -93.7]); }
-    for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; bollards.push([33.5 + Math.cos(a) * 14.3, -32 + Math.sin(a) * 10.4]); }
-    for (let x = 44; x <= 88; x += 4) bollards.push([x, 11.3]);
-    for (let z = 40; z <= 106; z += 8) { bollards.push([20.5, z]); bollards.push([61.5, z]); }
+    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + 0.39; posts.push([YARD.x + Math.cos(a) * 17.6, YARD.z + Math.sin(a) * 13.4]); }
+    for (const [x, z] of [[-2, 13], [27, 13], [67, 13], [101.7, 19], [YARD.x + 16, YARD.z], [YARD.x, -52.5], [12, -30], [-2, -80.5], [27, -80.5], [67, -80.5], [101.7, -86],
+      [30, -96], [94, -96], [22, 60], [80, 60], [22, 108], [80, 108], [51, 64], [30, -132.7], [70, -132.7], [118, -60], [118, -10], [-17, -60], [-17, -8], [-17, 10], [-19, 60], [-19, 90]]) if (!nearBuilding(x, z, 1)) posts.push([x, z]);
+    for (let x = -10; x <= 96; x += 6) if (Math.abs(x - 6.5) > 4 && Math.abs(x - 47) > 4) bollards.push([x, 13.6]);
+    for (let x = -10; x <= 96; x += 6) if (Math.abs(x - 6.5) > 4 && Math.abs(x - 47) > 4) bollards.push([x, -80.4]);
+    for (let x = 12; x <= 84; x += 6) bollards.push([x, -53.4]);
+    for (let x = 34; x <= 90; x += 6) { if (Math.abs(x - 62) > 7) bollards.push([x, -97.7]); }
+    for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; bollards.push([YARD.x + Math.cos(a) * 14.3, YARD.z + Math.sin(a) * 10.4]); }
+    for (let z = 62; z <= 108; z += 8) { bollards.push([7.5, z]); bollards.push([94.5, z]); }
     const metal = registerMaterial(stdMat({ color: '#2b2b2d', roughness: 0.45, metalness: 0.7 }));
     const sPole = new THREE.CylinderGeometry(0.07, 0.11, 9, 8); sPole.translate(0, 4.5, 0);
     const sArm = new THREE.BoxGeometry(0.08, 0.08, 1.6); sArm.translate(0, 8.95, 0.75);
@@ -1597,38 +1606,39 @@ export function createEnvironment(scene, renderer, opts = {}) {
 
     // ---- benches
     const benches = [];
-    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; benches.push([33.5 + Math.cos(a) * 6.6, -32 + Math.sin(a) * 6.6, -a + Math.PI / 2]); }
-    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.78; benches.push([33.5 + Math.cos(a) * 4.4, -92 + Math.sin(a) * 4.4, -a + Math.PI / 2]); }
-    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; benches.push([41 + Math.cos(a) * 5.2, 72 + Math.sin(a) * 5.2, -a + Math.PI / 2]); }
-    for (let x = 48; x <= 84; x += 8) benches.push([x, 17, 0]);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; benches.push([YARD.x + Math.cos(a) * 6.6, YARD.z + Math.sin(a) * 6.6, -a + Math.PI / 2]); }
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.78; benches.push([62 + Math.cos(a) * 4.4, -96 + Math.sin(a) * 4.4, -a + Math.PI / 2]); }
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; benches.push([51 + Math.cos(a) * 5.2, 85 + Math.sin(a) * 5.2, -a + Math.PI / 2]); }
+    for (let x = 50; x <= 90; x += 8) benches.push([x, 17.9, 0]);
     const seat = new THREE.BoxGeometry(1.9, 0.08, 0.5); seat.translate(0, 0.45, 0);
     const back = new THREE.BoxGeometry(1.9, 0.45, 0.06); back.translate(0, 0.72, -0.24);
     const wood = registerMaterial(stdMat({ color: '#8a5a36', roughness: 0.6 }));
     inst(mergeGeometries([seat, back]), wood, benches, (o, [x, z, yaw]) => { o.position.set(x, 0, z); o.rotation.set(0, yaw, 0); });
 
     // ---- hedges
-    const hedges = [[17, 64, -12.2], [17, 64, -51.8], [3, 64, -76.2], [-7.5, 36, 21.8], [46, 62, -38.2], [46, 62, -50.8]];
+    const hedges = [[14, 82, -12.2], [34, 82, -52.6], [28, 96, -87.2], [44, 96, 18.9]];
     const hBoxes = [];
-    for (const [a, b, c] of hedges) for (let s = a + 1; s < b - 1; s += 4) { if ([21.6, 45.4, 33.5, 14].some(v => Math.abs(s + 2 - v) < 2.5) || Math.abs(s - 10) < 2 || Math.abs(s - 28) < 2) continue; hBoxes.push([s + 2, c]); }
+    for (const [a, b, c] of hedges) for (let s = a + 1; s < b - 1; s += 4) { if ([YARD.x, 62, 47, 6.5, 22].some(v => Math.abs(s + 2 - v) < 2.5)) continue; hBoxes.push([s + 2, c]); }
     const hg = new THREE.BoxGeometry(4, 0.9, 0.8); hg.translate(0, 0.45, 0);
     inst(hg, registerMaterial(stdMat({ color: '#3d5a28', roughness: 0.95, envBase: 0.2 })), hBoxes, (o, [x, z]) => o.position.set(x, 0, z));
 
     // ---- kindergarten playground, courtyard reflecting pool, car-park ramp (one merged vertex-coloured mesh)
     const play = [];
     const colB = (w, h, d, x, y, z, c) => { const g = new THREE.BoxGeometry(w, h, d).toNonIndexed(); g.translate(x, y + h / 2, z); const n = g.attributes.position.count; const cc = new Float32Array(n * 3); const cl = C(c); for (let i = 0; i < n; i++) cc.set([cl.r, cl.g, cl.b], i * 3); g.setAttribute('color', new THREE.BufferAttribute(cc, 3)); g.deleteAttribute('uv'); play.push(g); };
-    colB(3, 0.15, 2, 50, 1.4, -46.5, '#e8e2d4'); colB(0.12, 1.4, 0.12, 48.6, 0, -47.4, '#d8a33c'); colB(0.12, 1.4, 0.12, 51.4, 0, -47.4, '#d8a33c');
-    colB(0.12, 1.4, 0.12, 48.6, 0, -45.6, '#d8a33c'); colB(0.12, 1.4, 0.12, 51.4, 0, -45.6, '#d8a33c'); colB(1.8, 1.4, 0.1, 50, 1.55, -45.5, '#3f8686');
-    colB(0.9, 0.08, 3.2, 52.5, 0.7, -46.5, '#c85a3a'); colB(0.1, 2.2, 0.1, 57.5, 0, -42, '#4f7fb0'); colB(3.2, 0.1, 0.1, 57.5, 2.2, -42, '#4f7fb0');
-    colB(1.2, 0.5, 1.2, 58, 0, -48, '#d8a33c'); colB(2.2, 0.35, 1, 55, 0, -39.5, '#e8e2d4');
-    for (const z of [-54.2, -41.8]) colB(4.6, 1.1, 0.25, 86.7, 0, z, '#d8d2c6');
-    colB(5.2, 0.18, 7, 86.7, 3.0, -45.5, '#d8d2c6');
+    { const ox = PLAY[0] - 46, oz = PLAY[2] + 50.5, cb = (w, h, d, x, y, z, c) => colB(w, h, d, x + ox, y, z + oz, c);
+      cb(3, 0.15, 2, 50, 1.4, -46.5, '#e8e2d4'); cb(0.12, 1.4, 0.12, 48.6, 0, -47.4, '#d8a33c'); cb(0.12, 1.4, 0.12, 51.4, 0, -47.4, '#d8a33c');
+      cb(0.12, 1.4, 0.12, 48.6, 0, -45.6, '#d8a33c'); cb(0.12, 1.4, 0.12, 51.4, 0, -45.6, '#d8a33c'); cb(1.8, 1.4, 0.1, 50, 1.55, -45.5, '#3f8686');
+      cb(0.9, 0.08, 3.2, 52.5, 0.7, -46.5, '#c85a3a'); cb(0.1, 2.2, 0.1, 57.5, 0, -42, '#4f7fb0'); cb(3.2, 0.1, 0.1, 57.5, 2.2, -42, '#4f7fb0');
+      cb(1.2, 0.5, 1.2, 58, 0, -48, '#d8a33c'); cb(2.2, 0.35, 1, 55, 0, -39.5, '#e8e2d4'); }
+    colB(4.6, 1.1, 0.25, (RAMP.x0 + RAMP.x1) / 2, 0, RAMP.open + 0.2, '#d8d2c6');   // portal parapet (the ramp top at z0 is open to the courtyard lane)
+    colB(5.2, 0.18, 7, (RAMP.x0 + RAMP.x1) / 2, 3.0, -45.5, '#d8d2c6');
     for (const z of [-42.5, -48.5]) for (const x of [84.4, 89]) colB(0.14, 3.1, 0.14, x, 0, z, '#d8d2c6');
-    const rimG = new THREE.CylinderGeometry(4.75, 4.85, 0.45, 48, 1, true).toNonIndexed(); rimG.translate(33.5, 0.22, -32);
-    const rimTop = new THREE.RingGeometry(4.3, 4.8, 48).toNonIndexed(); rimTop.rotateX(-Math.PI / 2); rimTop.translate(33.5, 0.45, -32);
+    const rimG = new THREE.CylinderGeometry(4.75, 4.85, 0.45, 48, 1, true).toNonIndexed(); rimG.translate(YARD.x, 0.22, YARD.z);
+    const rimTop = new THREE.RingGeometry(4.3, 4.8, 48).toNonIndexed(); rimTop.rotateX(-Math.PI / 2); rimTop.translate(YARD.x, 0.45, YARD.z);
     for (const g of [rimG, rimTop]) { g.deleteAttribute('uv'); const n = g.attributes.position.count; g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(0.85), 3)); play.push(g); }
     group.add(new THREE.Mesh(mergeGeometries(play), registerMaterial(stdMat({ color: '#ffffff', vertexColors: true, roughness: 0.6 }))));
-    addPool(86.7, -46, 4);
-    const poolG = flatShapeGeo(shapeFromXZ(ellipsePts(33.5, -32, 4.3, 4.3, 48)), 0.28);
+    addPool((RAMP.x0 + RAMP.x1) / 2, -46, 4);
+    const poolG = flatShapeGeo(shapeFromXZ(ellipsePts(YARD.x, YARD.z, 4.3, 4.3, 48)), 0.28);
     const pu = Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), SKYU, { uTime: SHARED.uTime, uDeep: { value: C('#0b1e24') }, uShore: { value: C('#0b0b0b') }, uNight: SHARED.uNight, uScale: { value: 3 } });
     pendingPool = { geo: poolG, uniforms: pu };
   }

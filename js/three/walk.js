@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
-  UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR,
+  UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
 } from '../data.js';
 import { createFleet, buildOutdoorColliders, CarController, carGeometryXForward, pickCar, carRng, inLake, RAMP } from './cars.js';
@@ -140,6 +140,121 @@ async function loadModules(injected = {}) {
     tryImport('apartment', './apartment.js'), tryImport('commons', './commons.js'), tryImport('materials', './materials.js'),
   ]);
   return out;
+}
+
+// ---------- fast start: pre-warm + streaming (loading flow only) ----------
+// The walkthrough opens on the apartment alone; corridor/lifts, then sky/lake/neighbourhood, exterior and cars stream
+// in right after the first frame. The final light set is reserved from the start with zero-intensity stand-ins
+// ("ghosts", swapped 1:1 for the real lights as they arrive), and the fog type is set up front — so the shader
+// programs compiled for the first frame stay valid and nothing recompiles when the world arrives.
+// prewarmWalk() (called by the page in idle time) loads the modules, gets the textures from the worker, builds the
+// target apartment and compiles its programs into a spare renderer that the next Walkthrough adopts.
+const mark = n => { try { performance.mark('walk:' + n); } catch { /* old browsers */ } };
+const GHOSTS = { PointLight: 5, HemisphereLight: 2, DirectionalLight: 1, SpotLight: 1 };   // commons rig + sky + car headlights
+const LIGHT_TOTALS = { ...GHOSTS, PointLight: GHOSTS.PointLight + LIGHT_SLOTS };   // + the apartment light pool
+function makeGhosts() {
+  const out = [];
+  for (const [type, n] of Object.entries(GHOSTS)) for (let i = 0; i < n; i++) {
+    const l = new THREE[type](); l.intensity = 0; l.name = 'walk-ghost-light'; l.userData._ghost = type; out.push(l);
+  }
+  return out;
+}
+const FOG_PLACEHOLDER = () => new THREE.FogExp2(0x0b0d14, 0);
+let SPARE = null;                   // { renderer, roomEnv } — compiled programs live in its GL context
+const PREBUILT = new Map();         // `${unitId}|${styleId}` → apartment built during pre-warm (taken by _loadApt)
+let _modsP = null, _warmTok = 0;
+const idle = (timeout = 400) => new Promise(r => (typeof requestIdleCallback === 'function' ? requestIdleCallback(r, { timeout }) : setTimeout(r, 30)));
+function makeRenderer() { return new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }); }
+function roomEnvFor(renderer) {
+  const pm = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment(renderer);
+  const tex = pm.fromScene(room, 0.04).texture;
+  room.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); });
+  pm.dispose();
+  return tex;
+}
+/** Load the walkthrough's modules (cached; also used by the page to warm the HTTP/module cache). */
+export function preloadWalkModules() { return (_modsP ||= loadModules()); }
+/** Cancel an unfinished pre-warm (the page calls this when the walkthrough opens). */
+export function cancelPrewarm() { _warmTok++; }
+/**
+ * Idle-time pre-warm for one apartment: modules → textures (worker) → apartment build → shader programs, each step in
+ * its own idle slot; stops early when cancelled. Safe to call repeatedly (a newer call supersedes an older one).
+ */
+export async function prewarmWalk({ unitId, styleId = 'milano', shaders = true } = {}) {
+  const tok = ++_warmTok, live = () => tok === _warmTok;
+  try {
+    const M = await preloadWalkModules();
+    if (!live() || !M.materials) return false;
+    if (M.materials.prewarmTextures) await M.materials.prewarmTextures(styleId);
+    const unit = unitId && unitById(unitId);
+    if (!live() || !shaders || !unit || !M.apartment || !M.apartment.buildApartment) return true;
+    const key = unit.id + '|' + styleId;
+    await idle(); if (!live()) return false;
+    if (!M.materials.hasMaterials || !M.materials.hasMaterials(styleId)) { M.materials.getMaterials(styleId); await idle(); if (!live()) return false; }
+    let apt = PREBUILT.get(key);
+    if (!apt) {
+      PREBUILT.clear();                                   // keep one: the apartment whose panel is open
+      apt = M.apartment.buildApartment(unit, styleId, {});
+      if (!apt || !apt.group) return false;
+      PREBUILT.set(key, apt);
+    }
+    await idle(); if (!live()) return false;
+    if (SPARE && SPARE.slow) return true;
+    if (!SPARE) {
+      const renderer = makeRenderer();
+      renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.shadowMap.enabled = false;
+      SPARE = { renderer, roomEnv: roomEnvFor(renderer), done: new Set() };
+      await idle(); if (!live()) return false;
+    }
+    // A scene with the walkthrough's first-frame state: same light set, fog type and interior IBL → same programs.
+    const r = SPARE.renderer, scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(70, 1, 0.08, 6000);
+    scene.fog = FOG_PLACEHOLDER(); scene.environment = SPARE.roomEnv;
+    for (let i = 0; i < LIGHT_TOTALS.PointLight - GHOSTS.PointLight; i++) scene.add(new THREE.PointLight(0xffe2b8, 0, 7.5, 1.6));
+    for (const g of makeGhosts()) scene.add(g);
+    {   // (compile() takes the lights from `scene` + the proxy only: the apartment's own lamps are not counted)
+      // One not-yet-compiled material per idle slot (a compile can block the main thread briefly). A shallow clone
+      // stands in for the mesh (same geometry, material and instancing → same program), so the apartment is untouched.
+      const sig = o => (o.isInstancedMesh ? 'i' : '') + (o.instanceColor ? 'c' : '') + (o.geometry && o.geometry.attributes.color ? 'v' : '') + (o.isSkinnedMesh ? 's' : '');
+      const todo = new Map(), shown = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+      apt.group.traverse(o => {
+        if (!o.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const k = mats.map(m => m.uuid).join(',') + '|' + sig(o);
+        if (!SPARE.done.has(k) && !todo.has(k)) todo.set(k, o);
+      });
+      // What the first frame shows comes first; closed-cabinet contents etc. after. Each material is DRAWN once into
+      // the 1×1 spare canvas: many drivers (and software GL) only finish a program at its first draw, and the draw
+      // also uploads its textures and geometry — all of which the walkthrough then reuses (same GL context).
+      const order = [...todo].sort((a, b) => shown(b[1]) - shown(a[1]));
+      const gl = r.getContext(), gl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+      const A = Math.min(r.capabilities.getMaxAnisotropy ? r.capabilities.getMaxAnisotropy() : 1, isTouchDevice() ? 8 : 16);
+      const KEYS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'bumpMap', 'emissiveMap', 'clearcoatNormalMap'];
+      r.setPixelRatio(1); r.setSize(1, 1, false);
+      for (const [k, o] of order) {
+        await idle(600); if (!live()) return false;
+        const t0 = performance.now(), proxy = o.clone(false);
+        proxy.frustumCulled = false; proxy.visible = true;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) for (const kk of KEYS) {   // = Walkthrough._polish
+          const t = m && m[kk]; if (t && t.isTexture && !(t.isDataTexture && !t.generateMipmaps) && t.anisotropy < A && !t.userData._aniso) { t.userData._aniso = true; t.anisotropy = A; }
+        }
+        scene.add(proxy);
+        try { r.render(scene, cam); } catch (e) { /* optional warm-up */ }
+        scene.remove(proxy);
+        if (proxy.isInstancedMesh && proxy.dispose) proxy.dispose();
+        SPARE.done.add(k);
+        // Wait (without blocking) until the GPU has really finished this one before queueing the next: a slow GPU or
+        // software GL then never builds up a backlog the walkthrough's first frame would have to wait for.
+        if (gl2) {
+          const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
+          while (sync && gl.getSyncParameter(sync, gl.SYNC_STATUS) !== gl.SIGNALED) { await new Promise(res => setTimeout(res, 16)); if (!live()) { gl.deleteSync(sync); return false; } }
+          if (sync) gl.deleteSync(sync);
+        }
+        if (performance.now() - t0 > 1500) { SPARE.slow = true; break; }   // software GL / very slow GPU: stop here
+      }
+      return true;
+    }
+  } catch (e) { console.info('[walk] pre-warm skipped:', e && e.message); return false; }
 }
 
 // ---------- HUD stylesheet (scoped under .vw) ----------
@@ -365,6 +480,7 @@ const CSS = `
 `;
 
 export class Walkthrough {
+  static get startsFromPano() { return true; }   // enter({ from: <pano-tour state> }) places the camera itself
   constructor(container, opts = {}) {
     this.container = container;
     this.opts = opts;
@@ -398,7 +514,10 @@ export class Walkthrough {
     container.appendChild(this.root);
 
     // renderer / scene / camera
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // A renderer pre-warmed in idle time (prewarmWalk) already holds this apartment's compiled shader programs.
+    const spare = SPARE; SPARE = null; cancelPrewarm();
+    this.renderer = spare ? spare.renderer : makeRenderer();
+    this._spareEnv = spare ? spare.roomEnv : null;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -434,39 +553,26 @@ export class Walkthrough {
 
   // ======================= init =======================
   async _init() {
-    this.mods = await loadModules(this.opts.modules);
+    mark('init');
+    this.mods = this.opts.modules ? await loadModules(this.opts.modules) : await preloadWalkModules();
+    mark('modules');
     if (this.disposed) return;
     const M = this.mods;
     this.styles = (M.materials && Array.isArray(M.materials.STYLES) && M.materials.STYLES.length) ? M.materials.STYLES : FALLBACK_STYLES;
     if (!this.styles.some(s => s.id === this.styleId)) this.styleId = this.styles[0].id;
 
     // Interior image-based lighting (RoomEnvironment), swapped with the sky env on outdoor spots.
-    try {
-      const pm = new THREE.PMREMGenerator(this.renderer);
-      const room = new RoomEnvironment(this.renderer);
-      this.roomEnv = pm.fromScene(room, 0.04).texture;
-      room.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); });
-      pm.dispose();
-    } catch (e) { console.warn('[walk] RoomEnvironment failed', e); this.roomEnv = null; }
+    try { this.roomEnv = this._spareEnv || roomEnvFor(this.renderer); } catch (e) { console.warn('[walk] RoomEnvironment failed', e); this.roomEnv = null; }
+    this._spareEnv = null;
 
-    if (M.environment && M.environment.createEnvironment) {
-      try {
-        this.env = M.environment.createEnvironment(this.scene, this.renderer, { mode: this.envMode });
-        if (this.env && this.env.group && !this.env.group.parent) this.scene.add(this.env.group);
-      } catch (e) { console.warn('[walk] createEnvironment threw', e); this.env = null; }
-    }
-    if (!this.env) this._fallbackEnv();
+    // First-frame state = final state for the shaders: fog type + the full light set (ghosts stand in for the lights
+    // of the environment, the commons rig and the car headlights until those stream in; see _streamWorld).
+    this.scene.fog = FOG_PLACEHOLDER();
+    this.scene.background = new THREE.Color(0x0b0d14);
+    this._ghosts = makeGhosts(); for (const g of this._ghosts) this.scene.add(g);
     this._lightPool = [];
     for (let i = 0; i < LIGHT_SLOTS; i++) { const l = new THREE.PointLight(0xffe2b8, 0, 7.5, 1.6); l.name = 'walk-apt-light'; this.scene.add(l); this._lightPool.push(l); }
-    this.skyEnv = this.scene.environment || null;
-
-    if (M.exterior && M.exterior.createComplex) {
-      try {
-        this.complex = M.exterior.createComplex({});
-        if (this.complex && this.complex.group && !this.complex.group.parent) this.scene.add(this.complex.group);
-      } catch (e) { console.warn('[walk] createComplex threw', e); this.complex = null; }
-    }
-    this._initCars();
+    this.skyEnv = null;
     // Building wrappers: commons groups (building-local) live inside these.
     this.bWrap = {};
     for (const [id, b] of Object.entries(BUILDINGS)) {
@@ -474,6 +580,87 @@ export class Walkthrough {
       this.scene.add(g); this.bWrap[id] = g;
     }
     this._renderStyles(); this._renderTime();
+  }
+
+  // Sky, light, fog, lake and neighbourhood (environment.js). Streamed in after the first apartment frame.
+  _initEnv() {
+    const M = this.mods;
+    if (M.environment && M.environment.createEnvironment) {
+      try {
+        this.env = M.environment.createEnvironment(this.scene, this.renderer, { mode: this.envMode });
+        if (this.env && this.env.group && !this.env.group.parent) this.scene.add(this.env.group);
+      } catch (e) { console.warn('[walk] createEnvironment threw', e); this.env = null; }
+    }
+    if (!this.env) this._fallbackEnv();
+    this.skyEnv = (this.scene.environment !== this.roomEnv && this.scene.environment) || this.skyEnv || null;
+    this._syncEnvMap();
+  }
+  // The complex's facades (exterior.js). Streamed in after the environment.
+  _initComplex() {
+    const M = this.mods;
+    if (M.exterior && M.exterior.createComplex) {
+      try {
+        this.complex = M.exterior.createComplex({});
+        if (this.complex && this.complex.group && !this.complex.group.parent) this.scene.add(this.complex.group);
+      } catch (e) { console.warn('[walk] createComplex threw', e); this.complex = null; }
+    }
+    this._hideFloorsForWalker(true);
+  }
+  // Swap ghost lights for the real ones that have arrived (keeps every light-type count constant).
+  _reconcileGhosts() {
+    const G = this._ghosts; if (!G || !G.length) return;
+    const real = {};
+    this.scene.traverseVisible(o => { if (o.isLight && !o.userData._ghost) real[o.type] = (real[o.type] || 0) + 1; });
+    const have = {}; for (const g of G) have[g.userData._ghost] = (have[g.userData._ghost] || 0) + 1;
+    for (const type of Object.keys(have)) {
+      let extra = have[type] - Math.max(0, (LIGHT_TOTALS[type] || 0) - (real[type] || 0));
+      for (let i = G.length - 1; i >= 0 && extra > 0; i--) if (G[i].userData._ghost === type) { this.scene.remove(G[i]); G.splice(i, 1); extra--; }
+    }
+  }
+  // After the first frame: corridor & lifts → environment → exterior → cars, one per frame, so the view stays live.
+  _streamWorld() {
+    if (this._worldP) return this._worldP;
+    const next = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    const steps = [
+      async () => { if (!this.commons && this.unit) await this._setFloor(this.unit.building, this.floor != null ? this.floor : this.unit.floor); },
+      () => this._initEnv(),
+      () => this._initComplex(),
+      () => { this._initCars(); if (this.commons) this._adoptParking(this.commons); },
+    ];
+    this._worldP = (async () => {
+      await next(); await new Promise(r => setTimeout(r, 450));    // let the page's reveal (fade of the still) finish first
+      for (const step of steps) {
+        await next(); if (this.disposed) return;
+        try { await step(); } catch (e) { console.warn('[walk] stream step failed', e); }
+        mark('stream-' + steps.indexOf(step));
+        if (this.disposed) return;
+        this._reconcileGhosts();
+      }
+      this._worldReady = true; mark('world');
+      // other designs' textures: generated off the main thread into IndexedDB only (no memory held), so a design
+      // switch just decodes them (desktop: phones keep their CPU for the 3D)
+      const Mm = this.mods.materials;
+      if (!this._isTouch && Mm && Mm.prewarmTextures) for (const st of this.styles) if (st.id !== this.styleId) Mm.prewarmTextures(st.id, { cacheOnly: true });
+    })();
+    return this._worldP;
+  }
+  // Textures for the current design (from the worker / IndexedDB); no-op when already there or unsupported.
+  async _texReady(styleId = this.styleId) {
+    const Mm = this.mods && this.mods.materials;
+    if (Mm && Mm.prewarmTextures) { try { await Mm.prewarmTextures(styleId); } catch { /* generate inline */ } }
+  }
+  // Compile what the camera needs and draw one frame before the veil lifts.
+  async _firstFrame() {
+    this._reconcileGhosts();
+    this._syncCamera();
+    // With KHR_parallel_shader_compile the programs link in the background (the still keeps animating); without it
+    // a plain render compiles only what the camera sees, which is less work than compiling the whole apartment.
+    let par = false; try { par = !!this.renderer.getContext().getExtension('KHR_parallel_shader_compile'); } catch { /* */ }
+    try { if (par && this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera); } catch (e) { /* render compiles */ }
+    mark('compiled');
+    if (this.disposed) return;
+    try { this.renderer.render(this.scene, this.camera); } catch (e) { console.warn(e); }
+    await new Promise(r => requestAnimationFrame(() => r()));
   }
 
   _fallbackEnv() {
@@ -490,7 +677,7 @@ export class Walkthrough {
   }
 
   // ======================= public API =======================
-  async enter({ unitId, start = 'apartment', mode = 'walk' } = {}) {
+  async enter({ unitId, start = 'apartment', mode = 'walk', from = null } = {}) {
     const token = (this._enterToken = (this._enterToken || 0) + 1);
     this._showLoading(true);
     await this._ready;
@@ -499,16 +686,28 @@ export class Walkthrough {
     if (unit !== this.unit || !this.apt) {
       this.unit = unit; this.bId = unit.building;
       this._hideUnitCard();
-      await this._buildApartment();
+      await this._texReady(); mark('textures');
+      if (this.disposed || token !== this._enterToken) return;
+      await this._buildApartment(); mark('apartment');
       if (this.disposed || token !== this._enterToken) return;
     }
     this._updateTitle();
     this._renderRooms();
     this.mode = mode === '360' ? '360' : 'walk';
-    await this._goto(start, { instant: true });
+    // Streaming: inside the apartment the corridor/lifts are not needed for the first frame (they follow right after).
+    const aptFirst = !this._worldP && !['lobby', 'corridor', 'parking'].includes(start);
+    const fromPano = from && from.frame !== 'building' && isFinite(from.u) && isFinite(from.v) && (!from.unitId || from.unitId === this.unit.id);
+    if (fromPano) {   // coming from the photoreal 360°: open at the same spot, looking the same way
+      if (aptFirst) { this.floor = this.unit.floor; this.bId = this.unit.building; }
+      await this._placeFromPano(from);
+      this._updateHud(true);
+    } else await this._goto(start, { instant: true, skipFloor: aptFirst });
     if (this.disposed || token !== this._enterToken) return;
     this._applyMode();
+    await this._firstFrame(); mark('first-frame');
+    if (this.disposed || token !== this._enterToken) return;
     this._showLoading(false);
+    this._streamWorld();
     this.canvas.focus({ preventScroll: true });
     if (!lsGet('vrc.walk.help')) this._showHelp(true);
     setTimeout(() => { if (!this.disposed) this._preloadPano(); }, 1200);
@@ -526,6 +725,8 @@ export class Walkthrough {
     if (!this.unit) return;
     await this._ready;
     this._toast(this._styleName(styleId));
+    await this._texReady(styleId);
+    if (this.disposed || this.styleId !== styleId) return;
     await this._buildApartment();       // player state untouched → camera keeps its place
     this._renderRooms();
     this._updateHud(true);
@@ -611,7 +812,9 @@ export class Walkthrough {
     const M = this.mods;
     let apt = null;
     const t0 = performance.now();
-    if (M.apartment && M.apartment.buildApartment) {
+    const pre = PREBUILT.get(unit.id + '|' + this.styleId);          // built (and its shaders compiled) during pre-warm
+    if (pre) { PREBUILT.delete(unit.id + '|' + this.styleId); apt = pre; }
+    else if (M.apartment && M.apartment.buildApartment) {
       try { apt = M.apartment.buildApartment(unit, this.styleId, {}); } catch (e) { console.warn('[walk] buildApartment threw', e); }
     }
     if (!apt || !apt.group) apt = this._fallbackApartment(unit);
@@ -797,13 +1000,13 @@ export class Walkthrough {
     const g = new THREE.Group(); g.name = 'walk-fallback-commons';
     const m = new THREE.MeshStandardMaterial({ color: 0x6b645a, roughness: 0.7 });
     const y = floorY(floor);
-    const rects = floor === -1 ? [{ x0: 0, x1: 84, z0: -8.5, z1: 8.5 }, { x0: 67, x1: 84, z0: -38, z1: -8.5 }] : CORRIDORS;
+    const rects = floor === -1 ? [{ x0: BASEMENT.x0 - BUILDINGS[bId].origin[0], x1: BASEMENT.x1 - BUILDINGS[bId].origin[0], z0: BASEMENT.z0 - BUILDINGS[bId].origin[1], z1: BASEMENT.z1 - BUILDINGS[bId].origin[1] }] : corridorsOf(bId);
     for (const r of rects) {
       const f = new THREE.Mesh(new THREE.BoxGeometry(r.x1 - r.x0, 0.1, r.z1 - r.z0), m);
       f.position.set((r.x0 + r.x1) / 2, y - 0.05, (r.z0 + r.z1) / 2); f.userData.floor = true; g.add(f);
     }
     const l = new THREE.HemisphereLight(0xfff0dd, 0x333333, 0.8); g.add(l);
-    const c = CORES[0];
+    const c = coresOf(bId)[0];
     return { group: g, lifts: [], doors: [], spawn: { x: c.liftDoors[0][0] + 1.5, z: 0, yaw: 0 }, dispose() { disposeTree(g); } };
   }
 
@@ -811,8 +1014,9 @@ export class Walkthrough {
     let ci = typeof lift.core === 'number' ? lift.core : CORES.indexOf(lift.core);
     if (ci < 0 && lift.core && lift.core.stair != null) ci = CORES.findIndex(c => c.stair === lift.core.stair);
     if (ci < 0 || ci == null) ci = Math.floor(i / 2) % CORES.length;
+    const CORES_B = coresOf(bId);   // true cores of this block (C3 is mirrored)
     const di = typeof lift.doorIndex === 'number' ? lift.doorIndex : i % 2;
-    const core = CORES[ci], door = core.liftDoors[di] || core.liftDoors[0], n = core.liftNormal;
+    const core = CORES_B[ci], door = core.liftDoors[di] || core.liftDoors[0], n = core.liftNormal;
     return { lift, core: ci, doorIndex: di, stair: core.stair, bId, floor, door, n, car: [door[0] - n[0] * CAR_DEPTH, door[1] - n[1] * CAR_DEPTH] };
   }
 
@@ -1086,16 +1290,17 @@ export class Walkthrough {
     return { floor: u.floor, pos: this._unitPoint(r.center[0], this.mode === '360' ? r.center[1] : v, r.level), yaw: this._unitDirYaw(0, 1), free: true, room: r };
   }
 
-  async _goto(where, { instant = false } = {}) {
+  async _goto(where, { instant = false, skipFloor = false } = {}) {
     if (this.riding || !this.unit) return;
     if (!instant) await this._fade(true);
     try {
       let s = this._spot(where);
       const bId = this.unit.building;
-      await this._setFloor(bId, s.floor);
+      if (skipFloor && !s.spawn) { this.floor = s.floor; this.bId = bId; }   // commons follow in _streamWorld
+      else await this._setFloor(bId, s.floor);
       if (this.disposed) return;
       if (s.spawn) {
-        const sp = (this.commons && this.commons.spawn) || { x: CORES[0].entrance[0], z: 0, yaw: 0 };
+        const sp = (this.commons && this.commons.spawn) || { x: coresOf(bId)[0].entrance[0], z: 0, yaw: 0 };
         const [x, z] = localToWorldXZ(bId, sp.x, sp.z);
         s = { floor: s.floor, pos: new THREE.Vector3(x, floorY(s.floor), z), yaw: (sp.yaw || 0) + BUILDINGS[bId].rotY, free: true };
       }
@@ -1845,6 +2050,7 @@ export class Walkthrough {
     this._raf = requestAnimationFrame(this._loop);
     if (this._paused || this._pano || this._photoPaused) return;   // hidden tab, or a photoreal tour owns the screen
     const dt = Math.min(this.clock.getDelta(), 0.1);
+    if (this._ghosts && this._ghosts.length) this._reconcileGhosts();
     this._update(dt);
     try { this.env && this.env.update && this.env.update(dt, this.camera); } catch (e) { if (!this._envErr) { console.warn(e); this._envErr = true; } }
     this.renderer.render(this.scene, this.camera);
@@ -2257,18 +2463,18 @@ export class Walkthrough {
     let bx0, bx1, bz0, bz1;
     if (inUnit) {
       const pts = uRect(u, u.depth + GEOM.balconyDepth); bx0 = Math.min(...pts.map(p => p[0])) - 0.8; bx1 = Math.max(...pts.map(p => p[0])) + 0.8; bz0 = Math.min(...pts.map(p => p[1])) - 0.8; bz1 = Math.max(...pts.map(p => p[1])) + 0.8;
-    } else { bx0 = -2; bx1 = 86; bz0 = -40; bz1 = 10.5; }
+    } else { const fp = footprintOf(bId); bx0 = Math.min(...fp.map(p => p[0])) - 2; bx1 = Math.max(...fp.map(p => p[0])) + 2; bz0 = Math.min(...fp.map(p => p[1])) - 2; bz1 = Math.max(...fp.map(p => p[1])) + 2; }
     const sc = Math.min(W / (bx1 - bx0), H / (bz1 - bz0)), ox = W / 2 - (bx0 + bx1) / 2 * sc, oz = H / 2 - (bz0 + bz1) / 2 * sc;
     const X = x => ox + x * sc, Z = z => oz + z * sc;
     const poly = (pts, fill, stroke, lw = 1) => { ctx.beginPath(); pts.forEach(([x, z], i) => i ? ctx.lineTo(X(x), Z(z)) : ctx.moveTo(X(x), Z(z))); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } };
-    poly(FOOTPRINT, '#17140f', 'rgba(201,164,92,.55)', 1);
+    poly(footprintOf(bId), '#17140f', 'rgba(201,164,92,.55)', 1);
     const fl = this.floor;
     if (fl >= 0) {
-      for (const c of CORRIDORS) poly([[c.x0, c.z0], [c.x1, c.z0], [c.x1, c.z1], [c.x0, c.z1]], '#2b261d');
+      for (const c of corridorsOf(bId)) poly([[c.x0, c.z0], [c.x1, c.z0], [c.x1, c.z1], [c.x0, c.z1]], '#2b261d');
       for (const b of blocksOn(bId, fl)) poly([[0, 0], [b.width, 0], [b.width, b.depth], [0, b.depth]].map(([a, v]) => [b.frame.o[0] + b.frame.U[0] * a + b.frame.V[0] * v, b.frame.o[1] + b.frame.U[1] * a + b.frame.V[1] * v]), '#1d1b17', 'rgba(201,164,92,.18)');
       for (const x of unitsOn(bId, Math.min(fl, TOP_FLOOR))) poly(uRect(x), x.id === u.id ? 'rgba(201,164,92,.28)' : this.loaded.has(x.id) ? 'rgba(201,164,92,.12)' : null, 'rgba(201,164,92,.22)', 0.6);
     }
-    for (const c of CORES) poly([[c.x0, c.z0], [c.x1, c.z0], [c.x1, c.z1], [c.x0, c.z1]], '#26231e', 'rgba(201,164,92,.3)', 0.6);
+    for (const c of coresOf(bId)) poly([[c.x0, c.z0], [c.x1, c.z0], [c.x1, c.z1], [c.x0, c.z1]], '#26231e', 'rgba(201,164,92,.3)', 0.6);
     // apartment rooms (target unit, current level)
     if (u.building === bId && (fl === u.floor || fl === u.floor + 1 || inUnit) && this.rooms) {
       const lvl = uv ? uv.level : 0;
@@ -2629,13 +2835,13 @@ export class Walkthrough {
 
   // ---- where are we?
   _inFootprint(x, z) {
-    for (const [id, b] of Object.entries(BUILDINGS)) { const [lx, lz] = worldToLocal(id, x, z); if (pointInPoly([lx, lz], FOOTPRINT)) return id; }
+    for (const [id, b] of Object.entries(BUILDINGS)) { const [lx, lz] = worldToLocal(id, x, z); if (pointInPoly([lx, lz], footprintOf(id))) return id; }
     return null;
   }
   _isOutside(p = this.player.pos) { return p.y > -0.75 && p.y < 2.5 && !this._inFootprint(p.x, p.z); }
   _nearestBuilding(x, z) {
     let best = 'C3', bd = Infinity;
-    for (const [id, b] of Object.entries(BUILDINGS)) { const d = Math.hypot(x - (b.origin[0] + 42), z - (b.origin[1] - 10)); if (d < bd) { bd = d; best = id; } }
+    for (const [id, b] of Object.entries(BUILDINGS)) { const d = Math.hypot(x - (b.origin[0] + 60), z - b.origin[1]); if (d < bd) { bd = d; best = id; } }
     return best;
   }
   // Load the commons the player is heading into: the car park near the ramp, a ground-floor lobby near its entrance.
@@ -2646,7 +2852,7 @@ export class Walkthrough {
     let want = null;
     if (P.x > R.x0 - 16 && P.x < R.x1 + 16 && P.z > R.z0 - 18 && P.z < R.z1 + 3 && P.y > -4 && P.y < 1.5) want = [this.bId || (this.unit && this.unit.building) || this._nearestBuilding(P.x, P.z), -1];
     else if (P.y > -0.6 && P.y < 1.5 && !this.drive) {
-      for (const id of Object.keys(BUILDINGS)) for (const c of CORES) {
+      for (const id of Object.keys(BUILDINGS)) for (const c of coresOf(id)) {
         if (c.stair === 2) continue;
         const [x, z] = localToWorldXZ(id, c.entrance[0], c.entrance[1]);
         if (Math.hypot(P.x - x, P.z - z) < 7) want = [id, 0];

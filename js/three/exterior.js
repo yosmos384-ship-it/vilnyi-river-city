@@ -4,8 +4,8 @@
 // (walkthrough), highlighting a floor or units, and lit windows at dusk are all shader uniforms — no rebuilds.
 import * as THREE from 'three';
 import {
-  BUILDINGS, FOOTPRINT, UNITS, BLOCKS, CORES, CORRIDORS, TYPES, GEOM, LEVELS, TOP_FLOOR, ROOF_Y,
-  floorY, localToWorld, unitsOn, blocksOn,
+  BUILDINGS, UNITS, BLOCKS, TYPES, GEOM, LEVELS, TOP_FLOOR, ROOF_Y,
+  floorY, localToWorld, unitsOn, blocksOn, footprintOf, coresOf, corridorsOf, isMirrored,
 } from '../data.js';
 import { SHARED, registerMaterial } from './environment.js';
 
@@ -17,8 +17,10 @@ const D = GEOM.unitDepth, BD = GEOM.balconyDepth;
 const CORNICE = 1.75;
 const RAIL_H = 1.05;
 
-// Cinematic 3/4 view from the south-east: C3's main south facade in front, C4 behind, Lacul Morii and the sunset beyond.
-export const DEFAULT_VIEW = { target: [60, 18, -24], position: [-250, 108, 84], fov: 36 };   // ≈ the developer aerial: from over Intrarea Guliver looking north (Faza I right, Faza III left)
+// The developer's aerial render (FAZA II highlighted): camera over Intrarea Guliver / the houses south-east of the plot,
+// looking NNW — Faza III left, the C4–C3 "U" in the middle (both bars' east facades and the spine visible), Faza I right.
+// Solved from 12 building corners of that render (PnP, ≈6 px RMS at 1206 × 727).
+export const DEFAULT_VIEW = { target: [48, 18, -21.6], position: [-252.4, 115.9, 155.1], fov: 37.6 };
 
 // Floor band extents (world y) used by pick meshes, highlight and floorBandBox. Floor 10 includes the 10D upper level.
 function bandY(floor) {
@@ -48,13 +50,14 @@ function offsetPoly(poly, d) {
   }
   return { pts: out, outward: lines.map(l => l.n) };
 }
-const FP_OUT = offsetPoly(FOOTPRINT, 0).outward;          // outward normal per footprint edge
-const FP_PICK = offsetPoly(FOOTPRINT, BD + 0.3).pts;
+// per building (C3 is the mirror image of C4, so each block has its own true footprint)
+const FP_OUT = Object.fromEntries(B_IDS.map(id => [id, offsetPoly(footprintOf(id), 0).outward]));   // outward normal per footprint edge
+const FP_PICK = Object.fromEntries(B_IDS.map(id => [id, offsetPoly(footprintOf(id), BD + 0.3).pts]));
 
 export function floorBandBox(bId, floor) {
   const [y0, y1] = bandY(floor);
   const box = new THREE.Box3();
-  for (const [x, z] of FP_PICK) { const [wx, wz] = localToWorld(bId, x, z); box.expandByPoint(new THREE.Vector3(wx, y0, wz)); box.expandByPoint(new THREE.Vector3(wx, y1, wz)); }
+  for (const [x, z] of FP_PICK[bId]) { const [wx, wz] = localToWorld(bId, x, z); box.expandByPoint(new THREE.Vector3(wx, y0, wz)); box.expandByPoint(new THREE.Vector3(wx, y1, wz)); }
   return box;
 }
 
@@ -273,7 +276,7 @@ export function createComplex(opts = {}) {
     // invisible pick volumes, one per floor (floor 10 = 10 + 10D)
     for (let f = -1; f <= TOP_FLOOR; f++) {
       const [y0, y1] = bandY(f);
-      const shape = new THREE.Shape(FP_PICK.map(([x, z]) => new THREE.Vector2(x, -z)));
+      const shape = new THREE.Shape(FP_PICK[bId].map(([x, z]) => new THREE.Vector2(x, -z)));
       const g = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0 - 0.02, bevelEnabled: false });
       g.rotateX(-Math.PI / 2); g.translate(0, y0 + 0.01, 0);
       const pm = new THREE.Mesh(g, PICK_MAT); pm.visible = false; pm.name = `pick-${bId}-${f}`;
@@ -286,8 +289,9 @@ export function createComplex(opts = {}) {
 
   // ---------------- floor highlight outline (gold lines + translucent ribbon at the balcony edge)
   const outline = new THREE.Group(); outline.name = 'floor-outline'; outline.visible = false;
-  {
-    const poly = offsetPoly(FOOTPRINT, BD + 0.25).pts;
+  const outlines = {};
+  for (const oId of B_IDS) {
+    const poly = offsetPoly(footprintOf(oId), BD + 0.25).pts;
     const lineMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd28a').multiplyScalar(1.6), toneMapped: false, fog: false });
     const ribMat = new THREE.MeshBasicMaterial({ color: '#e0a84e', transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
     const mkLoop = () => {
@@ -303,10 +307,11 @@ export function createComplex(opts = {}) {
     poly.forEach(([x, z], i) => { rp.push(x, 0, z, x, 1, z); const k = i * 2, n = ((i + 1) % poly.length) * 2; ri.push(k, n, k + 1, k + 1, n, n + 1); });
     const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.setIndex(ri);
     const rib = new THREE.Mesh(rg, ribMat);
-    outline.add(bot, top, rib); outline.userData = { bot, top, rib };
-    outline.traverse(o => { o.renderOrder = 6; });
-    group.add(outline);
+    const og = new THREE.Group(); og.name = 'floor-outline-' + oId; og.add(bot, top, rib); og.userData = { bot, top, rib };
+    og.traverse(o => { o.renderOrder = 6; });
+    outline.add(og); outlines[oId] = og;
   }
+  group.add(outline);
 
   // ---------------- hide logic
   const hidden = {};                // bId -> [floors]
@@ -359,7 +364,8 @@ export function createComplex(opts = {}) {
     const [y0, y1] = bandY(floor);
     const b = BUILDINGS[bId];
     outline.position.set(b.origin[0], 0, b.origin[1]); outline.rotation.y = b.rotY;
-    const { bot, top: tp, rib } = outline.userData;
+    for (const [oId, og] of Object.entries(outlines)) og.visible = oId === bId;
+    const { bot, top: tp, rib } = outlines[bId].userData;
     bot.position.y = y0 + 0.05; tp.position.y = y1 - 0.05; rib.position.y = y0; rib.scale.y = y1 - y0;
     outline.visible = true;
   }
@@ -404,11 +410,12 @@ function rand(seed) { let a = seed | 0; return () => { a = a + 0x6D2B79F5 | 0; l
 function buildBuilding(bId, bufs) {
   const rnd = rand(bId === 'C3' ? 3303 : 4404);
   const winSeed = () => 1 + Math.floor(rnd() * 9000);  // apartment windows; > 10000 = special glazing
+  const FOOTPRINT = footprintOf(bId), CORES = coresOf(bId), CORRIDORS = corridorsOf(bId), mz = isMirrored(bId) ? -1 : 1;
   const edges = FOOTPRINT.map((p, i) => {
     const q = FOOTPRINT[(i + 1) % FOOTPRINT.length];
     const L = Math.hypot(q[0] - p[0], q[1] - p[1]);
     const U = [(q[0] - p[0]) / L, (q[1] - p[1]) / L];
-    return { o: p, U, V: FP_OUT[i], L };
+    return { o: p, U, V: FP_OUT[bId][i], L };
   });
   // which footprint edge a facade line lies on → running interval along that edge
   const onEdge = (a, b) => {
@@ -512,6 +519,7 @@ function buildBuilding(bId, bufs) {
 
     // ---------------- ground-floor blocks (amenity / kindergarten / parking / storage)
     if (band === 0) for (const bl of blocksOn(bId, 0)) {
+      if (bl.kind === 'stair' || bl.kind === 'lobby') continue;   // interior cells (their facade is the core-2 lobby glazing)
       const F = bl.frame, w = bl.width, tag = { b: code, u: -1, s: 0 };
       const ext = onEdge([P(F, 0, 0, D)[0], P(F, 0, 0, D)[2]], [P(F, w, 0, D)[0], P(F, w, 0, D)[2]]);
       if (ext) cover[ext.i].push([ext.s0, ext.s1]);
@@ -689,14 +697,18 @@ function buildBuilding(bId, bufs) {
     box(bufs.wall, e, 0, e.L, yR + 0.42, yR + 1.25, -0.25, 0.05, rt, 'VvY');
   });
   const I = { o: [0, 0], U: [1, 0], V: [0, 1] };
-  // lift overruns / stair heads over each core: graphite volume, louvre bands, white cap
+  // lift overruns / stair heads over each core: graphite volume, louvre bands (on the corridor side), white cap
+  const corrSide = c => c.liftNormal[1] > 0;                 // corridor lies on +z of the core
   for (const c of CORES) {
     const x0 = c.x0 + 0.5, x1 = c.x1 - 0.5, z0 = c.z0 + 0.5, z1 = c.z1 - 0.5;
     box(bufs.accent, I, x0, x1, ROOF_Y, ROOF_Y + 3.4, z0, z1, rt, 'uUvV');
     box(bufs.slab, I, x0 - 0.15, x1 + 0.15, ROOF_Y + 3.4, ROOF_Y + 3.62, z0 - 0.15, z1 + 0.15, rt, 'uUvVYy');
-    for (let y = ROOF_Y + 1.6; y < ROOF_Y + 3.2; y += 0.22) box(bufs.frame, I, x0 + 0.6, x1 - 0.6, y, y + 0.07, z1, z1 + 0.08, rt, 'VY');
+    for (let y = ROOF_Y + 1.6; y < ROOF_Y + 3.2; y += 0.22) {
+      if (corrSide(c)) box(bufs.frame, I, x0 + 0.6, x1 - 0.6, y, y + 0.07, z1, z1 + 0.08, rt, 'VY');
+      else box(bufs.frame, I, x0 + 0.6, x1 - 0.6, y, y + 0.07, z0 - 0.08, z0, rt, 'vY');
+    }
   }
-  // plant enclosure on the wing: open vertical louvre screen around condensers
+  // plant enclosure on the wing arm: open vertical louvre screen around condensers
   const screen = (x0, x1, z0, z1, h) => {
     for (let x = x0; x <= x1 + 1e-3; x += 0.5) { box(bufs.hvac, I, x - 0.05, x + 0.05, ROOF_Y, ROOF_Y + h, z0 - 0.05, z0 + 0.05, rt, 'uUvVY'); box(bufs.hvac, I, x - 0.05, x + 0.05, ROOF_Y, ROOF_Y + h, z1 - 0.05, z1 + 0.05, rt, 'uUvVY'); }
     for (let z = z0 + 0.5; z < z1; z += 0.5) { box(bufs.hvac, I, x0 - 0.05, x0 + 0.05, ROOF_Y, ROOF_Y + h, z - 0.05, z + 0.05, rt, 'uUvVY'); box(bufs.hvac, I, x1 - 0.05, x1 + 0.05, ROOF_Y, ROOF_Y + h, z - 0.05, z + 0.05, rt, 'uUvVY'); }
@@ -709,23 +721,27 @@ function buildBuilding(bId, bufs) {
       box(bufs.frame, I, x + 0.15, x + 0.85, ROOF_Y + 1.0, ROOF_Y + 1.03, z + 0.1, z + 0.8, rt, 'Y');
     }
   };
-  screen(70, 81, -30, -20, 2.2); condensers(71, 80, -29.4, -20.6);
+  // canonical (C4) z range → true z range of this block
+  const zr = (a, b) => (mz > 0 ? [a, b] : [-b, -a]);
+  const W = GEOM.wing;
+  { const [a, b] = zr(18, 28); screen(W.x0 + 3, W.x1 - 3, a, b, 2.2); condensers(W.x0 + 4, W.x1 - 4, a + 0.6, b - 0.6); }
   // solar arrays (tilted towards the south)
   const solarRow = (x0, x1, z) => {
     const yl = ROOF_Y + 0.35, yh = ROOF_Y + 0.75;
     bufs.solar.quad([[x0, yl, z], [x1, yl, z], [x1, yh, z - 1.6], [x0, yh, z - 1.6]], [0, 0.97, 0.24], [[0, 0], [x1 - x0, 0], [x1 - x0, 1.6], [0, 1.6]], rt);
     box(bufs.frame, I, x0, x1, ROOF_Y, yl, z - 0.1, z, rt, 'V');
   };
-  const coreHit = (x0, x1, z0, z1) => CORES.some(c => x1 > c.x0 && x0 < c.x1 && z1 > c.z0 && z0 < c.z1);
+  const coreHit = (x0, x1, z0, z1) => CORES.some(c => x1 > c.x0 - 1.2 && x0 < c.x1 + 1.2 && z1 > c.z0 - 1.2 && z0 < c.z1 + 1.2);
   for (let z = 6.8; z > -6.5; z -= 2.6) {
-    for (let x = 2; x < 64; x += 8.2) { if (!coreHit(x - 0.3, x + 7.8, z - 1.9, z + 0.3)) solarRow(x, x + 7.6, z); }
+    for (let x = 2; x < W.x0 - 8; x += 8.2) { if (!coreHit(x - 0.3, x + 7.8, z - 1.9, z + 0.3)) solarRow(x, x + 7.6, z); }
   }
-  for (let z = -11; z > -36; z -= 2.6) { if (z < -18 && z > -33) continue; solarRow(69.5, 81.5, z); }
-  // hvac boxes
-  for (const [x, z] of [[12, 4.5], [30, -3.5], [57, 4.5], [78, 3.5]]) {
-    box(bufs.hvac, I, x, x + 2.4, ROOF_Y, ROOF_Y + 1.5, z - 1.2, z + 1.2, rt, 'uUvVY');                  // air-handling unit
-    box(bufs.frame, I, x + 0.3, x + 2.1, ROOF_Y + 1.5, ROOF_Y + 1.62, z - 0.9, z + 0.9, rt, 'uUvVY');
+  { const [a, b] = zr(10.5, 33), [sa, sb] = zr(16.5, 29.5); for (let z = b - 0.4; z - 1.6 > a; z -= 2.6) { if (z > sa && z - 1.6 < sb) continue; solarRow(W.x0 + 1.5, W.x1 - 1.5, z); } }
+  // hvac boxes (canonical positions reflected with the block)
+  for (const [x, z] of [[12, 4.5], [30, 3.5], [45, -3.5], [78, 4.5], [98, -3.5]]) {
+    const zz = mz * z;
+    box(bufs.hvac, I, x, x + 2.4, ROOF_Y, ROOF_Y + 1.5, zz - 1.2, zz + 1.2, rt, 'uUvVY');                  // air-handling unit
+    box(bufs.frame, I, x + 0.3, x + 2.1, ROOF_Y + 1.5, ROOF_Y + 1.62, zz - 0.9, zz + 0.9, rt, 'uUvVY');
   }
   // small condensers beside each core
-  for (const c of CORES) condensers(c.x0 + 0.6, c.x1 - 0.6, c.z1 + 0.4, c.z1 + 2.0);
+  for (const c of CORES) { if (corrSide(c)) condensers(c.x0 + 0.6, c.x1 - 0.6, c.z1 + 0.4, c.z1 + 2.0); else condensers(c.x0 + 0.6, c.x1 - 0.6, c.z0 - 2.0, c.z0 - 0.4); }
 }

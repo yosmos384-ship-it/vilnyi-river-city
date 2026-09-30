@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE } from '../data.js';
+import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, footprintOf, coresOf } from '../data.js';
 
 export const CAR_KINDS = ['sedan', 'coupe', 'suv', 'gt', 'ev'];
 export const CAR_COLOURS = {
@@ -984,7 +984,7 @@ export class CarController {
 // Built from data.js footprints: our two buildings (thin shells with lobby-entrance gaps), the context blocks,
 // the spiral ramp drum, plus a big walkable/drivable ground plane with a hole over the car-park ramp trench.
 export const RAMP = { x0: 84.6, x1: 88.8, z0: -54, z1: -30, open: -42 };   // world; the underground car-park ramp
-export const SPIRAL_DRUM = { x: -16, z: -32, r: 8.9 };
+export const SPIRAL_DRUM = { x: SPIRAL.x, z: SPIRAL.z, r: SPIRAL.r ?? 8.9 };
 export function buildOutdoorColliders({ extraBoxes = [] } = {}) {
   const group = new THREE.Group(); group.name = 'vrc-outdoor-colliders';
   const mat = new THREE.MeshBasicMaterial({ visible: false });
@@ -992,14 +992,20 @@ export function buildOutdoorColliders({ extraBoxes = [] } = {}) {
   const box = (x0, x1, y0, y1, z0, z1) => { const g = new THREE.BoxGeometry(Math.abs(x1 - x0), y1 - y0, Math.abs(z1 - z0)); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); solids.push(g); };
   // buildings: FOOTPRINT edges as 0.3 m walls just inside the outline, gaps at the lobby entrances (z = -8.5 side)
   for (const b of Object.values(BUILDINGS)) {
-    const [ox, oz] = b.origin, pts = FOOTPRINT;
+    const [ox, oz] = b.origin, pts = footprintOf(b.id), cores = coresOf(b.id);
+    const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
     for (let i = 0; i < pts.length; i++) {
       const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
       const gaps = [];
-      if (az === -8.5 && bz === -8.5) for (const c of CORES) if (c.entrance[0] > Math.min(ax, bx) && c.entrance[0] < Math.max(ax, bx)) gaps.push([c.entrance[0] - 1.0, c.entrance[0] + 1.0]);
-      if (ax === bx) { const [z0, z1] = [Math.min(az, bz), Math.max(az, bz)], x = ax, s = x > 40 ? -1 : 1; box(ox + x, ox + x + s * 0.3, 0, 4, oz + z0, oz + z1); }
-      else {
-        const [x0, x1] = [Math.min(ax, bx), Math.max(ax, bx)], z = az, s = z > 0 ? -1 : 1;
+      if (ax === bx) {
+        for (const c of cores) if (c.entrance && Math.abs(c.entrance[0] - ax) < 0.6 && c.entrance[1] > Math.min(az, bz) && c.entrance[1] < Math.max(az, bz)) gaps.push([c.entrance[1] - 1.0, c.entrance[1] + 1.0]);
+        const [z0, z1] = [Math.min(az, bz), Math.max(az, bz)], s = ax > cx ? -1 : 1;
+        let cur = z0; gaps.sort((p, q) => p[0] - q[0]);
+        for (const [g0, g1] of gaps) { if (g0 > cur) box(ox + ax, ox + ax + s * 0.3, 0, 4, oz + cur, oz + g0); cur = g1; }
+        if (cur < z1) box(ox + ax, ox + ax + s * 0.3, 0, 4, oz + cur, oz + z1);
+      } else {
+        for (const c of cores) if (c.entrance && Math.abs(c.entrance[1] - az) < 0.6 && c.entrance[0] > Math.min(ax, bx) && c.entrance[0] < Math.max(ax, bx)) gaps.push([c.entrance[0] - 1.0, c.entrance[0] + 1.0]);
+        const [x0, x1] = [Math.min(ax, bx), Math.max(ax, bx)], z = az, s = z > cz ? -1 : 1;
         let cur = x0; gaps.sort((p, q) => p[0] - q[0]);
         for (const [g0, g1] of gaps) { if (g0 > cur) box(ox + cur, ox + g0, 0, 4, oz + z, oz + z + s * 0.3); cur = g1; }
         if (cur < x1) box(ox + cur, ox + x1, 0, 4, oz + z, oz + z + s * 0.3);

@@ -10,7 +10,7 @@ import { pt, poiName, dirName, CARD } from './i18n-panorama.js';
 
 // ---------------------------------------------------------------- geometry of the capture (shared with the capture page)
 export const PANO_EYE_H = 120;
-export const PANO_EYE = [42, PANO_EYE_H, -47];          // world x,y,z — the courtyard between C3 and C4 (= environment.js SITE_CENTER)
+export const PANO_EYE = [51, PANO_EYE_H, -33.6];        // world x,y,z — over the middle of the C3–C4 courtyard
 // Cube faces: capture camera looks along dir with the given up vector; the viewer rebuilds the same orientation.
 export const PANO_FACES = [
   { id: 'px', dir: [1, 0, 0], up: [0, 1, 0] }, { id: 'nx', dir: [-1, 0, 0], up: [0, 1, 0] },
@@ -237,8 +237,8 @@ function createPanorama(sec) {
   const projPins = [
     ...POIS.filter(p => !p.onSite),
     // the project itself, seen when looking down (world positions of the two roofs)
-    { id: 'c3', proj: true, cat: 'project', name: 'C3', world: [42, 38, 0] },
-    { id: 'c4', proj: true, cat: 'project', name: 'C4', world: [42, 38, -64] },
+    { id: 'c3', proj: true, cat: 'project', name: 'C3', world: [51, 38, 0] },
+    { id: 'c4', proj: true, cat: 'project', name: 'C4', world: [51, 38, -67.3] },
   ];
   pinsEl.innerHTML = projPins.map(p => p.proj
     ? `<div class="pp pp-proj" data-id="${p.id}"><span class="pp-card"><img src="assets/bird.png" alt="" width="20" height="18"><span class="pp-tx"><b dir="ltr">VILNYI RIVER CITY · ${p.name}</b><small data-p="here"></small></span></span><span class="pp-stem"></span><span class="pp-dot"></span></div>`

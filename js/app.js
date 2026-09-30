@@ -1,7 +1,7 @@
 // VILNYI RIVER CITY — app shell: wires i18n, sections, finder (plan/list/filters), unit panel, booking,
 // hero 3D (lazy) and the walkthrough overlay (lazy import of ./three/walk.js).
 import { PROJECT, TYPES, UNITS, LEVELS, TOP_FLOOR, ROOF_Y, BUILDINGS, CONTEXT_BLOCKS, LAKE, FOOTPRINT, PRICE_PER_M2,
-  floorY, unitsOn, unitById, localToWorld, money } from './data.js';
+  floorY, unitsOn, unitById, localToWorld, money, footprintOf } from './data.js';
 import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, applyDom, i18nApi, LANGS, langInfo, unitLabelL } from './i18n.js';
 import { createPlan, keyPlanSVG, statusClass } from './plan.js';
 import { openBooking, loadReservations, planBreakdown, bindCopy, esc } from './booking.js';
@@ -90,7 +90,7 @@ function renderStatic() {
 
 // ---------------------------------------------------------------- location map (schematic SVG from LAKE + site data)
 function renderMap() {
-  const siteC = localToWorld('C3', 42, -47);
+  const siteC = localToWorld('C3', 64, -33.6);   // middle of the C3–C4 courtyard
   // nearest lake-shore point to the site (sampled ellipse)
   let best = null;
   for (let i = 0; i < 360; i++) {
@@ -108,7 +108,7 @@ function renderMap() {
   for (let x = -1300; x <= 460; x += 130) grid += `M${x} ${vb[1]}V${vb[1] + vb[3]}`;
   for (let z = -1340; z <= 180; z += 130) grid += `M${vb[0]} ${z}H${vb[0] + vb[2]}`;
   const blocks = [];
-  for (const id of Object.keys(BUILDINGS)) blocks.push(`<polygon class="m-site" points="${FOOTPRINT.map(([x, z]) => localToWorld(id, x, z).join(',')).join(' ')}"/>`);
+  for (const id of Object.keys(BUILDINGS)) blocks.push(`<polygon class="m-site" points="${footprintOf(id).map(([x, z]) => localToWorld(id, x, z).join(',')).join(' ')}"/>`);
   const ctx = CONTEXT_BLOCKS.map(c => `<rect class="m-ctx${c.delivered ? ' del' : ''}" x="${c.x0}" y="${c.z0}" width="${c.x1 - c.x0}" height="${c.z1 - c.z0}"/>`).join('');
   const [fx, fz] = LAKE.fountain;
   const I = LAKE.island;
@@ -230,9 +230,9 @@ function renderStack() {
   $('#floorStack').innerHTML = h;
 }
 
-// Elevation (south facade of the chosen building) from LEVELS/floorY — also the no-WebGL "floor highlight"
+// Elevation (the long courtyard facade of the chosen building) from LEVELS/floorY — also the no-WebGL "floor highlight"
 function renderElev() {
-  const W = 84, top = ROOF_Y;
+  const W = 128, top = ROOF_Y;   // bar length incl. the wing (data.js GEOM.barLength)
   let s = `<svg viewBox="-6 ${-top - 5} ${W + 12} ${top + 10}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" direction="ltr">`;
   s += `<rect x="-6" y="0" width="${W + 12}" height="5" class="ev-ground"/><line x1="-6" x2="${W + 6}" y1="0" y2="0" class="ev-gl"/>`;
   for (let f = 0; f <= TOP_FLOOR; f++) {
@@ -242,7 +242,7 @@ function renderElev() {
     const us = unitsOn(S.b, f).filter(u => u.seg === 'S1');
     if (f === 0) s += `<rect x="1" y="${-y1 + 0.6}" width="${W - 2}" height="${y1 - y0 - 1}" class="ev-glaze"/>`;
     else for (const u of us) {
-      const x0 = u.frame.o[0];
+      const x0 = Math.min(u.frame.o[0], u.frame.o[0] + u.frame.U[0] * u.width);   // C3's frames run the other way (mirror image)
       const levels = f === TOP_FLOOR ? [floorY(10), floorY(11)] : [y0];
       for (const ly of levels) {
         s += `<rect x="${(x0 + 0.5).toFixed(2)}" y="${(-ly - 2.45).toFixed(2)}" width="${(u.width - 1).toFixed(2)}" height="2.05" class="ev-win"/>`;
@@ -416,12 +416,18 @@ function openUnit(u) {
   d.querySelector('.sh-body').scrollTop = 0;
   try { history.replaceState(null, '', '#u=' + u.id); } catch (e) { /* sandboxed */ }
   setTimeout(() => d.querySelector('[data-act="close"]')?.focus(), 20);
+  preloadStill(stillFor(u, 'apartment'));
+  prewarmWalkFor(u);
+  if (phoneSheet()) hero?.pause();   // the sheet covers the whole screen on phones: free the CPU/GPU for the pre-warm
 }
+const phoneSheet = () => matchMedia('(max-width: 899px)').matches;
+const u0 = () => S.unit;
 function closeUnit() {
   const d = dlgU(); if (!d.open) return;
   d.classList.add('is-closing');
   setTimeout(() => { d.classList.remove('is-closing'); d.close(); document.documentElement.classList.remove('modal-open'); S.unitReturn?.focus?.({ preventScroll: true }); }, 200);
   hero?.highlightUnits(null);
+  if ($('#walk').hidden) resumeHero();
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sandboxed */ }
 }
 function bindUnit() {
@@ -447,7 +453,7 @@ function bindUnit() {
     }
   });
   d.addEventListener('change', e => {
-    if (e.target.name === 'style') { S.styleId = e.target.value; lsSet('vrc.style', S.styleId); renderUnitGallery(); }
+    if (e.target.name === 'style') { S.styleId = e.target.value; lsSet('vrc.style', S.styleId); renderUnitGallery(); preloadStill(stillFor(u0(), 'apartment')); prewarmWalkFor(u0()); }
     if (e.target.name === 'calcPlan') { S.calcPlan = e.target.value; $('#calcBody').innerHTML = calcHTML(S.unit); $(`#calcBody input[value="${S.calcPlan}"]`)?.focus(); }
   });
 }
@@ -460,20 +466,116 @@ function reserve(u) {
   });
 }
 
+// ---------------------------------------------------------------- walkthrough: instant open + idle pre-warm
+// Opening shows a photoreal still of the target room at once (< 1 frame when cached — it is preloaded with the unit
+// panel) while the live 3D builds behind it; walk.js then streams apartment → corridor → surroundings. In idle time
+// the page pre-warms: module preload, textures (worker + IndexedDB), and for the open unit panel the apartment and
+// its shaders (walk.js prewarmWalk).
+const WALK_MODS = ['js/three/walk.js', 'js/three/materials.js', 'js/three/apartment.js', 'js/three/furniture.js', 'js/three/commons.js',
+  'js/three/cars.js', 'js/three/environment.js', 'js/three/context.js', 'js/three/lake.js', 'js/three/exterior.js',
+  'vendor/addons/environments/RoomEnvironment.js', 'vendor/addons/utils/BufferGeometryUtils.js', 'vendor/addons/geometries/RoundedBoxGeometry.js'];
+let walkModP = null;
+const walkModule = () => (walkModP ||= import('./three/walk.js').catch(e => { walkModP = null; throw e; }));
+const lowData = () => { try { const c = navigator.connection; return !!(c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ''))); } catch (e) { return false; } };
+const onIdle = (fn, timeout = 2500) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout }) : setTimeout(fn, 300));
+function preloadWalkModules() {
+  if (preloadWalkModules.done || lowData()) return; preloadWalkModules.done = true;
+  for (const href of WALK_MODS) {
+    if (document.querySelector(`link[rel="modulepreload"][href="${href}"]`)) continue;
+    const l = document.createElement('link'); l.rel = 'modulepreload'; l.href = href; document.head.appendChild(l);
+  }
+}
+let warmT = 0;
+function prewarmWalkFor(u, delay = 600) {
+  if (lowData()) return;
+  clearTimeout(warmT);
+  warmT = setTimeout(() => onIdle(() => {
+    if (!$('#walk').hidden) return;
+    preloadWalkModules();
+    walkModule().then(m => m.prewarmWalk && m.prewarmWalk({ unitId: u ? u.id : null, styleId: S.styleId, shaders: !!u })).catch(() => {});
+  }), delay);
+}
+// Photoreal still for the room the walkthrough opens in (gallery renders; the same design where possible).
+function stillFor(u, start, room) {
+  const kind = ['lobby', 'corridor', 'parking'].includes(start) ? start : start === 'balcony' ? 'balcony' : (room && room.kind) || 'living';
+  const want = { living: 'living', kitchen: 'kitchen', bedroom: 'bedroom', bath: 'bath', hall: 'living', dressing: 'bedroom', storage: 'living', balcony: 'balcony', loggia: 'balcony', terrace: 'balcony' }[kind] || kind;
+  const name = it => (it.src || '').split('/').pop().replace(/\.\w+$/, '');
+  const score = it => {
+    const n = name(it); let s = 0;
+    if (!n.includes(want)) return -1;
+    if (it.style && it.style !== S.styleId) return -1;
+    if (u && it.unitType === u.type) s += 3;
+    if (it.src.startsWith('assets/gallery/')) s += 2;              // path-traced renders of the real plans
+    if (n === `${S.styleId}-${want}` || n === want) s += 1;
+    if (/penthouse|duplex|dollhouse/.test(n) && !(u && it.unitType === u.type)) s -= 3;
+    return s;
+  };
+  const best = G.items.map(it => [score(it), it]).filter(x => x[0] >= 0).sort((a, b) => b[0] - a[0])[0];
+  if (best) return best[1].url;
+  if (['living', 'kitchen', 'bedroom', 'bath'].includes(want)) return `assets/gallery/${S.styleId}-${want}.jpg`;
+  return { lobby: 'assets/gallery/lobby.jpg', corridor: 'assets/gallery/corridor.jpg', parking: 'assets/gallery/parking.jpg', balcony: 'assets/gallery/view-lake-floor8.jpg' }[want] || `assets/gallery/${S.styleId}-living.jpg`;
+}
+const stillCache = new Map();
+function preloadStill(url) {
+  if (!url || stillCache.has(url)) return;
+  const im = new Image(); im.decoding = 'async'; im.src = url; stillCache.set(url, im);
+  im.decode?.().catch(() => {});
+}
+function veilStyles() {
+  if (document.getElementById('walkStillCss')) return;
+  const st = document.createElement('style'); st.id = 'walkStillCss';
+  st.textContent = `.walk-still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.04);transition:opacity .35s ease;pointer-events:none}
+.walk-still.on{opacity:1;animation:walkStillZoom 14s ease-out forwards}
+@keyframes walkStillZoom{from{transform:scale(1.04)}to{transform:scale(1.12)}}
+.walk-veil.has-still{place-items:end center;background:#050403}
+.walk-veil.has-still::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,4,3,.35) 0%,rgba(5,4,3,0) 30%,rgba(5,4,3,0) 55%,rgba(5,4,3,.82) 100%);pointer-events:none}
+.walk-veil.has-still .walk-load{position:relative;z-index:1;gap:6px;padding:0 24px calc(28px + env(safe-area-inset-bottom))}
+.walk-veil.has-still .walk-bird{width:40px}
+.walk-veil.has-still .walk-t{font-size:20px;margin-top:4px}
+.walk-veil.has-still .walk-s{font-size:13px;color:rgba(243,234,215,.8)}
+.walk-veil.is-out{opacity:0;transition:opacity .35s ease;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.walk-still.on{animation:none}}`;
+  document.head.appendChild(st);
+}
+function showStill(unitId, start, room) {
+  veilStyles();
+  const V = $('#walkVeil'); V.classList.remove('is-out');
+  let img = V.querySelector('.walk-still');
+  if (!img) { img = document.createElement('img'); img.className = 'walk-still'; img.alt = ''; img.decoding = 'async'; V.prepend(img); }
+  const url = stillFor(unitById(unitId), start, room);
+  img.classList.remove('on'); V.classList.remove('has-still');
+  if (!url) return;
+  const on = () => { if (!V.hidden && img.dataset.src === url) { img.classList.add('on'); V.classList.add('has-still'); } };
+  img.dataset.src = url;
+  img.onerror = () => { img.classList.remove('on'); V.classList.remove('has-still'); };
+  if (img.getAttribute('src') !== url) img.src = url;
+  if (img.complete && img.naturalWidth) on(); else img.onload = on;
+}
+function hideVeil() {
+  const V = $('#walkVeil');
+  if (V.hidden) return;
+  V.classList.add('is-out');
+  setTimeout(() => { if (V.classList.contains('is-out')) { V.hidden = true; V.classList.remove('is-out', 'has-still'); V.querySelector('.walk-still')?.classList.remove('on'); } }, 360);
+}
+
 // ---------------------------------------------------------------- walkthrough overlay (Agent E)
 let walk = null; let walkArgs = null; let walkFromUnit = false;
-async function openWalk(unitId, start, mode, room) {
+async function openWalk(unitId, start, mode, room, from) {
   closePhoto(true);
   walkArgs = { unitId, start, mode };
   const W = $('#walk'); W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
   // A modal <dialog> sits in the top layer above any z-index, so step out of the unit sheet while walking
   if (dlgU().open) { walkFromUnit = true; dlgU().close(); }
   $('#walkVeil').hidden = false; $('#walkVeil').classList.remove('failed');
+  showStill(unitId, start, room);
   $('#walkT').textContent = t('walk.loading'); $('#walkS').textContent = t('walk.loadingSub'); $('#walkRetry').hidden = true;
   $('#walkX').focus();
   hero?.pause();
+  clearTimeout(warmT);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0))));   // the still is on screen before the 3D work starts
+  if (W.hidden) return;
   try {
-    const mod = await import('./three/walk.js');
+    const mod = await walkModule();
     if (W.hidden) return;
     if (walk) { try { walk.dispose(); } catch (e) {} walk = null; }
     walk = new mod.Walkthrough($('#walkStage'), {
@@ -481,12 +583,13 @@ async function openWalk(unitId, start, mode, room) {
       onExit: () => closeWalk(),
       onReserve: id => { closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
     });
-    await walk.enter({ unitId, start, mode });
-    if (room && start === 'apartment' && room.kind && room.kind !== 'living' && walk.jumpToRoom) await walk.jumpToRoom(room.kind, room.index | 0);
-    $('#walkVeil').hidden = true; W.classList.add('is-ready'); // the HUD has its own Exit button
+    const placed = !!(from && mod.Walkthrough.startsFromPano && from.frame !== 'building' && isFinite(from.u));
+    await walk.enter({ unitId, start, mode, from: placed ? from : null });
+    if (!placed && room && start === 'apartment' && room.kind && room.kind !== 'living' && walk.jumpToRoom) await walk.jumpToRoom(room.kind, room.index | 0);
+    hideVeil(); W.classList.add('is-ready'); // the HUD has its own Exit button
   } catch (e) {
     console.warn('[walk] unavailable:', e);
-    $('#walkVeil').classList.add('failed');
+    $('#walkVeil').classList.add('failed'); $('#walkVeil').classList.remove('has-still', 'is-out'); $('#walkVeil .walk-still')?.classList.remove('on');
     $('#walkT').textContent = t('walk.unavailable'); $('#walkS').textContent = '';
     const r = $('#walkRetry'); r.hidden = false; r.textContent = t('walk.retry');
   }
@@ -496,9 +599,10 @@ function closeWalk() {
   try { walk?.dispose(); } catch (e) { /* ignore */ }
   walk = null; $('#walkStage').innerHTML = ''; W.hidden = true;
   document.documentElement.classList.remove('walk-open');
-  hero?.resume();
   if (walkFromUnit && S.unit) { walkFromUnit = false; renderUnit(); dlgU().showModal(); }
+  if (!(dlgU().open && phoneSheet())) resumeHero();
   (dlgU().open ? dlgU().querySelector('[data-act="walk"]') : $('#heroTour'))?.focus?.();
+  if (dlgU().open && S.unit) prewarmWalkFor(S.unit, 2500);   // the spare renderer went with the walkthrough
 }
 function bindWalk() {
   $('#walkX').addEventListener('click', closeWalk);
@@ -537,6 +641,7 @@ async function openPhoto({ unitId, styleId, room, onBack } = {}) {
     W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
     if (dlgU().open) { walkFromUnit = true; dlgU().close(); }
     $('#walkVeil').hidden = false; $('#walkVeil').classList.remove('failed'); $('#walkRetry').hidden = true;
+    showStill(unitId, 'apartment', roomRef(room));
     $('#walkT').textContent = tourT(lang, 'loading'); $('#walkS').textContent = '';
     hero?.pause();
   }
@@ -548,7 +653,7 @@ async function openPhoto({ unitId, styleId, room, onBack } = {}) {
     const r = roomRef(st && st.room ? st.room : room);
     closePhoto(true);
     if (overWalk && walk) { if (onBack) onBack(r.kind, r.index); else walk.jumpToRoom?.(r.kind, r.index); return; }
-    openWalk(unitId, r.kind === 'balcony' ? 'balcony' : ['lobby', 'corridor', 'parking'].includes(r.kind) ? r.kind : 'apartment', 'walk', r);
+    openWalk(unitId, r.kind === 'balcony' ? 'balcony' : ['lobby', 'corridor', 'parking'].includes(r.kind) ? r.kind : 'apartment', 'walk', r, st && st.unitId === unitId ? st : null);
   };
   try {
     const mod = await import('./pano-tour.js');
@@ -560,7 +665,7 @@ async function openPhoto({ unitId, styleId, room, onBack } = {}) {
       onSwitchTo3D: toLive,
     });
     if (photo !== P) { P.handle?.dispose?.(); return; }
-    $('#walkVeil').hidden = true; W.classList.add('is-ready');
+    hideVeil(); W.classList.add('is-ready');
   } catch (e) {
     console.warn('[photo] unavailable:', e);
     toLive(null);
@@ -595,7 +700,7 @@ async function loadGallery() {
   G.items = (Array.isArray(list) ? list : []).filter(it => it && safeSrc(it.src) && GAL_TYPES.includes(it.type))
     .map(it => ({ ...it, url: (it.src.startsWith('assets/') || it.src.startsWith('ai/')) ? it.src : base + it.src.replace(/^\.\//, '') }));
   renderGallery();
-  if (dlgU().open) renderUnitGallery();
+  if (dlgU().open) { renderUnitGallery(); if (S.unit) preloadStill(stillFor(S.unit, 'apartment')); }
 }
 
 function galList() { return G.tab === 'all' ? G.items : G.items.filter(i => i.type === G.tab); }
@@ -675,6 +780,7 @@ function bindGallery() {
 
 // ---------------------------------------------------------------- hero 3D (lazy)
 let hero = null;
+let heroDeferred = false;
 function startHero() {
   if (hero) return;
   let save = false; try { save = !!navigator.connection?.saveData; } catch (e) {}
@@ -690,8 +796,17 @@ function startHero() {
       } else if (s === 'failed') { document.body.classList.add('no-3d'); hero = null; }
     },
   });
+  // Under a full-screen unit sheet (phones) or the walkthrough the hero is invisible: building it now would only
+  // compete with the walkthrough's pre-warm. It is created (the slideshow keeps its 3D slide) but built once the
+  // page is visible again (closeUnit / closeWalk → resumeHero).
+  if ((dlgU().open && phoneSheet()) || !$('#walk').hidden) { heroDeferred = true; return; }
   hero.init();
 }
+const resumeHero = () => {
+  if (!hero) return;
+  hero.resume();
+  if (heroDeferred) { heroDeferred = false; onIdle(() => hero?.init(), 1500); }
+};
 function markMode(m) { S.timeMode = m; $$('#modeCtl button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m)); }
 
 // ---------------------------------------------------------------- header / nav / language
@@ -768,7 +883,13 @@ function boot() {
   // Reservations are read only in the CRM; reading the db on page load made claude.ai show a sign-in prompt to every visitor.
   if (false) loadReservations().then(ids => { if (!ids.size) return; ids.forEach(id => reserved.add(id)); plan.refresh(); renderStack(); if (S.view === 'list') renderList(); if (dlgU().open) renderUnit(); }).catch(() => {});
 
-  const kick = () => (window.requestIdleCallback ? requestIdleCallback(startHero, { timeout: 1500 }) : setTimeout(startHero, 400));
+  const kick = () => {
+    (window.requestIdleCallback ? requestIdleCallback(startHero, { timeout: 1500 }) : setTimeout(startHero, 400));
+    setTimeout(() => onIdle(preloadWalkModules), 1500);           // fetch + compile the walkthrough's modules
+    // then its textures (worker; cached in IndexedDB). Phones wait for a unit panel (intent): the decoded textures of
+    // one design weigh tens of MB until the walkthrough uses them.
+    if (!dlgU().open && !matchMedia('(pointer: coarse)').matches) prewarmWalkFor(null, 4000);
+  };
   if (document.readyState === 'complete') kick(); else addEventListener('load', kick, { once: true });
 }
 boot();
