@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONTEXT_BLOCKS, LEVELS } from '../data.js';
+import { createCarInstances, pickCar, carRng } from './cars.js';
 
 const TAU = Math.PI * 2;
 const GH = LEVELS.groundH, FH = LEVELS.typicalH;
@@ -215,21 +216,6 @@ function ribbon(n, A, B) {
   for (let i = 0; i < n; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
   g.computeVertexNormals(); return g;
-}
-function carGeometry(low) {
-  const parts = [];
-  const add = (g, k) => { g.deleteAttribute('uv'); const n = g.attributes.position.count; g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(k), 3)); parts.push(g.index ? g.toNonIndexed() : g); };
-  const body = new THREE.BoxGeometry(4.4, 0.62, 1.82); body.translate(0, 0.62, 0);
-  const bp = body.attributes.position; for (let i = 0; i < bp.count; i++) if (bp.getY(i) > 0.8 && Math.abs(bp.getX(i)) > 2) bp.setX(i, bp.getX(i) * 0.95);
-  body.computeVertexNormals(); add(body, 1);
-  const cab = new THREE.BoxGeometry(2.4, 0.56, 1.64); cab.translate(-0.2, 1.21, 0);
-  const cp = cab.attributes.position; for (let i = 0; i < cp.count; i++) if (cp.getY(i) > 1.3) { cp.setX(i, cp.getX(i) * 0.78 - 0.12); cp.setZ(i, cp.getZ(i) * 0.9); }
-  cab.computeVertexNormals(); add(cab, 0.07);
-  const roof = new THREE.BoxGeometry(1.7, 0.04, 1.44); roof.translate(-0.32, 1.5, 0); add(roof, 1);
-  if (!low) for (const [x, z] of [[1.35, 0.8], [1.35, -0.8], [-1.4, 0.8], [-1.4, -0.8]]) {
-    const w = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 10); w.rotateX(Math.PI / 2); w.translate(x, 0.33, z); add(w, 0.03);
-  }
-  return mergeGeometries(parts);
 }
 function radialTexture() {
   const [c, g] = makeCanvas(128, 128);
@@ -476,13 +462,14 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
     const lm = M(new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, map: asphalt, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     add(new THREE.Mesh(mergeGeometries(lotGeos), lm), false).name = 'context-lots';
   }
-  // parked cars
+  // parked luxury cars (cars.js far models; car frame is +z forward, the spots are x-forward)
+  let cars = null;
   {
-    const paints = ['#f2f2f2', '#1c1c1e', '#8a8d93', '#2b3a55', '#6d1d1d', '#c9c7c2', '#3c4a3a', '#101216', '#b8b3a8', '#44474d', '#e9e6de', '#23262b'];
-    const cm = M(new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.3, metalness: 0.6 }));
-    const im = new THREE.InstancedMesh(carGeometry(low), cm, carSpots.length), o = new THREE.Object3D(), c = new THREE.Color();
-    carSpots.forEach(([x, y, z, yaw], i) => { o.position.set(x, y, z); o.rotation.set(0, yaw, 0); o.updateMatrix(); im.setMatrixAt(i, o.matrix); im.setColorAt(i, c.set(paints[Math.floor(rnd() * paints.length)])); });
-    im.computeBoundingSphere(); add(im).name = 'context-cars';
+    const rc = carRng(4242);
+    const list = carSpots.map(([x, y, z, yaw]) => ({ x, y, z, yaw: yaw + Math.PI / 2, ...pickCar(rc), deck: !!P_DECK && x > P_DECK.x0 - 0.5 && x < P_DECK.x1 + 0.5 && z > P_DECK.z0 && z < P_DECK.z1 }));
+    const inst = createCarInstances(list, { shadows });
+    inst.group.name = 'context-cars'; group.add(inst.group);
+    cars = { list, instances: inst };
   }
   // light poles (7 m, twin heads) + heads (emissive) + light pools on the asphalt (dusk/night)
   const headMat = M(new THREE.MeshStandardMaterial({ color: '#2a2a2a', emissive: new THREE.Color('#ffd6a0'), emissiveIntensity: 0, roughness: 0.4 }));
@@ -542,10 +529,11 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
 
   function dispose() {
     group.parent?.remove(group);
+    if (cars) { cars.instances.dispose(); }   // shared car geometry stays cached in cars.js
     group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     for (const m of materials) m.dispose();
     for (const t of textures) t.dispose();
   }
 
-  return { group, setMode, update, dispose, materials, podium, get mode() { return mode; } };
+  return { group, setMode, update, dispose, materials, podium, cars, poles, get mode() { return mode; } };
 }

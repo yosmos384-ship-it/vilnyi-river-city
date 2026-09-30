@@ -15,7 +15,7 @@ const PW = 0.1, CW = 0.15, FW = 0.2, TW = 0.1;   // party wall, corridor wall, f
 const DOOR_W = 0.82, DOOR_H = 2.1, ENTRY_W = 1.0, ENTRY_H = 2.2;
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 const PI = Math.PI, HALF = PI / 2;
-const KEEP_UV = /\.(rug|art\d|leaf2?|rattanShade|ao|aoSoft|shade|glow|glowFaint|daylight|lampGlow)$/;
+const KEEP_UV = /\.(rug|art\d|leaf2?|rattanShade|ao|aoSoft|shade|glow|glowFaint|daylight|lampGlow|coldGlow)$/;
 
 // ------------------------------------------------------------------ baking (merge by material)
 const nonIndexed = new WeakMap();
@@ -100,6 +100,182 @@ function bake(src, dst) {
     dst.add(o);
   }
   return meshes;
+}
+
+// ------------------------------------------------------------------ openable joinery (doors, drawers, appliances)
+// furniture.js marks movers (userData.mover: a door leaf / drawer / appliance door with everything that moves with
+// it) and compartments (userData.compartment.build: contents built on the first opening). Here all movers are pulled
+// out of the static bake into ONE dynamic batch per material — the closed state costs a handful of draw calls no
+// matter how many fronts there are — and each gets an invisible box proxy that carries the click contract of the
+// walkthrough: userData.action = {type:'aptDoor', unitId, part:'cabinet'} + userData.toggle(open) → Promise.
+// Animating a mover rewrites only its vertex range (a few hundred vertices) in the batch buffers.
+const _mT = new THREE.Matrix4(), _mM = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _n3b = new THREE.Matrix3(), _bx = new THREE.Box3();
+function buildMovers(ctx, sg, root) {
+  const { m, unit } = ctx;
+  sg.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(sg.matrixWorld).invert();
+  const comps = new Map(), movers = [];
+  sg.traverse(o => {
+    const ud = o.userData;
+    if (ud.compartment) comps.set(o, { M: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), build: ud.compartment.build, group: null, users: [] });
+    if (ud.mover) { for (let p = o.parent; p; p = p.parent) if (p.userData.mover) return; movers.push(o); }
+  });
+  if (!movers.length) return null;
+  const buckets = new Map();
+  const MV = movers.map((o, i) => {
+    const B = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), invO = new THREE.Matrix4().copy(o.matrixWorld).invert();
+    const box = new THREE.Box3();
+    o.traverse(c => {
+      if (!c.isMesh || !c.visible || c.material.userData.decal) return;
+      const L = new THREE.Matrix4().multiplyMatrices(invO, c.matrixWorld);
+      let b = buckets.get(c.material); if (!b) buckets.set(c.material, b = []);
+      b.push({ i, L, geo: c.geometry });
+      if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+      box.union(_bx.copy(c.geometry.boundingBox).applyMatrix4(L));
+    });
+    const spec = o.userData.mover;
+    let piece = spec.tag; for (let p = o.parent; !piece && p; p = p.parent) piece = p.userData.piece;
+    const comp = spec.comp ? comps.get(spec.comp) || null : null;
+    const mv = { spec, piece, B, box, t: 0, open: false, anim: null, ranges: [], comp, proxy: null };
+    if (comp) comp.users.push(mv);
+    return mv;
+  });
+  movers.forEach(o => o.parent && o.parent.remove(o));
+  // one batch mesh per material
+  const batches = [];
+  for (const [mat, list] of buckets) {
+    list.sort((a, b) => a.i - b.i);
+    let n = 0; for (const e of list) n += flat(e.geo).attributes.position.count;
+    const color = !!mat.vertexColors, worldUV = !KEEP_UV.test(mat.name || '');
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), lp = new Float32Array(n * 3), ln = new Float32Array(n * 3);
+    const col = color ? new Float32Array(n * 3).fill(1) : null;
+    const bi = batches.length;
+    let o = 0;
+    for (const e of list) {
+      const s = flat(e.geo), P = s.attributes.position.array, N = s.attributes.normal ? s.attributes.normal.array : null;
+      const U = s.attributes.uv ? s.attributes.uv.array : null, C = s.attributes.color ? s.attributes.color.array : null, cnt = s.attributes.position.count;
+      const E = e.L.elements, nm = _n3b.getNormalMatrix(e.L).elements, start = o;
+      for (let j = 0; j < cnt; j++, o++) {
+        const x = P[j * 3], y = P[j * 3 + 1], z = P[j * 3 + 2];
+        lp[o * 3] = E[0] * x + E[4] * y + E[8] * z + E[12]; lp[o * 3 + 1] = E[1] * x + E[5] * y + E[9] * z + E[13]; lp[o * 3 + 2] = E[2] * x + E[6] * y + E[10] * z + E[14];
+        if (N) {
+          const p = N[j * 3], q = N[j * 3 + 1], r = N[j * 3 + 2];
+          let nx = nm[0] * p + nm[3] * q + nm[6] * r, ny = nm[1] * p + nm[4] * q + nm[7] * r, nz = nm[2] * p + nm[5] * q + nm[8] * r;
+          const l = 1 / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1); ln[o * 3] = nx * l; ln[o * 3 + 1] = ny * l; ln[o * 3 + 2] = nz * l;
+        } else ln[o * 3 + 1] = 1;
+        if (U && !worldUV) { uv[o * 2] = U[j * 2]; uv[o * 2 + 1] = U[j * 2 + 1]; }
+        if (col && C) { col[o * 3] = C[j * 3]; col[o * 3 + 1] = C[j * 3 + 1]; col[o * 3 + 2] = C[j * 3 + 2]; }
+      }
+      const r = MV[e.i].ranges, last = r[r.length - 1];
+      if (last && last.b === bi && last.end === start) last.end = o; else r.push({ b: bi, start, end: o });
+    }
+    const geo = new THREE.BufferGeometry();
+    const pa = new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage), na = new THREE.BufferAttribute(nor, 3).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', pa); geo.setAttribute('normal', na); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    if (col) geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'movers:' + (mat.name || '?'); mesh.matrixAutoUpdate = false; mesh.frustumCulled = false;
+    if (mat.transparent) mesh.renderOrder = 2;
+    root.add(mesh);
+    batches.push({ geo, pos, nor, uv, lp, ln, worldUV, pa, na, mesh });
+  }
+  const pose = (mv) => {
+    const sp = mv.spec, t = mv.t;
+    if (sp.type === 'slide') _mT.makeTranslation(sp.dir[0] * sp.dist * t, sp.dir[1] * sp.dist * t, sp.dir[2] * sp.dist * t);
+    else if (sp.axis === 'x') _mT.makeRotationX(sp.angle * t); else _mT.makeRotationY(sp.angle * t);
+    _mM.multiplyMatrices(mv.B, _mT);
+    const e = _mM.elements, nm = _n3b.getNormalMatrix(_mM).elements;
+    for (const r of mv.ranges) {
+      const bt = batches[r.b], P = bt.pos, N = bt.nor, lp = bt.lp, ln = bt.ln;
+      for (let j = r.start; j < r.end; j++) {
+        const x = lp[j * 3], y = lp[j * 3 + 1], z = lp[j * 3 + 2];
+        P[j * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; P[j * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; P[j * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const a = ln[j * 3], b = ln[j * 3 + 1], c = ln[j * 3 + 2];
+        N[j * 3] = nm[0] * a + nm[3] * b + nm[6] * c; N[j * 3 + 1] = nm[1] * a + nm[4] * b + nm[7] * c; N[j * 3 + 2] = nm[2] * a + nm[5] * b + nm[8] * c;
+      }
+      bt.pa.needsUpdate = true; bt.na.needsUpdate = true;
+    }
+    if (mv.proxy) {
+      const bx = mv.box, px = mv.proxy;
+      bx.getCenter(_v3);
+      px.matrix.multiplyMatrices(_mM, _mT.makeTranslation(_v3.x, _v3.y, _v3.z));
+      bx.getSize(_v3); px.matrix.scale(_v3.set(Math.max(0.02, _v3.x), Math.max(0.02, _v3.y), Math.max(0.02, _v3.z)));
+      px.matrixWorldNeedsUpdate = true;
+    }
+  };
+  // closed pose + world-projected UVs (the bake's projection, frozen at the closed pose so the veneer moves with the door)
+  for (const mv of MV) { mv.proxy = null; pose(mv); }
+  for (const bt of batches) if (bt.worldUV) {
+    const P = bt.pos, N = bt.nor, U = bt.uv;
+    for (let j = 0; j < P.length / 3; j++) {
+      const ax = Math.abs(N[j * 3]), ay = Math.abs(N[j * 3 + 1]), az = Math.abs(N[j * 3 + 2]);
+      if (ay >= ax && ay >= az) { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 2]; }
+      else if (ax >= az) { U[j * 2] = P[j * 3 + 2]; U[j * 2 + 1] = P[j * 3 + 1]; }
+      else { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 1]; }
+    }
+  }
+  // compartments: contents baked on first use, visible only while one of their doors is open (interior LED "on")
+  const showComp = (c) => {
+    if (!c.group) {
+      const tmp = new THREE.Group(), inner = new THREE.Group();
+      inner.matrixAutoUpdate = false; inner.matrix.copy(c.M); tmp.add(inner);
+      try { c.build(inner, m); } catch (err) { console.warn('[apartment] contents', err); }
+      c.group = new THREE.Group(); c.group.name = 'contents';
+      bake(tmp, c.group);
+      c.group.traverse(o => { if (o.isMesh) o.raycast = () => {}; });
+      root.add(c.group); c.group.updateMatrixWorld(true);
+    }
+    c.group.visible = true;
+  };
+  const hideComp = (c) => { if (c && c.group && c.users.every(u => u.t <= 0 && !u.open)) c.group.visible = false; };
+  if (!COLMAT) { COLMAT = new THREE.MeshBasicMaterial({ visible: false }); COLMAT.name = 'collider'; }
+  const toggle = (mv, open) => {
+    const want = open === undefined ? !mv.open : !!open;
+    const ud = mv.proxy.userData;
+    if (want === mv.open) return mv.anim ? mv.anim.promise : Promise.resolve();
+    mv.open = want; ud._open = want; ud.open = want;
+    if (want) {
+      if (mv.spec.excl) for (const o of MV) if (o !== mv && o.open && o.spec.excl === mv.spec.excl) toggle(o, false);
+      if (mv.comp) showComp(mv.comp);
+    }
+    if (mv.anim) mv.anim.cancel = true;
+    const from = mv.t, to = want ? 1 : 0, dur = (mv.spec.dur || 600) * Math.max(0.35, Math.abs(to - from)), t0 = performance.now();
+    const me = { cancel: false }; ud._anim = true;
+    me.promise = new Promise(res => {
+      const step = () => {
+        if (me.cancel || disposed) return res();
+        const k = Math.min(1, (performance.now() - t0) / dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        mv.t = from + (to - from) * e; pose(mv);
+        if (k < 1) requestAnimationFrame(step);
+        else { mv.anim = null; ud._anim = false; if (!want) hideComp(mv.comp); res(); }
+      };
+      step();
+    });
+    mv.anim = me;
+    return me.promise;
+  };
+  let disposed = false;
+  const proxies = MV.map((mv, i) => {
+    const px = new THREE.Mesh(UBOX, COLMAT);
+    px.name = 'cabinet-front'; px.matrixAutoUpdate = false;
+    px.userData.action = { type: 'aptDoor', unitId: unit.id, part: 'cabinet' };
+    px.userData.cabinet = true; px.userData.open = false; px.userData.piece = mv.piece || 'cabinet'; px.userData.motion = mv.spec.type === 'slide' ? 'slide' : 'hinge';
+    px.userData.toggle = (open) => toggle(mv, open);
+    mv.proxy = px; root.add(px); pose(mv);
+    // closed-pose centre and outward facing (unit-local), e.g. to frame a camera on it
+    const c = mv.box.getCenter(new THREE.Vector3()).applyMatrix4(mv.B), f = new THREE.Vector3(0, 0, 1).transformDirection(mv.B);
+    px.userData.center = [c.x, c.y, c.z]; px.userData.front = [f.x, f.y, f.z];
+    return px;
+  });
+  return {
+    proxies, count: MV.length, batches: batches.length,
+    closeAll: () => Promise.all(MV.filter(mv => mv.open).map(mv => toggle(mv, false))),
+    dispose() {
+      disposed = true;
+      for (const bt of batches) bt.geo.dispose();
+      for (const c of comps.values()) if (c.group) c.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    },
+  };
 }
 
 // ------------------------------------------------------------------ small builders (unit-local)
@@ -908,7 +1084,7 @@ function furnishHall(ctx, L, g, r) {
     // built-in coat wardrobe on the left party wall (if the entrance leaf does not sweep it)
     if (!P.duplex && P.doorU - ENTRY_W / 2 - a0 >= 0.62 && b1 - b0 > 1.2) {
       const len = Math.min(b1 - b0 - 0.1, 2.0);
-      put(g, F.wardrobe(m, { len, h: ctx.tallH }), a0 + 0.3, b0 + 0.05 + len / 2, '+u');
+      put(g, F.wardrobe(m, { len, h: ctx.tallH, kind: 'hall', sliding: true }), a0 + 0.3, b0 + 0.05 + len / 2, '+u');
     } else if (w > 1.9) {
       // bench + hooks on the side wall away from the leaf
       const bench = new THREE.Group(); FX.box(bench, 0.9, 0.06, 0.36, m.wood, 0, 0.42, 0); for (const sx of [-1, 1]) FX.box(bench, 0.04, 0.42, 0.34, m.metal, sx * 0.42, 0, 0);
@@ -991,7 +1167,7 @@ function mirrorAt(ctx, g, u, v, face, vl) {
   const { m } = ctx;
   if (ctx.cut) return;
   const mw = Math.min(0.9, vl - 0.1), mh = m.styleId === 'nordic' ? mw : 0.95;
-  put(g, F.mirror(m, { w: mw, h: mh }), u, v, face, m.styleId === 'nordic' ? 1.05 : 1.08);
+  put(g, F.mirror(m, { w: mw, h: mh, cabinet: true }), u, v, face, m.styleId === 'nordic' ? 1.05 : 1.08);
   if (m.styleId !== 'nordic') {
     // pair of sconces left/right of the mirror
     const off = mw / 2 + 0.12;
@@ -1021,7 +1197,7 @@ function furnishStorage(ctx, L, g, r) {
 function furnishDressing(ctx, L, g, r) {
   const { P, m } = ctx;
   const [a0, b0, a1, b1] = clearRect(P, r);
-  put(g, F.wardrobe(m, { len: a1 - a0 - 0.02, h: ctx.tallH }), (a0 + a1) / 2, b0 + 0.3, '+v');
+  put(g, F.wardrobe(m, { len: a1 - a0 - 0.02, h: ctx.tallH, kind: 'dress', sliding: a1 - a0 > 1.9, seed: 2 }), (a0 + a1) / 2, b0 + 0.3, '+v');
   const ot = new THREE.Group(); FX.cyl(ot, 0.28, 0.28, 0.42, m.fabricAccent, 0, 0, 0, 24); ot.userData.solidBox = { w: 0.56, d: 0.56, h: 0.45 };
   if (b1 - b0 > 1.5) put(g, ot, (a0 + a1) / 2, (b0 + 0.6 + b1) / 2, '+v');
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.3, pri: 6 });
@@ -1190,8 +1366,8 @@ function furnishBedroom(ctx, L, g, r, idx) {
     featureWallBed(ctx, g, a1, vcb, '-u', Math.min(bw + 1.2, d - 0.1));
     artOn(ctx, g, a1, vcb, '-u', Math.min(1.2, bw), 0.7, 1 + idx, 1.55);
     let leftUsed = false;
-    if (wardrobeBack) { const wu0 = doorU + 0.5, wlen = Math.min(a1 - wu0 - 0.02, 2.4); if (wlen > 0.9) put(g, F.wardrobe(m, { len: wlen, h: ctx.tallH }), wu0 + wlen / 2, b0 + 0.3, '+v'); }
-    else if (a1 - 2.1 - a0 >= 1.3 && d > 2.2) { const wl = Math.min(1.8, d - 1.4); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH }), a0 + 0.3, b0 + 1.0 + wl / 2, '+u'); leftUsed = true; }
+    if (wardrobeBack) { const wu0 = doorU + 0.5, wlen = Math.min(a1 - wu0 - 0.02, 2.4); if (wlen > 0.9) put(g, F.wardrobe(m, { len: wlen, h: ctx.tallH, seed: idx }), wu0 + wlen / 2, b0 + 0.3, '+v'); }
+    else if (a1 - 2.1 - a0 >= 1.3 && d > 2.2) { const wl = Math.min(1.8, d - 1.4); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH, seed: idx + 1 }), a0 + 0.3, b0 + 1.0 + wl / 2, '+u'); leftUsed = true; }
     if (!master && !leftUsed && a1 - 2.1 - a0 >= 1.0) put(g, F.desk(m, { len: 1.0 }), a0 + 0.3, b1 - 0.7, '+u');
     else if (master && !leftUsed && a1 - 2.1 - a0 >= 2.0) put(g, F.armchair(m), a0 + 0.55, b1 - 0.6, 2.4);
     if (master && !L.zones.livRoom) ctx.slideU[L.lv] = (a0 + (leftUsed ? 0.95 : a1 - 2.1 - a0 >= 2.0 ? 1.2 : 0.3) + a1 - 2.15) / 2;
@@ -1206,7 +1382,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     featureWallBed(ctx, g, bu, b0, '+v', Math.min(bw + 0.5, a1 - start + 0.2));
     artOn(ctx, g, bu, b0, '+v', Math.min(1.1, bw), 0.6, 1 + idx, 1.65);
     const free = d - 2.2;
-    if (free > 1.3 && a1 - a0 > 2.3) { const wl = Math.min(1.6, free - 0.2); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH }), a0 + 0.3, b1 - 0.1 - wl / 2, '+u'); }
+    if (free > 1.3 && a1 - a0 > 2.3) { const wl = Math.min(1.6, free - 0.2); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH, seed: idx + 2 }), a0 + 0.3, b1 - 0.1 - wl / 2, '+u'); }
     else put(g, F.plant(m, { kind: 'snake', h: 0.9, seed: 7 + idx }), a1 - 0.3, b1 - 0.3, '+v');
     if (master && !L.zones.livRoom) ctx.slideU[L.lv] = bu;
   }
@@ -1267,6 +1443,7 @@ function build(unit, styleId, opts = {}) {
   const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {} };
   const onlyLevel = opts.cutaway && P.duplex ? (opts.level ?? 0) : null;
   CUR_M = m;
+  const T0 = performance.now();
   for (const L of P.levels) {
     if (onlyLevel != null && L.lv !== onlyLevel) continue;
     buildShell(ctx, L);
@@ -1285,8 +1462,13 @@ function build(unit, styleId, opts = {}) {
   // bake static geometry (halo markers first: they become one camera-facing billboard mesh)
   const baked = new THREE.Group(); baked.name = 'baked';
   root.add(baked);
+  // openable fronts → dynamic batch + click proxies (the cutaway bakes them closed with everything else)
+  const T1 = performance.now();
+  const movers = opts.cutaway ? null : buildMovers(ctx, sg, root);
+  const T2 = performance.now();
   const halos = opts.cutaway ? null : bloomMesh(sg, m);
   bake(sg, baked);
+  const T3 = performance.now();
   if (halos) baked.add(halos);
   // dispose temporary (non-cached) geometries used only as bake sources
   ctx.tmpGeos.forEach(g => g.dispose());
@@ -1311,12 +1493,15 @@ function build(unit, styleId, opts = {}) {
   const disposeAll = () => {
     baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     if (ctx.door) ctx.door.leaf.geometry.dispose();
+    if (movers) movers.dispose();
   };
   const views = cameraViews(ctx, P);
   return {
     group: root, rooms, entrance: { u: P.doorU, v: 0 }, balconyPoint, lights, plan: P, views,
-    stats: { meshes: baked.children.length + (ctx.door ? 2 : 0), colliders: cg.children.length },
+    stats: { meshes: baked.children.length + (ctx.door ? 2 : 0) + (movers ? movers.batches : 0), colliders: cg.children.length, fronts: movers ? movers.count : 0, ms: { furnish: Math.round(T1 - T0), fronts: Math.round(T2 - T1), bake: Math.round(T3 - T2) } },
     doorLeaf: ctx.door ? ctx.door.leaf : null,
+    // every openable cabinet door / drawer / appliance door (invisible click proxies with action + toggle)
+    cabinets: movers ? movers.proxies : [], closeCabinets: movers ? movers.closeAll : () => Promise.resolve(),
     dispose: disposeAll,
   };
 }

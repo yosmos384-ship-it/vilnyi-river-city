@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { createCarInstances, carSpec, pickCar, carRng } from './cars.js';
 import {
   CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
 } from '../data.js';
@@ -350,8 +351,6 @@ function M(key) {
     paintYellow: () => S({ color: 0xe0b12a, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     paintGreen: () => S({ color: 0x2d6a4a, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
     hazard: () => S({ color: 0x1b1b1b, roughness: 0.7 }),
-    carBody: () => S({ color: 0xffffff, metalness: 0.6, roughness: 0.28, envMapIntensity: 1.2 }),
-    carGlass: () => S({ color: 0x0c0e10, metalness: 0.6, roughness: 0.08, envMapIntensity: 1.3 }),
     tyre: () => S({ color: 0x151515, roughness: 0.8 }),
     pipeRed: () => S({ color: 0x7c2620, roughness: 0.55 }),
     steel: () => S({ color: 0xa6a8aa, metalness: 1, roughness: 0.35 }),
@@ -1170,12 +1169,13 @@ function finish(ctx, spawn) {
   const { group, lifts, doors } = ctx;
   let disposed = false;
   return {
-    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor,
+    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
     dispose() {
       if (disposed) return; disposed = true;
       if (RIG.group && RIG.group.parent === ctx.root) { ctx.root.remove(RIG.group); }
       for (const L of lifts) L.dispose();
       for (const L of ctx.decor || []) L.dispose();
+      if (ctx.carInstances) ctx.carInstances.dispose();   // shared car geometry stays cached in cars.js
       const keep = new Set(Object.values(_leafGeo));
       group.traverse(o => { if ((o.isMesh || o.isInstancedMesh) && o.geometry && !keep.has(o.geometry)) o.geometry.dispose(); });
       for (const g of ctx._geos.values()) g.dispose();
@@ -1430,13 +1430,36 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   sd.position.set(x0 - 0.045, 1.095, -2.3); sd.userData.solid = true; ctx.root.add(sd);
   B.box('brass', x0 + 0.0, x0 + 0.06, 1.0, 1.04, -2.72, -2.6);
   signPlane(ctx, 0, x0 + FACE + SKIN + 0.01, 2.45, -2.3, Math.PI / 2, 0.2, 0.2);
-  // facade glazing with entrance doors
-  const em = c.entrance[0];
-  B.box('glass', x0, x1, 0.05, H - 0.05, zF - 0.06, zF - 0.05);
-  for (let x = x0; x <= x1 + 0.01; x += (x1 - x0) / 5) B.box('bronze', x - 0.03, x + 0.03, 0, H, zF - 0.1, zF);
-  B.box('bronze', x0, x1, 2.55, 2.61, zF - 0.1, zF); B.box('bronze', x0, x1, 0, 0.06, zF - 0.1, zF); B.box('bronze', x0, x1, H - 0.06, H, zF - 0.1, zF);
-  for (const s of [-1, 1]) { B.box('brass', em + s * 0.1 - 0.014, em + s * 0.1 + 0.014, 0.6, 1.9, zF + 0.01, zF + 0.04); B.box('brass', em + s * 0.1 - 0.014, em + s * 0.1 + 0.014, 0.6, 0.62, zF - 0.05, zF + 0.04); B.box('brass', em + s * 0.1 - 0.014, em + s * 0.1 + 0.014, 1.88, 1.9, zF - 0.05, zF + 0.04); }
-  C.box(x0, x1, 0, H, zF - 0.12, zF);
+  // facade glazing with entrance doors; the courtyard lobbies (stairs 1 & 3) get automatic sliding doors (walk.js opens them)
+  const em = c.entrance[0], auto = c.stair !== 2, DW = 0.95;
+  const spans = auto ? [[x0, em - DW], [em + DW, x1]] : [[x0, x1]];
+  for (const [a0, a1] of spans) { B.box('glass', a0, a1, 0.05, H - 0.05, zF - 0.06, zF - 0.05); C.box(a0, a1, 0, H, zF - 0.12, zF); }
+  for (let x = x0; x <= x1 + 0.01; x += (x1 - x0) / 5) if (!auto || Math.abs(x - em) > DW + 0.05) B.box('bronze', x - 0.03, x + 0.03, 0, H, zF - 0.1, zF);
+  B.box('bronze', x0, x1, 2.55, 2.61, zF - 0.1, zF); B.box('bronze', x0, x1, H - 0.06, H, zF - 0.1, zF);
+  for (const [a0, a1] of spans) B.box('bronze', a0, a1, 0, 0.06, zF - 0.1, zF);
+  if (auto) {
+    for (const x of [em - DW, em + DW]) B.box('bronze', x - 0.04, x + 0.04, 0, H, zF - 0.12, zF + 0.02);
+    B.box('bronze', em - DW, em + DW, 2.5, 2.61, zF - 0.12, zF + 0.02);
+    B.box('nero', em - DW, em + DW, 0, 0.004, zF - 0.6, zF + 0.6);   // threshold mat
+    const leafGeo = ctx.geo('slideLeaf', () => {
+      const parts = [clean(boxGeo(-DW / 2, DW / 2, 0.02, 2.48, -0.008, 0.008))];
+      return mergeGeometries(parts, false);
+    });
+    const frameGeo = ctx.geo('slideFrame', () => mergeGeometries([
+      clean(boxGeo(-DW / 2, DW / 2, 0.02, 0.08, -0.02, 0.02)), clean(boxGeo(-DW / 2, DW / 2, 2.42, 2.48, -0.02, 0.02)),
+      clean(boxGeo(-DW / 2, -DW / 2 + 0.05, 0.02, 2.48, -0.02, 0.02)), clean(boxGeo(DW / 2 - 0.05, DW / 2, 0.02, 2.48, -0.02, 0.02)),
+      clean(boxGeo(-0.014, 0.014, 0.6, 1.9, 0.02, 0.05)),
+    ], false));
+    const leaves = [];
+    for (const s of [-1, 1]) {
+      const g = new THREE.Group(); g.name = 'lobby-slide-door';
+      const pane = new THREE.Mesh(leafGeo, M('glass')); pane.renderOrder = 2; g.add(pane);
+      const fr = new THREE.Mesh(frameGeo, M('brass')); fr.position.x = s * -0.0; g.add(fr);
+      g.position.set(em + s * DW / 2, 0, zF - 0.03); g.userData.baseX = g.position.x; g.userData.dir = s;
+      ctx.root.add(g); leaves.push(g);
+    }
+    (ctx.autoDoors ||= []).push({ x: em, z: zF, leaves, open: 0, travel: DW - 0.06 });
+  }
   // coffered ceiling with cove + chandelier
   const cz0 = zF + 0.9, cz1 = zL - 0.9, cx0 = x0 + 1.0, cx1 = x1 - 1.0;
   B.box('plaster', x0, x1, H, H + 0.05, zF - 0.12, cz0); B.box('plaster', x0, x1, H, H + 0.05, cz1, -1.1);
@@ -1566,6 +1589,7 @@ function buildParking(bId) {
       const x0 = xc + 0.3 + j * 2.5, x1 = x0 + 2.5;
       if (x1 > X1 - 0.3) continue;
       if (hit(x0, x1, b0, b1)) continue;
+      if (x0 < 8.4 || (x1 > 81.9 && b1 > RAMP[3] - 1.5)) continue;   // north–south drive lanes (west; east down to the ramp foot)
       bays.push({ x0, x1, z0: b0, z1: b1, dir, no: no++, ac });
     }
   }
@@ -1579,8 +1603,8 @@ function buildParking(bId) {
   const nMat = new THREE.MeshStandardMaterial({ map: nTex, transparent: true, roughness: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   ctx.ownMat = [nMat];
   const nb = new Batch();
-  const cars = [], carCol = [], wheels = [], evM = [], evLight = [];
-  const palette = [0x0e0f11, 0xe9e7e2, 0x2a2d31, 0x8b9096, 0x1d2a44, 0x5b1a1e, 0xc9c6bf, 0x3b4a3f, 0x101820, 0x6c5a45, 0xb7b9bb];
+  const evM = [], evLight = [], carList = [];
+  const rc = carRng(20260930);   // same parked cars whichever building's parking view is built
   for (const b of bays) {
     for (const x of [b.x0, b.x1]) B.box('paint', x - 0.05, x + 0.05, 0.001, 0.004, b.z0 + 0.1, b.z1 - 0.05);
     const ev = b.no % 9 === 4;
@@ -1596,40 +1620,24 @@ function buildParking(bId) {
       evM.push(mat4((b.x0 + b.x1) / 2, 0, zb, b.dir < 0 ? 0 : Math.PI)); evLight.push(mat4((b.x0 + b.x1) / 2, 1.18, zb + (b.dir < 0 ? 0.09 : -0.09), b.dir < 0 ? 0 : Math.PI));
       C.box(b.x0 + 1.0, b.x1 - 1.0, 0, 1.4, zb - 0.15, zb + 0.15);
     }
-    if (r() < 0.74) {
-      const len = 4.3 + r() * 0.5, sc = len / 4.6;
-      const cx = (b.x0 + b.x1) / 2 + (r() - 0.5) * 0.18, cz = (b.z0 + b.z1) / 2 + (b.dir < 0 ? -0.25 : 0.25) + (r() - 0.5) * 0.2;
-      const yaw = (b.dir < 0 ? 0 : Math.PI) + (r() < 0.5 ? Math.PI : 0) + (r() - 0.5) * 0.04;
-      const tall = r() < 0.3 ? 1.12 + r() * 0.08 : 1; const m = mat4(cx, 0, cz, yaw, 1 + (tall - 1) * 0.4, tall, sc); cars.push(m);
-      carCol.push(new THREE.Color(palette[(r() * palette.length) | 0]));
-      C.box(cx - 0.95, cx + 0.95, 0, 1.4, cz - len / 2, cz + len / 2);
+    if (rc() < 0.72) {   // luxury car, rear (or nose, when reversed in) 12 cm off the back line; EV bays leave room for the charger
+      const pick = pickCar(rc), S = carSpec(pick.kind), nose = rc() < 0.55;   // nose → facing the aisle
+      const yaw = (b.dir < 0 ? 0 : Math.PI) + (nose ? 0 : Math.PI) + (rc() - 0.5) * 0.03;
+      const facePlus = Math.cos(yaw) > 0, back = ev ? 0.55 : 0.12;
+      const cz = b.dir < 0 ? b.z0 + back - (facePlus ? S.zR : -S.zF) : b.z1 - back - (facePlus ? S.zF : -S.zR);
+      carList.push({ x: (b.x0 + b.x1) / 2 + (rc() - 0.5) * 0.12, y: 0, z: cz, yaw, ...pick });
     }
   }
   nb.flush(W);
-  // cars: body (instanced colours), glass cabin, wheels
-  const body = ctx.geo('carBody', () => carBodyGeo());
-  const cabin = ctx.geo('carCabin', () => carCabinGeo());
-  const wheel = ctx.geo('carWheel', () => {
-    const parts = [];
-    for (const [x, z] of [[-0.78, 1.42], [0.78, 1.42], [-0.78, -1.4], [0.78, -1.4]]) { const w = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 12); w.rotateZ(Math.PI / 2); w.translate(x, 0.33, z); parts.push(clean(w)); }
-    return mergeGeometries(parts, false);
-  });
-  const lights = ctx.geo('carLights', () => {
-    const parts = [];
-    for (const s of [-1, 1]) { parts.push(clean(boxGeo(s * 0.58 - 0.2, s * 0.58 + 0.2, 0.72, 0.77, 2.26, 2.3))); parts.push(clean(boxGeo(s * 0.6 - 0.24, s * 0.6 + 0.24, 0.8, 0.86, -2.3, -2.25))); }
-    return mergeGeometries(parts, false);
-  });
-  instanced(W, body, 'carBody', cars, carCol);
-  instanced(W, cabin, 'carGlass', cars);
-  instanced(W, wheel, 'tyre', cars);
-  instanced(W, lights, 'ledDim', cars);
-  const rims = ctx.geo('carRims', () => mergeGeometries([[-0.9, 1.42], [0.9, 1.42], [-0.9, -1.4], [0.9, -1.4]].map(([x, z]) => { const g = new THREE.CylinderGeometry(0.2, 0.2, 0.02, 10); g.rotateZ(Math.PI / 2); g.translate(x, 0.33, z); return clean(g); }), false));
-  instanced(W, rims, 'steel', cars);
-  const trim = ctx.geo('carTrim', () => mergeGeometries([clean(boxGeo(-0.93, 0.93, 0.26, 0.42, -2.28, 2.28)), clean(boxGeo(-0.94, 0.94, 0.9, 0.93, -1.5, 0.85))], false));
-  instanced(W, trim, 'tyre', cars);
+  // parked luxury cars (instanced far models); walk.js adopts them into its drivable fleet (world coords)
+  ctx.carInstances = createCarInstances(carList); ctx.carInstances.group.name = 'vrc-parked-cars'; W.add(ctx.carInstances.group);
+  ctx.parkedCars = carList.map(c => ({ ...c, y: floorY(-1) }));
   // EV chargers
   instanced(W, ctx.geo('ev', () => mergeGeometries([clean(boxGeo(-0.14, 0.14, 0, 1.45, -0.09, 0.09)), clean(boxGeo(-0.18, 0.18, 1.45, 1.5, -0.12, 0.12))], false)), 'white', evM);
   instanced(W, ctx.geo('evL', () => new THREE.TorusGeometry(0.07, 0.012, 8, 24)), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 2.2, 0.9) }), evLight);
+  // drive lanes linking the aisles: dashed centre lines
+  for (let z = Z0 + 2; z < Z1 - 2; z += 3) if (!hit(3.8, 5.2, z, z + 1.6)) B.box('paintYellow', 4.5 - 0.06, 4.5 + 0.06, 0.001, 0.004, z, z + 1.6);
+  for (let z = RAMP[3] + 1; z < Z1 - 2; z += 3) if (!hit(85.0, 86.4, z, z + 1.6)) B.box('paintYellow', 85.6 - 0.06, 85.6 + 0.06, 0.001, 0.004, z, z + 1.6);
   // aisle markings: dashed centre line + arrows + zebra crossings at lobbies
   for (const ac of aisles) for (let x = X0 + 2; x < X1 - 3; x += 3) if (!hit(x, x + 1.6, ac - 0.1, ac + 0.1)) B.box('paintYellow', x, x + 1.6, 0.001, 0.004, ac - 0.06, ac + 0.06);
   for (const L of lobbies) {
@@ -1675,10 +1683,10 @@ function buildParking(bId) {
   const tl = RAMP_OPEN, tlen = rz1 - tl, tr = new THREE.BoxGeometry(rx1 - rx0 + 0.6, 0.3, Math.hypot(tlen, yAt(tl))); tr.rotateX(Math.atan2(yAt(tl), tlen));
   tr.translate((rx0 + rx1) / 2, H + yAt(tl) / 2 + 0.15, (rz1 + tl) / 2); B.add('ceilingP', tr);
   for (let k = 0; k < 4; k++) { const z = rz1 - 1.5 - k * 2.8; B.box('ledCool', (rx0 + rx1) / 2 - 0.75, (rx0 + rx1) / 2 + 0.75, H + yAt(z) - 0.05, H + yAt(z), z - 0.05, z + 0.05); }
-  C.box(rx0, rx1, rise, rise + H, rz0 - 0.3, rz0);
+  // (the ramp top is open: outdoor floors continue at grade — built by walk.js/cars.js)
   // barrier at the ramp foot
   B.box('white', rx1 - 0.6, rx1 - 0.3, 0, 1.05, rz1 - 0.3, rz1 - 0.1);
-  for (let k = 0; k < 6; k++) B.box(k % 2 ? 'white' : 'pipeRed', rx1 - 0.45 - (k + 1) * 0.6, rx1 - 0.45 - k * 0.6, 0.95, 1.03, rz1 - 0.24, rz1 - 0.16);
+  for (let k = 0; k < 6; k++) B.box(k % 2 ? 'white' : 'pipeRed', rx1 - 0.49, rx1 - 0.41, 1.03 + k * 0.33, 1.03 + (k + 1) * 0.33, rz1 - 0.24, rz1 - 0.16);   // boom raised
   // lobbies (glass boxes) + core volumes
   for (const L of lobbies) parkingLobby(wctx, ctx, L, L.id === bId);
   // hanging pictogram signs over the aisles (P, lift, exit)
@@ -1703,24 +1711,6 @@ function buildParking(bId) {
   const d0 = res.dispose;
   res.dispose = () => { d0(); for (const m of ctx.ownMat) m.dispose(); };
   return res;
-}
-function carProfile(pts, depth, bevel) {
-  const sh = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? sh.lineTo(x, y) : sh.moveTo(x, y)));
-  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6 });
-  g.translate(0, 0, -depth / 2); g.rotateY(Math.PI / 2); g.computeVertexNormals(); return g;   // length along z
-}
-function carBodyGeo() {   // side silhouette (x = along the car, front = +x → +z after rotation)
-  const arch = (cx, from) => { const out = []; for (let i = 0; i <= 8; i++) { const a = Math.PI - (i / 8) * Math.PI; out.push([cx + Math.cos(a) * 0.4 * from, 0.3 + Math.sin(a) * 0.4]); } return out; };
-  const pts = [[-2.25, 0.32], ...arch(-1.4, 1), [1.02, 0.3], ...arch(1.42, 1), [2.22, 0.32], [2.3, 0.5], [2.28, 0.66], [2.1, 0.78], [1.2, 0.9], [0.9, 0.93],
-    [-1.6, 0.96], [-2.15, 0.92], [-2.3, 0.78], [-2.3, 0.45]];
-  return carProfile(pts.map(([x, y]) => [-x, y]).reverse(), 1.66, 0.07);
-}
-function carCabinGeo() {
-  const pts = [[0.95, 0.9], [0.55, 1.2], [0.2, 1.36], [-0.95, 1.4], [-1.55, 1.3], [-1.98, 0.95]];
-  const g = carProfile(pts.map(([x, y]) => [-x, y]).reverse(), 1.5, 0.06);
-  const p = g.attributes.position;   // tumblehome: narrow the glasshouse toward the roof
-  for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > 0.9) p.setX(i, p.getX(i) * (1 - (y - 0.9) * 0.42)); }
-  g.computeVertexNormals(); return g;
 }
 function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core; functional lifts only for the own building
   const { B, C } = w; const H = 3.1, h = 2.7;

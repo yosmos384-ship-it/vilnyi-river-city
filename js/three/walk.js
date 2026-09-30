@@ -8,6 +8,7 @@ import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
 } from '../data.js';
+import { createFleet, buildOutdoorColliders, CarController, carGeometryXForward, pickCar, carRng, inLake, RAMP } from './cars.js';
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -33,6 +34,23 @@ const EN = {
   'walk.mode3d': 'Free 3D', 'walk.modeReal': 'Photoreal', 'walk.soon': 'Coming soon',
   'walk.settings': 'Settings', 'walk.map': 'Map', 'walk.zoomIn': 'Zoom in', 'walk.zoomOut': 'See more', 'walk.help.pinch': 'Pinch to see more or zoom in',
 };
+// Driving strings in all 8 site languages (used when the site's i18n has no such key).
+const LOCAL_CAR = {};
+const CAR_TXT = {
+  en: { enter: 'Enter car', exit: 'Exit car', cockpit: 'Cockpit view', chase: 'Chase view', gas: 'Accelerate', brake: 'Brake / reverse', steer: 'Steer', outside: 'Outside', driving: 'Driving', limit: 'Speed limit', hint: 'W / ↑ accelerate · S / ↓ brake & reverse · A D / ← → steer · C camera · F exit', tapCar: 'Tap a car to drive it' },
+  he: { enter: 'היכנסו לרכב', exit: 'יציאה מהרכב', cockpit: 'מבט מתא הנהג', chase: 'מבט מאחור', gas: 'האצה', brake: 'בלם / רוורס', steer: 'היגוי', outside: 'בחוץ', driving: 'בנהיגה', limit: 'מהירות מרבית', hint: 'W / ↑ האצה · S / ↓ בלם ורוורס · A D / ← → היגוי · C מצלמה · F יציאה', tapCar: 'הקישו על רכב כדי לנהוג בו' },
+  ru: { enter: 'Сесть в машину', exit: 'Выйти из машины', cockpit: 'Вид из салона', chase: 'Вид сзади', gas: 'Газ', brake: 'Тормоз / назад', steer: 'Руль', outside: 'Улица', driving: 'За рулём', limit: 'Ограничение скорости', hint: 'W / ↑ газ · S / ↓ тормоз и задний ход · A D / ← → руль · C камера · F выйти', tapCar: 'Нажмите на машину, чтобы сесть за руль' },
+  uk: { enter: 'Сісти в авто', exit: 'Вийти з авто', cockpit: 'Вигляд із салону', chase: 'Вигляд ззаду', gas: 'Газ', brake: 'Гальмо / назад', steer: 'Кермо', outside: 'Надворі', driving: 'За кермом', limit: 'Обмеження швидкості', hint: 'W / ↑ газ · S / ↓ гальмо й задній хід · A D / ← → кермо · C камера · F вийти', tapCar: 'Торкніться авто, щоб сісти за кермо' },
+  ro: { enter: 'Urcă în mașină', exit: 'Coboară din mașină', cockpit: 'Vedere din habitaclu', chase: 'Vedere din spate', gas: 'Accelerează', brake: 'Frână / marșarier', steer: 'Volan', outside: 'Afară', driving: 'La volan', limit: 'Limită de viteză', hint: 'W / ↑ accelerează · S / ↓ frână și marșarier · A D / ← → volan · C cameră · F coboară', tapCar: 'Atinge o mașină ca s-o conduci' },
+  fr: { enter: 'Monter à bord', exit: 'Descendre', cockpit: 'Vue cockpit', chase: 'Vue arrière', gas: 'Accélérer', brake: 'Freiner / reculer', steer: 'Volant', outside: 'Extérieur', driving: 'Au volant', limit: 'Limitation de vitesse', hint: 'W / ↑ accélérer · S / ↓ freiner et reculer · A D / ← → volant · C caméra · F descendre', tapCar: 'Touchez une voiture pour la conduire' },
+  it: { enter: 'Sali a bordo', exit: 'Scendi dall’auto', cockpit: 'Vista abitacolo', chase: 'Vista esterna', gas: 'Accelera', brake: 'Freno / retro', steer: 'Sterzo', outside: 'Esterno', driving: 'Alla guida', limit: 'Limite di velocità', hint: 'W / ↑ accelera · S / ↓ freno e retromarcia · A D / ← → sterzo · C visuale · F scendi', tapCar: 'Tocca un’auto per guidarla' },
+  de: { enter: 'Einsteigen', exit: 'Aussteigen', cockpit: 'Cockpit-Ansicht', chase: 'Verfolger-Ansicht', gas: 'Gas geben', brake: 'Bremse / rückwärts', steer: 'Lenken', outside: 'Draußen', driving: 'Am Steuer', limit: 'Tempolimit', hint: 'W / ↑ Gas · S / ↓ Bremse & rückwärts · A D / ← → lenken · C Kamera · F aussteigen', tapCar: 'Tippen Sie auf ein Auto, um es zu fahren' },
+};
+for (const [lang, o] of Object.entries(CAR_TXT)) for (const [k, v] of Object.entries(o)) {
+  const key = k === 'outside' ? 'walk.outside' : 'walk.car.' + k;
+  if (lang === 'en') EN[key] = v;
+  (LOCAL_CAR[lang] ||= {})[key] = v;
+}
 // Strings introduced with the 3D lift panel / open-any-door features, in all 8 site languages
 // (used only when the site's i18n has no such key).
 const LOCAL = {
@@ -61,6 +79,7 @@ const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 
 // ---------- small helpers ----------
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
+const lerpN = (a, b, t) => a + (b - a) * t;
 const wrapPi = a => Math.atan2(Math.sin(a), Math.cos(a));
 const yawFromDir = (dx, dz) => Math.atan2(-dx, -dz);
 function worldToLocal(bId, x, z) {
@@ -301,6 +320,45 @@ const CSS = `
 .vw-ucard{top:calc(96px + var(--st))}.vw.phone .vw-ucard{top:calc(90px + var(--st))}
 .vw-ucard.show~.vw-toast{top:calc(158px + var(--st))}
 .vw-pano{position:absolute;inset:0;z-index:3;background:#050505}
+.vw-carchip{position:absolute;left:50%;bottom:calc(100px + var(--sb));transform:translateX(-50%);display:none;height:42px;padding:0 18px;font-size:12.5px;z-index:2}
+.vw-carchip.show{display:inline-flex;animation:vwpop .35s ease}
+@keyframes vwpop{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.vw-drive{display:none}
+.vw.driving .vw-drive{display:block;position:absolute;inset:0;pointer-events:none}
+.vw.driving .vw-drive>*{pointer-events:auto}
+.vw.driving :is(.vw-pad,.vw-bottom,.vw-map,.vw-mapbtn,.vw-lift,.vw-floorsbtn,.vw-modes,.vw-tools,.vw-ucard,.vw-photo,.vw-helpbtn,.vw-gear,.vw-carchip){display:none!important}
+.vw-dtop{position:absolute;top:calc(56px + var(--st));right:calc(10px + var(--sr));display:flex;gap:7px}
+.vw[dir=rtl] .vw-dtop{right:auto;left:calc(10px + var(--sl))}
+.vw-spdo{position:absolute;left:50%;bottom:calc(14px + var(--sb));transform:translateX(-50%);width:124px;height:124px;border-radius:50%;
+  background:radial-gradient(circle at 50% 40%,rgba(28,24,17,.92),rgba(6,6,6,.9) 70%);border:1px solid var(--ln);box-shadow:0 8px 28px rgba(0,0,0,.45),inset 0 0 0 4px rgba(201,164,92,.07);direction:ltr}
+.vw-spdo svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(135deg)}
+.vw-spdo circle{fill:none;stroke-width:4.5;stroke-linecap:round}
+.vw-spdo .bg{stroke:rgba(201,164,92,.18);stroke-dasharray:141.4 200}
+.vw-spdo .arc{stroke:url(#vwgold);stroke-dasharray:0 200;transition:stroke-dasharray .12s linear}
+.vw-spdo.over .arc{stroke:#e0703c}
+.vw-spdo .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+.vw-spdo .num b{font-family:"Cormorant Garamond","Bodoni Moda",Georgia,serif;font-weight:500;font-size:38px;color:var(--g2);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.vw-spdo .num i{font-style:normal;font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:#d9ccb0;margin-top:3px}
+.vw-spdo .gear{position:absolute;left:50%;bottom:13px;transform:translateX(-50%);font-size:11px;font-weight:700;color:var(--g);letter-spacing:.1em}
+.vw-spdo .lim{position:absolute;right:-8px;top:-4px;width:34px;height:34px;border-radius:50%;background:#f5f2ea;border:3.5px solid #c8231e;color:#111;
+  font:700 12.5px/27px "Manrope","Inter Tight",Arial,sans-serif;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,.4)}
+.vw-steer,.vw-pedals{display:none;touch-action:none;-webkit-user-select:none;user-select:none;direction:ltr}
+.vw.phone .vw-steer{display:flex;position:absolute;left:calc(12px + var(--sl));bottom:calc(22px + var(--sb));width:132px;height:62px;border-radius:31px;
+  align-items:center;justify-content:space-between;padding:0 12px;background:var(--bg);border:1px solid var(--ln);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:var(--g2);font-size:13px}
+.vw-steer .knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#f0d596,#a87c34);box-shadow:0 3px 10px rgba(0,0,0,.45);transition:transform .12s ease}
+.vw-steer.on .knob{transition:none}
+.vw.phone .vw-pedals{display:flex;position:absolute;right:calc(12px + var(--sr));bottom:calc(18px + var(--sb));gap:9px;align-items:flex-end}
+.vw-pedals button{position:relative;border-radius:12px;border:1px solid var(--ln);background:linear-gradient(180deg,rgba(40,36,28,.9),rgba(10,10,10,.9));color:#e9dfc8;touch-action:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 0 7px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.vw-pedals button i{position:absolute;inset:8px 9px 26px;border-radius:7px;background:repeating-linear-gradient(0deg,rgba(201,164,92,.55) 0 3px,transparent 3px 8px)}
+.vw-pedals button span{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;padding:0 3px}
+.vw-pedals .brake{width:66px;height:76px}.vw-pedals .gas{width:56px;height:108px}
+.vw-pedals button.on{border-color:var(--g2);background:linear-gradient(180deg,#e6c987,#b88a3c);color:#111}
+.vw-pedals button.on i{background:repeating-linear-gradient(0deg,rgba(0,0,0,.35) 0 3px,transparent 3px 8px)}
+.vw.phone .vw-spdo{width:104px;height:104px;bottom:calc(16px + var(--sb))}
+.vw.phone .vw-spdo .num b{font-size:32px}
+.vw-dhint{position:absolute;left:calc(12px + var(--sl));bottom:calc(16px + var(--sb));padding:8px 12px;font-size:11px;letter-spacing:.03em;max-width:min(360px,34vw);line-height:1.45;color:#e9dfc8}
+.vw.phone .vw-dhint{display:none}
 .vw.pano .vw-hud>*:not(.vw-fade):not(.vw-modes){display:none!important}
 .vw.pano .vw-modes{opacity:1!important}
 .vw.pano canvas.vw-gl{visibility:hidden}
@@ -368,7 +426,7 @@ export class Walkthrough {
   t(key, fb) {
     let s;
     try { s = this.i18n && typeof this.i18n.t === 'function' ? this.i18n.t(key) : undefined; } catch { s = undefined; }
-    if (typeof s !== 'string' || !s || s === key) { const loc = LOCAL[String(this.lang).slice(0, 2)]; s = (loc && loc[key]) ?? fb ?? EN[key] ?? LOCAL.en[key] ?? key.split('.').pop(); }
+    if (typeof s !== 'string' || !s || s === key) { const l2 = String(this.lang).slice(0, 2), loc = LOCAL[l2], lc = LOCAL_CAR[l2]; s = (loc && loc[key]) ?? (lc && lc[key]) ?? fb ?? EN[key] ?? LOCAL.en[key] ?? key.split('.').pop(); }
     return s;
   }
   get dir() { const d = this.i18n && this.i18n.dir; const v = typeof d === 'function' ? d() : d; return v === 'rtl' ? 'rtl' : v === 'ltr' ? 'ltr' : (document.documentElement.dir || 'ltr'); }
@@ -408,6 +466,7 @@ export class Walkthrough {
         if (this.complex && this.complex.group && !this.complex.group.parent) this.scene.add(this.complex.group);
       } catch (e) { console.warn('[walk] createComplex threw', e); this.complex = null; }
     }
+    this._initCars();
     // Building wrappers: commons groups (building-local) live inside these.
     this.bWrap = {};
     for (const [id, b] of Object.entries(BUILDINGS)) {
@@ -519,6 +578,9 @@ export class Walkthrough {
     clearTimeout(this._soonT);
     this._unbind();
     const safe = f => { try { f(); } catch (e) { console.warn('[walk] dispose', e); } };
+    safe(() => this._engineStop());
+    safe(() => this.fleet && this.fleet.dispose());
+    safe(() => this.outdoor && this.outdoor.dispose());
     safe(() => this._disposeCommons());
     safe(() => this._disposeApartment());
     safe(() => this.complex && this.complex.dispose && this.complex.dispose());
@@ -779,6 +841,7 @@ export class Walkthrough {
     this.liftInfos = c._infos || [];
     this._hiddenDoors = [];
     this._hideDuplicateDoor();   // also registers the commons colliders/actions
+    this._adoptParking(c);
   }
 
   _disposeCommons(c = this.commons) {
@@ -804,6 +867,12 @@ export class Walkthrough {
   // Which facade floor bands to hide so the exterior never covers the interior we are in.
   _hideFloorsForWalker(force) {
     if (!this.complex || !this.complex.setHiddenFloor || this.floor == null) return;
+    if (this._isOutside(this.player.pos) || (this.floor === -1 && this.player.pos.y > -2.5)) {
+      if (!force && this._hiddenKey === 'out') return;
+      this._hiddenKey = 'out';
+      try { for (const id of Object.keys(BUILDINGS)) this.complex.setHiddenFloor(id, null); } catch (e) { console.warn('[walk] setHiddenFloor', e); }
+      return;
+    }
     let f = this.floor;
     const u = this.unit, duplex = u && TYPES[u.type].duplex && u.building === this.bId && f === u.floor;
     let key;
@@ -1354,7 +1423,7 @@ export class Walkthrough {
 
   async _doAction(a) {
     const act = a.action;
-    if (act.type === 'aptDoor') return this._onAptDoor(act.unitId, a.obj);
+    if (act.type === 'aptDoor') return act.part ? (this._click?.(0.35), this._toggleDoor(a.obj)) : this._onAptDoor(act.unitId, a.obj);
     if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object, a.hit);
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
     if (act.type === 'liftDoor') return this._liftDoorKey(act);
@@ -1783,6 +1852,15 @@ export class Walkthrough {
 
   _update(dt) {
     const P = this.player;
+    if (this.drive) {
+      if (!this.busy) this._driveUpdate(dt);
+      this._autoDoors(dt); this._outdoorWatch(); this._cullWorld();
+      if (this._expT) { const r = this.renderer; r.toneMappingExposure += (this._expT - r.toneMappingExposure) * damp(2.5, dt); }
+      const now = performance.now();
+      if (now - this._lastHud > 200) { this._lastHud = now; this._updateHud(); }
+      if (now - this._lastMap > 110) { this._lastMap = now; this._drawMap(); }
+      return;
+    }
     // look
     let turn = 0;
     if (this.keys.has('ArrowLeft') || this.pad.l) turn += 1;
@@ -1826,8 +1904,13 @@ export class Walkthrough {
       }
       this._autoDoor(f > 0);
       this._carWatch();
+      this._carChipWatch();
+      this._outdoorWatch();
     }
+    this._autoDoors(dt);
     this._syncCamera();
+    this._cullWorld();
+    if (this.fleet) this.fleet.update(this.camera);
     if (this._expT) { const r = this.renderer; r.toneMappingExposure += (this._expT - r.toneMappingExposure) * damp(2.5, dt); }
 
     const now = performance.now();
@@ -1845,7 +1928,10 @@ export class Walkthrough {
       cam.position.y += this._rideSway || 0;
       cam.rotation.set(P.pitch + Math.sin(t * 1.7) * 0.0025 * sp, P.yaw, Math.sin(t * 2.3) * 0.004 * sp, 'YXZ');
     } else cam.rotation.set(P.pitch, P.yaw, 0, 'YXZ');
-    // Interior IBL indoors, sky IBL outdoors (balcony) for correct glass/metal reflections.
+    this._syncEnvMap();
+  }
+  // Interior IBL indoors, sky IBL outdoors (balcony, street) for correct glass/metal reflections.
+  _syncEnvMap() {
     const cur = this.scene.environment;
     if (cur && cur !== this.roomEnv) this.skyEnv = cur;
     const outside = this._placeKind === 'outdoor';
@@ -1955,6 +2041,14 @@ export class Walkthrough {
       <div class="vw-bottom"><div class="vw-row vw-rooms"></div><div class="vw-row vw-tp"></div></div>
       <div class="vw-modes vw-panel" role="group"><button data-vm="3d" aria-pressed="true"></button><button data-vm="real" aria-pressed="false"></button><span class="soon" role="status"></span></div>
       <div class="vw-ucard vw-panel"><div class="ut"><div class="u1"></div><div class="u2"></div></div><button class="vw-btn vw-gold" data-k="ureserve"></button></div>
+      <button class="vw-carchip vw-btn vw-gold" data-k="carenter"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 15.5v-3l2.2-4.6A2 2 0 0 1 7.5 6.8h9a2 2 0 0 1 1.8 1.1l2.2 4.6v3"/><path d="M2.8 15.5h18.4v2.4H2.8z"/><circle cx="7" cy="18.3" r="1.6"/><circle cx="17" cy="18.3" r="1.6"/><path d="M5.2 12.3h13.6"/></svg><span class="lbl"></span></button>
+      <div class="vw-drive">
+        <div class="vw-dtop"><button class="vw-btn vw-ghost" data-k="carview"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span class="lbl"></span></button><button class="vw-btn vw-gold" data-k="carexit"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 15.5v-3l2.2-4.6A2 2 0 0 1 7.5 6.8h9a2 2 0 0 1 1.8 1.1l2.2 4.6v3"/><path d="M2.8 15.5h18.4v2.4H2.8z"/><circle cx="7" cy="18.3" r="1.6"/><circle cx="17" cy="18.3" r="1.6"/><path d="M5.2 12.3h13.6"/></svg><span class="lbl"></span></button></div>
+        <div class="vw-spdo"><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="vwgold" x1="0" x2="1"><stop offset="0" stop-color="#b88a3c"/><stop offset="1" stop-color="#f0d596"/></linearGradient></defs><circle class="bg" cx="50" cy="50" r="30"/><circle class="arc" cx="50" cy="50" r="30"/></svg><div class="num"><b class="spd">0</b><i>km/h</i></div><span class="gear">P</span><span class="lim" role="img"></span></div>
+        <div class="vw-steer" data-pd="steer"><span class="l" aria-hidden="true">◀</span><span class="knob"></span><span class="r" aria-hidden="true">▶</span></div>
+        <div class="vw-pedals"><button class="brake" data-pd="brake"><i></i><span></span></button><button class="gas" data-pd="gas"><i></i><span></span></button></div>
+        <div class="vw-dhint vw-panel"></div>
+      </div>
       <div class="vw-toast vw-panel"></div>
       <div class="vw-fade"></div>
       <div class="vw-help"><div class="card"><h3></h3><ul></ul><button class="vw-btn vw-gold" data-k="helpok"></button></div></div>
@@ -1969,6 +2063,9 @@ export class Walkthrough {
       help: q('.vw-help'), loading: q('.vw-loading'),
       gear: q('[data-k=gear]'), zoom: q('.vw-zoom'), zv: q('.vw-zoom .zv'), mapBtn: q('.vw-mapbtn'), prow: q('.vw-prow span'),
       modes: q('.vw-modes'), soon: q('.vw-modes .soon'),
+      carChip: q('.vw-carchip'), drive: q('.vw-drive'), carView: q('[data-k=carview]'), carExit: q('[data-k=carexit]'),
+      spdo: q('.vw-spdo'), spd: q('.vw-spdo .spd'), gear: q('.vw-spdo .gear'), lim: q('.vw-spdo .lim'), arc: q('.vw-spdo .arc'),
+      steerPad: q('.vw-steer'), knob: q('.vw-steer .knob'), gas: q('.vw-pedals .gas'), brake: q('.vw-pedals .brake'), dhint: q('.vw-dhint'),
       floorsBtn: q('[data-k=floors]'), ucard: q('.vw-ucard'), u1: q('.vw-ucard .u1'), u2: q('.vw-ucard .u2'), ureserve: q('[data-k=ureserve]'),
     };
     // Floor buttons: -1, P, 1..10
@@ -2008,11 +2105,18 @@ export class Walkthrough {
     this._renderModes();
     if (this._cardUnit) this._fillUnitCard(this._cardUnit);
     e.loading.querySelector('.lt').textContent = this.t('walk.loading');
+    e.carChip.querySelector('.lbl').textContent = this.t('walk.car.enter');
+    e.carExit.querySelector('.lbl').textContent = this.t('walk.car.exit');
+    e.carView.querySelector('.lbl').textContent = this.t(this.drive && this.drive.view === 'fp' ? 'walk.car.chase' : 'walk.car.cockpit');
+    e.gas.setAttribute('aria-label', this.t('walk.car.gas')); e.gas.title = this.t('walk.car.gas'); e.gas.querySelector('span').textContent = '▲';
+    e.brake.setAttribute('aria-label', this.t('walk.car.brake')); e.brake.title = this.t('walk.car.brake'); e.brake.querySelector('span').textContent = 'B · R';
+    e.steerPad.setAttribute('aria-label', this.t('walk.car.steer')); e.lim.setAttribute('aria-label', this.t('walk.car.limit'));
+    e.dhint.textContent = this.t('walk.car.hint');
     e.help.querySelector('h3').textContent = this.t('walk.help.title');
     e.help.querySelector('[data-k=helpok]').textContent = this.t('walk.help.ok');
     const items = this._isTouch
-      ? [['☝', 'walk.help.drag'], ['⇔', 'walk.help.pinch'], ['▲', 'walk.help.pad'], ['⤢', 'walk.help.dbltap'], ['◉', 'walk.help.click'], ['360', 'walk.help.360']]
-      : [['☝', 'walk.help.drag'], ['W', 'walk.help.keys'], ['⤢', 'walk.help.dblclick'], ['◉', 'walk.help.click'], ['360', 'walk.help.360']];
+      ? [['☝', 'walk.help.drag'], ['⇔', 'walk.help.pinch'], ['▲', 'walk.help.pad'], ['⤢', 'walk.help.dbltap'], ['◉', 'walk.help.click'], ['P', 'walk.car.tapCar'], ['360', 'walk.help.360']]
+      : [['☝', 'walk.help.drag'], ['W', 'walk.help.keys'], ['⤢', 'walk.help.dblclick'], ['◉', 'walk.help.click'], ['P', 'walk.car.tapCar'], ['360', 'walk.help.360']];
     e.help.querySelector('ul').innerHTML = '';
     for (const [ic, k] of items) { const li = document.createElement('li'); const i = document.createElement('i'); i.textContent = ic; if (ic === '360') i.style.fontSize = '10px'; const s = document.createElement('span'); s.textContent = this.t(k); li.append(i, s); e.help.querySelector('ul').appendChild(li); }
     this._renderTeleports(); this._renderRooms(); this._renderStyles(); this._renderTime(); this._updateTitle(); this._applyModeSafe();
@@ -2085,16 +2189,20 @@ export class Walkthrough {
     }
     let place, kind = 'indoor';
     const inf = !this.riding && this._carOf(this.player.pos);
-    const room = !this.riding && !inf ? this._currentRoom() : null;
+    const room = !this.riding && !inf && !this.drive ? this._currentRoom() : null;
     let fl = this.riding ? this._liftFloorNow ?? this.floor : this.floor;
+    const outside = !this.riding && !inf && this._isOutside(this.player.pos);
     if (this.riding || inf) place = this.t('walk.lift');
+    else if (outside) { place = this.t('walk.outside'); kind = 'outdoor'; fl = 0; }
     else if (room) { place = room.label; if (OUTDOOR.has(room.kind)) kind = 'outdoor'; if (room.level === 1) fl = this.unit.floor + 1; }
     else if (this.floor === -1) place = this.t('walk.parking');
     else if (this.floor === 0) place = this.t('walk.lobby');
     else place = this.t('walk.corridor');
     this._placeKind = kind;
-    const fname = this._floorName(fl);
+    let fname = this._floorName(fl);
+    if (outside) { fname = place; place = ''; }
     if (place === fname) place = '';
+    if (this.drive) place = place ? place + ' · ' + this.t('walk.car.driving') : this.t('walk.car.driving');
     const txt = place ? `${fname} · ${place}` : fname;
     if (force || txt !== this._lastPlace) {
       this._lastPlace = txt;
@@ -2226,6 +2334,25 @@ export class Walkthrough {
       const off = () => { this.pad[k] = 0; b.classList.remove('on'); this.root.classList.toggle('padon', !!(this.pad.u || this.pad.d || this.pad.l || this.pad.r)); };
       b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
       b.addEventListener('contextmenu', ev => ev.preventDefault());
+    }
+    // driving: hold-to-press pedals and a drag steering pad (no tilt needed)
+    for (const [b, key] of [[e.gas, 'gas'], [e.brake, 'brake']]) {
+      const on = ev => { ev.preventDefault(); try { b.setPointerCapture(ev.pointerId); } catch { /* */ } if (this.drive) this.drive.pad[key] = 1; b.classList.add('on'); };
+      const off = () => { if (this.drive) this.drive.pad[key] = 0; b.classList.remove('on'); };
+      b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
+      b.addEventListener('contextmenu', ev => ev.preventDefault());
+    }
+    {
+      const sp = e.steerPad; let id = null;
+      const set = ev => {
+        const r = sp.getBoundingClientRect(), k = Math.max(-1, Math.min(1, ((ev.clientX - (r.left + r.width / 2)) / (r.width / 2)) * 1.35));
+        if (this.drive) this.drive.pad.steer = -k;
+        e.knob.style.transform = `translateX(${(k * (r.width / 2 - 26)).toFixed(1)}px)`; sp.classList.toggle('on', Math.abs(k) > 0.05);
+      };
+      const end = () => { id = null; if (this.drive) this.drive.pad.steer = 0; e.knob.style.transform = ''; sp.classList.remove('on'); };
+      sp.addEventListener('pointerdown', ev => { ev.preventDefault(); id = ev.pointerId; try { sp.setPointerCapture(id); } catch { /* */ } set(ev); });
+      sp.addEventListener('pointermove', ev => { if (ev.pointerId === id) set(ev); });
+      sp.addEventListener('pointerup', end); sp.addEventListener('pointercancel', end); sp.addEventListener('lostpointercapture', end);
     }
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(this.container);
@@ -2361,6 +2488,7 @@ export class Walkthrough {
       ? 1.4 * (this._hfov * D2R) / Math.max(320, this.canvas.clientWidth || 390)
       : 0.0041 * Math.min(1.6, this._zoomS);
     const P = this.player;
+    if (this.drive) { const L = this.drive.look; L.yaw = Math.max(-2.6, Math.min(2.6, L.yaw + dx * k)); L.pitch = Math.max(-0.5, Math.min(0.4, L.pitch + dy * k * 0.6)); return; }
     P.tYaw += dx * k; P.tPitch = Math.max(-1.35, Math.min(1.35, P.tPitch + dy * k));
   }
   _onUp(ev) {
@@ -2387,9 +2515,11 @@ export class Walkthrough {
       return;
     }
     this._taps = { t: now, x, y };
-    if (this.riding) return;
+    if (this.riding || this.drive) return;
     const a = this._pickAction(x, y);
-    if (a) this._doAction(a);
+    if (a) return this._doAction(a);
+    const car = this.mode === 'walk' && this._pickCarAt(x, y);
+    if (car) this._showCarChip(car);
   }
   // Tap → action under the finger; if the exact point misses, try a small ring around it (finger-sized targets on phones).
   _pickAction(x, y) {
@@ -2415,12 +2545,397 @@ export class Walkthrough {
     if (tgt && tgt.closest && tgt.closest('input,textarea,select,[contenteditable="true"]')) return;
     const code = ev.code;
     if (down && code === 'Escape' && this.el.help.classList.contains('show')) { this._showHelp(false); return; }
-    const moveKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
+    if (down && !ev.repeat && (code === 'KeyF' || code === 'Enter')) {
+      if (this.drive) { ev.preventDefault(); return this._exitCar(); }
+      if (this._chipRec) { ev.preventDefault(); return this._enterCar(this._chipRec); }
+    }
+    if (down && !ev.repeat && code === 'KeyC' && this.drive) return this._toggleCarView();
+    const moveKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space'];
     if (!moveKeys.includes(code)) return;
+    if (code === 'Space') { if (!this.drive) return; ev.preventDefault(); }
     if (code.startsWith('Arrow')) ev.preventDefault();
     if (down) { this.keys.add(code); this.touched360 = true; this._poke(); if (this.el.help.classList.contains('show')) this._showHelp(false); }
     else this.keys.delete(code);
   }
+
+  // ======================= cars: fleet, outdoor world, driving =======================
+  // Every car in the car park, the open-air lots and along the nearby kerbs is a record in one fleet (cars.js);
+  // the nearest few are detailed models. Tap one → "Enter car" chip → drive it (first-person or chase camera).
+  _initCars() {
+    try {
+      this.fleet = createFleet({ maxDetailed: this._isTouch ? 4 : 6, detailRadius: 26 });
+      this.scene.add(this.fleet.group);
+      this.outdoor = buildOutdoorColliders();
+      this.scene.add(this.outdoor.group);
+      this._register(this.outdoor.group, 'outdoor');
+      // one headlight spot, present from the start so the light count never changes (no shader recompiles later)
+      this.headSpot = new THREE.SpotLight(0xfff1dc, 0, 42, 0.62, 0.6, 1.3); this.headSpot.name = 'walk-car-headlights';
+      this.scene.add(this.headSpot, this.headSpot.target);
+      this._patchRampTop();
+      Promise.resolve(this.env && this.env.ready).then(() => { if (!this.disposed) { this._adoptOutdoorCars(); this._patchRampTop(); } }).catch(e => console.warn('[walk] cars', e));
+    } catch (e) { console.warn('[walk] cars unavailable', e); this.fleet = null; }
+  }
+  _registerCars() { this._unregister('cars'); if (this.fleet) this._register(this.fleet.colliders, 'cars'); }
+  _adoptParking(c) {
+    if (!this.fleet || !c || !Array.isArray(c.parkedCars)) return;
+    if (c.carInstances && c.carInstances.group) c.carInstances.group.visible = false;
+    if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
+  }
+  _adoptOutdoorCars() {
+    if (!this.fleet || !this.env) return;
+    const ctx = this.env.modules && this.env.modules.context;
+    if (ctx && ctx.cars && ctx.cars.list) {
+      const idx = [], list = [];
+      ctx.cars.list.forEach((c, i) => { if (!c.deck && Math.abs(c.y) < 0.5) { idx.push(i); list.push(c); } });
+      if (this.fleet.add(list, 'lots').length) { idx.forEach(i => ctx.cars.instances.setHidden(i, true)); ctx.cars.instances.update(); }
+    }
+    // the environment's kerbside and moving traffic: luxury far model; nearby kerb cars become drivable
+    let traffic = null; const cands = [];
+    this.env.group.traverse(o => {
+      if (!o.isInstancedMesh || !o.geometry || !o.geometry.attributes.color || !o.material || !o.material.vertexColors) return;
+      if (o.frustumCulled === false && o.instanceMatrix.usage === THREE.DynamicDrawUsage) traffic = o; else cands.push(o);
+    });
+    if (!traffic) return;
+    const old = traffic.geometry, lux = carGeometryXForward('sedan');
+    const kerb = [], rc = carRng(777), m = new THREE.Matrix4(), zero = new THREE.Matrix4().makeScale(0, 0, 0), p = new THREE.Vector3();
+    for (const o of cands) if (o.geometry === old) {
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m); p.setFromMatrixPosition(m);
+        if (Math.hypot(p.x - 40, p.z + 20) > 190 || inLake(p.x, p.z)) continue;
+        const e = m.elements, yawX = Math.atan2(-e[2], e[0]);
+        kerb.push({ x: p.x, y: 0, z: p.z, yaw: yawX + Math.PI / 2, ...pickCar(rc) }); o.setMatrixAt(i, zero);
+      }
+      o.instanceMatrix.needsUpdate = true; o.geometry = lux;
+    }
+    traffic.geometry = lux;
+    this.fleet.add(kerb, 'kerb');
+    this._registerCars();
+  }
+  // environment.js draws a low parapet across the top of the car-park ramp; the ramp is open to the street now
+  _patchRampTop() {
+    if (!this.env || !this.env.group || this._rampPatched) return;
+    const R = RAMP;
+    this.env.group.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || !o.geometry || o.geometry.index || !o.geometry.attributes.color) return;
+      const p = o.geometry.attributes.position; let hit = false;
+      for (let i = 0; i < p.count; i += 3) {
+        let inside = true;
+        for (let k = 0; k < 3 && inside; k++) { const x = p.getX(i + k), y = p.getY(i + k), z = p.getZ(i + k); inside = x > R.x0 - 0.4 && x < R.x1 + 0.4 && y > -0.2 && y < 1.3 && z > R.z0 - 0.5 && z < R.z0 + 0.1; }
+        if (inside) { for (let k = 0; k < 3; k++) p.setXYZ(i + k, p.getX(i), p.getY(i), p.getZ(i)); hit = true; }
+      }
+      if (hit) { p.needsUpdate = true; this._rampPatched = true; }
+    });
+  }
+
+  // ---- where are we?
+  _inFootprint(x, z) {
+    for (const [id, b] of Object.entries(BUILDINGS)) { const [lx, lz] = worldToLocal(id, x, z); if (pointInPoly([lx, lz], FOOTPRINT)) return id; }
+    return null;
+  }
+  _isOutside(p = this.player.pos) { return p.y > -0.75 && p.y < 2.5 && !this._inFootprint(p.x, p.z); }
+  _nearestBuilding(x, z) {
+    let best = 'C3', bd = Infinity;
+    for (const [id, b] of Object.entries(BUILDINGS)) { const d = Math.hypot(x - (b.origin[0] + 42), z - (b.origin[1] - 10)); if (d < bd) { bd = d; best = id; } }
+    return best;
+  }
+  // Load the commons the player is heading into: the car park near the ramp, a ground-floor lobby near its entrance.
+  _outdoorWatch() {
+    const now = performance.now(); if (now - (this._owT || 0) < 300 || this._swapBusy || this.riding || this.busy) return;
+    this._owT = now;
+    const P = this.player.pos, R = RAMP;
+    let want = null;
+    if (P.x > R.x0 - 16 && P.x < R.x1 + 16 && P.z > R.z0 - 18 && P.z < R.z1 + 3 && P.y > -4 && P.y < 1.5) want = [this.bId || (this.unit && this.unit.building) || this._nearestBuilding(P.x, P.z), -1];
+    else if (P.y > -0.6 && P.y < 1.5 && !this.drive) {
+      for (const id of Object.keys(BUILDINGS)) for (const c of CORES) {
+        if (c.stair === 2) continue;
+        const [x, z] = localToWorldXZ(id, c.entrance[0], c.entrance[1]);
+        if (Math.hypot(P.x - x, P.z - z) < 7) want = [id, 0];
+      }
+    }
+    if (!want || (this.floor === want[1] && (want[1] === -1 || this.bId === want[0]))) return;
+    this._swapBusy = true;
+    this._setFloor(want[0], want[1]).catch(e => console.warn('[walk] floor swap', e)).finally(() => { this._swapBusy = false; });
+  }
+  // Automatic sliding doors of the courtyard lobbies
+  _autoDoors(dt) {
+    const c = this.commons; if (!c || !c.autoDoors || !c.autoDoors.length) return;
+    const P = this.player.pos;
+    for (const d of c.autoDoors) {
+      const [x, z] = localToWorldXZ(c.bId, d.x, d.z);
+      const t = Math.abs(P.y - floorY(0)) < 2 && Math.hypot(P.x - x, P.z - z) < 3.4 ? 1 : 0;
+      const prev = d.open; d.open += (t - d.open) * damp(4.5, dt);
+      if (Math.abs(prev - d.open) < 1e-4) continue;
+      for (const g of d.leaves) { g.position.x = g.userData.baseX + g.userData.dir * d.open * d.travel; g.updateMatrixWorld(true); }
+    }
+  }
+
+  // ---- picking a car
+  _pickCarAt(clientX, clientY) {
+    if (!this.fleet || this.drive || this.riding) return null;
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, this.camera);
+    const hit = this.fleet.raycast(ray.ray, 16);
+    if (!hit) return null;
+    // a wall between us and the car wins
+    const solids = this._near(this.solids, ray.ray.origin, 16).filter(o => !o.userData.carId && !o.userData.floor);
+    const wall = this._cast(solids, ray.ray.origin, ray.ray.direction, hit.distance).find(h => !h.object.userData.floor);
+    return wall && wall.distance < hit.distance - 0.3 ? null : hit.rec;
+  }
+  _showCarChip(rec, ms = 7000) {
+    this._chipRec = rec; this.el.carChip.classList.add('show');
+    clearTimeout(this._chipT); if (ms) this._chipT = setTimeout(() => { if (!this._chipNear) this._hideCarChip(); }, ms);
+  }
+  _hideCarChip() { this._chipRec = null; this._chipNear = false; this.el && this.el.carChip.classList.remove('show'); }
+  _carChipWatch() {
+    const now = performance.now(); if (now - (this._ccT || 0) < 250) return; this._ccT = now;
+    if (!this.fleet || this.drive || this.mode !== 'walk') return;
+    const n = this.fleet.nearest(this.player.pos, 1.5);
+    if (n) { this._chipNear = true; if (this._chipRec !== n.rec) this._showCarChip(n.rec, 0); }
+    else if (this._chipNear) { this._chipNear = false; this._hideCarChip(); }
+  }
+
+  // ---- entering / leaving
+  async _enterCar(rec = this._chipRec) {
+    if (!rec || !this.fleet || this.drive || this.riding || this.busy) return;
+    this.busy = true; this._hideCarChip();
+    try {
+      await this._fade(true);
+      this.fleet.setFocus(rec); this.fleet.update(this.camera, true);
+      const car = this.fleet.carOf(rec);
+      if (!car) return;
+      const ctl = new CarController(rec);
+      this._fovWalk = this.camera.fov;
+      this.drive = { rec, car, ctl, view: lsGet('vrc.walk.carView') === 'chase' ? 'chase' : 'fp', look: { yaw: 0, pitch: 0 }, pad: { gas: 0, brake: 0, steer: 0 }, cam: null };
+      this.glide = null; this.player.vel.set(0, 0, 0); this.keys.clear();
+      car.setInside(this.drive.view === 'fp');
+      this.root.classList.add('driving');
+      this._renderDriveHud(true);
+      this._engineStart(rec.kind);
+      this._driveUpdate(0);
+    } finally { this.busy = false; await this._fade(false); }
+  }
+  async _exitCar() {
+    const D = this.drive; if (!D || this.busy) return;
+    this.busy = true;
+    try {
+      await this._fade(true);
+      const { rec, car, ctl } = D, S = ctl.S;
+      Object.assign(rec, { x: ctl.x, y: ctl.y, z: ctl.z, yaw: ctl.yaw, pitch: ctl.pitch, roll: 0 });
+      this._engineStop();
+      car.setInside(false); car.setLights(false); this.headSpot.intensity = 0;
+      this.fleet.setFocus(null); this.fleet.moved(rec);
+      for (const e of this.solids) if (e.o === rec.collider) e.box = null;
+      this.drive = null;
+      this.root.classList.remove('driving');
+      this._applyFov();
+      // stand next to the driver's door (left, +x), else the other side, else behind / in front
+      const c = Math.cos(ctl.yaw), s = Math.sin(ctl.yaw), toW = (lx, lz) => [ctl.x + lx * c + lz * s, ctl.z - lx * s + lz * c];
+      const spots = [[S.W / 2 + 0.55, S.seat], [-(S.W / 2 + 0.55), S.seat], [0, S.zR - 0.8], [0, S.zF + 0.8], [S.W / 2 + 1.2, S.seat]];
+      let pos = null;
+      for (const [lx, lz] of spots) {
+        const [x, z] = toW(lx, lz);
+        const fy = this._floorAt(x, ctl.y + 0.3, z, this._near(this.floors, new THREE.Vector3(x, ctl.y, z), 2));
+        if (fy == null) continue;
+        if (this._isFree(x, fy, z)) { pos = new THREE.Vector3(x, fy, z); break; }
+      }
+      if (!pos) { const [x, z] = toW(S.W / 2 + 0.55, S.seat); const [fx, fz] = this._freeSpot(x, ctl.y, z, 3); pos = new THREE.Vector3(fx, ctl.y, fz); }
+      this._place(pos, ctl.yaw + Math.PI - 0.5);
+      this.player.eye = EYE;
+      this._lastPlace = null; this._updateHud(true);
+    } finally { this.busy = false; await this._fade(false); }
+  }
+  _toggleCarView() {
+    const D = this.drive; if (!D) return;
+    D.view = D.view === 'fp' ? 'chase' : 'fp'; D.cam = null; D.look.yaw = D.look.pitch = 0;
+    D.car.setInside(D.view === 'fp'); lsSet('vrc.walk.carView', D.view);
+    this._renderDriveHud(true);
+  }
+
+  // ---- the physics world for CarController
+  _groundAt(x, y, z) {
+    const o = this._v1.set(x, y + 0.9, z);
+    const hits = this._cast(this._near(this.floors, o, 3), o, this._v2.set(0, -1, 0), 2.0);
+    for (const h of hits) if (h.point.y <= y + 0.62) return h.point.y;
+    return null;
+  }
+  _carBlocked(ctl, x, z, yaw, y) {
+    const S = ctl.S, hw = S.W / 2 + 0.02, zf = S.zF + 0.04, zr = S.zR - 0.04, zc = (zf + zr) / 2;
+    const c = Math.cos(yaw), s = Math.sin(yaw), W = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+    const [cx, cz] = W(0, zc);
+    const center = this._v1.set(cx, y + 0.6, cz);
+    const own = ctl.rec.collider;
+    const solids = this._near(this.solids, center, S.L / 2 + 1.2).filter(o => o !== own && !o.userData.floor);
+    if (!solids.length) return false;
+    const pts = [], fwd = ctl.v >= 0;
+    for (const k of [-1, -0.5, 0, 0.5, 1]) pts.push([k * hw, fwd ? zf : zr]);
+    for (const k of [0.2, 0.5, 0.8]) for (const sx of [-1, 1]) pts.push([sx * hw, fwd ? lerpN(zc, zf, k) : lerpN(zc, zr, k)]);
+    for (const sx of [-1, 1]) pts.push([sx * hw, fwd ? zr + 0.3 : zf - 0.3]);   // the swinging far end while turning
+    const o = new THREE.Vector3(), d = new THREE.Vector3();
+    for (const h of [0.42, 0.95]) {
+      o.set(cx, y + h, cz);
+      for (const [lx, lz] of pts) {
+        const [px, pz] = W(lx, lz); d.set(px - cx, 0, pz - cz); const L = d.length(); if (L < 1e-3) continue; d.divideScalar(L);
+        const hit = this._cast(solids, o, d, L).find(q => !q.object.userData.floor);
+        if (hit) return true;
+      }
+    }
+    return false;
+  }
+  _driveWorld() {
+    if (this._dw) return this._dw;
+    return (this._dw = {
+      ground: (x, y, z) => this._groundAt(x, y, z),
+      blocked: (ctl, x, z, yaw, y) => this._carBlocked(ctl, x, z, yaw, y),
+      limit: (x, y) => (y < -0.8 ? 20 : 50) / 3.6,
+      drivable: (x, z) => !inLake(x, z),
+    });
+  }
+
+  // ---- per-frame driving
+  _driveUpdate(dt) {
+    const D = this.drive, { ctl, car, rec } = D, k = this.keys, pad = D.pad;
+    const gas = Math.max(k.has('KeyW') || k.has('ArrowUp') ? 1 : 0, pad.gas);
+    const brake = Math.max(k.has('KeyS') || k.has('ArrowDown') || k.has('Space') ? 1 : 0, pad.brake);
+    let steer = (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) - (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0);
+    if (Math.abs(pad.steer) > Math.abs(steer)) steer = pad.steer;
+    const inp = { gas, brake, steer }, world = this._driveWorld();
+    const n = Math.min(6, Math.max(1, Math.ceil(dt / (1 / 60))));
+    const hit0 = ctl.hit; ctl.hit = 0;
+    for (let i = 0; i < n; i++) ctl.step(dt / n, inp, world);
+    if (ctl.hit > 1.2 && !hit0) this._thud(Math.min(1, ctl.hit / 6));
+    // car pose
+    Object.assign(rec, { x: ctl.x, y: ctl.y, z: ctl.z, yaw: ctl.yaw, pitch: ctl.pitch, roll: ctl.roll });
+    const g = car.group;
+    g.position.set(ctl.x, ctl.y + ctl.bump * Math.sin(performance.now() / 30), ctl.z);
+    g.rotation.set(-ctl.pitch, ctl.yaw, ctl.roll, 'YXZ');
+    g.updateMatrixWorld(true);
+    car.setWheels(ctl.spin, ctl.steer);
+    this.player.pos.set(ctl.x, ctl.y, ctl.z);
+    // lights: on at dusk/night and underground; brake lights while braking or holding the brake at a standstill
+    const under = ctl.y < -0.8, on = this.envMode !== 'day' || under;
+    car.setLights(on, ctl.braking || (brake > 0 && Math.abs(ctl.v) < 0.3 && !ctl.reversing), ctl.reversing);
+    const fx = Math.sin(ctl.yaw), fz = Math.cos(ctl.yaw);
+    const S = ctl.S;
+    this.headSpot.intensity = on ? (under ? 55 : 90) : 0;
+    this.headSpot.position.set(ctl.x + fx * (S.zF - 0.3), ctl.y + 0.72, ctl.z + fz * (S.zF - 0.3));
+    this.headSpot.target.position.set(ctl.x + fx * (S.zF + 14), ctl.y - 0.6, ctl.z + fz * (S.zF + 14));
+    this.headSpot.target.updateMatrixWorld(true);
+    // camera
+    const cam = this.camera, L = D.look;
+    if (!this._dragging) { L.yaw *= 1 - damp(2.2, dt); L.pitch *= 1 - damp(2.2, dt); }
+    const vf = D.view === 'fp' ? Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 92 : 70) : Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 100 : 72);
+    if (Math.abs(cam.fov - vf) > 0.01) { cam.fov = vf; cam.updateProjectionMatrix(); }
+    if (D.view === 'fp') {
+      const e = car.group.localToWorld(car.eye.clone());
+      cam.position.copy(e);
+      cam.rotation.set(ctl.pitch * 0.9 - 0.05 + L.pitch, ctl.yaw + Math.PI + L.yaw, -ctl.roll * 0.6, 'YXZ');
+    } else {
+      const dist = under ? 5.4 : 6.6, h = under ? 1.75 : 2.5;
+      const a = ctl.yaw + L.yaw;
+      const want = new THREE.Vector3(ctl.x - Math.sin(a) * dist, ctl.y + h, ctl.z - Math.cos(a) * dist);
+      // keep the camera on our side of walls/columns and under the car-park ceiling
+      const from = new THREE.Vector3(ctl.x, ctl.y + 1.3, ctl.z), dir = want.clone().sub(from), len = dir.length(); dir.divideScalar(len);
+      const sol = this._near(this.solids, from, len + 1).filter(o => o !== rec.collider && !o.userData.carId);
+      const hit = this._cast(sol, from, dir, len).find(q => !q.object.userData.floor);
+      if (hit) want.copy(from).addScaledVector(dir, Math.max(0.6, hit.distance - 0.35));
+      if (!D.cam) D.cam = want.clone(); else D.cam.lerp(want, damp(dt ? 7 : 1000, dt || 1));
+      cam.position.copy(D.cam);
+      cam.lookAt(ctl.x + fx * 1.6, ctl.y + 1.0 + L.pitch * 3, ctl.z + fz * 1.6);
+    }
+    this._syncEnvMap();
+    this._engineUpdate(ctl, gas, dt);
+    if (this.fleet) this.fleet.update(cam);
+    this._renderDriveHud(false);
+  }
+  _renderDriveHud(force) {
+    const D = this.drive, e = this.el; if (!D || !e) return;
+    const kmh = Math.round(Math.abs(D.ctl.v) * 3.6), lim = D.ctl.y < -0.8 ? 20 : 50;
+    if (force || kmh !== this._lastKmh) { this._lastKmh = kmh; e.spd.textContent = String(kmh); e.gear.textContent = D.ctl.v < -0.1 || D.ctl.reversing ? 'R' : kmh ? 'D' : 'P'; const f = Math.min(1, Math.abs(D.ctl.v) * 3.6 / 60); e.arc.style.strokeDasharray = `${(141.4 * f).toFixed(1)} 200`; }
+    if (force || lim !== this._lastLim) { this._lastLim = lim; e.lim.textContent = String(lim); }
+    e.spdo.classList.toggle('over', kmh > lim + 1);
+    if (force) {
+      e.carView.querySelector('.lbl').textContent = this.t(D.view === 'fp' ? 'walk.car.chase' : 'walk.car.cockpit');
+      e.carExit.querySelector('.lbl').textContent = this.t('walk.car.exit');
+    }
+  }
+
+  // ---- sound: engine synth (pitch follows speed), road noise, bump thud — only after a user gesture
+  _engineStart(kind) {
+    const ac = this._audio(); if (!ac) return;
+    try {
+      const t = ac.currentTime, ev = kind === 'ev';
+      const out = ac.createGain(); out.gain.value = 0; out.connect(ac.destination);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = ev ? 2400 : 520; lp.Q.value = 0.8; lp.connect(out);
+      const o1 = ac.createOscillator(), o2 = ac.createOscillator(), g1 = ac.createGain(), g2 = ac.createGain();
+      o1.type = ev ? 'sine' : 'sawtooth'; o2.type = ev ? 'triangle' : 'square';
+      g1.gain.value = ev ? 0.35 : 0.55; g2.gain.value = ev ? 0.12 : 0.28;
+      o1.connect(g1).connect(lp); o2.connect(g2).connect(lp);
+      const len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+      let b = 0; for (let i = 0; i < len; i++) { b = 0.97 * b + 0.03 * (Math.random() * 2 - 1); d[i] = b * 3; }
+      const ns = ac.createBufferSource(); ns.buffer = buf; ns.loop = true;
+      const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 380; nf.Q.value = 0.6;
+      const ng = ac.createGain(); ng.gain.value = 0; ns.connect(nf).connect(ng).connect(ac.destination);
+      o1.start(t); o2.start(t); ns.start(t);
+      out.gain.setTargetAtTime(ev ? 0.03 : 0.06, t, 0.25);
+      if (!ev) { o1.frequency.setValueAtTime(18, t); o1.frequency.setTargetAtTime(38, t + 0.05, 0.12); }   // starter → idle
+      this._eng = { ac, out, lp, o1, o2, ng, ns, ev, rpm: 750 };
+    } catch (e) { console.warn('[walk] engine sound', e); this._eng = null; }
+  }
+  _engineUpdate(ctl, gas, dt) {
+    const E = this._eng; if (!E) return;
+    const t = E.ac.currentTime, v = Math.abs(ctl.v) * 3.6;
+    if (E.ev) {
+      const f = 140 + v * 22;
+      E.o1.frequency.setTargetAtTime(f, t, 0.06); E.o2.frequency.setTargetAtTime(f * 2.01, t, 0.06);
+      E.out.gain.setTargetAtTime(0.012 + Math.min(0.03, v * 0.0008) + gas * 0.012, t, 0.1);
+    } else {
+      const gears = [0, 18, 34, 52, 75], gi = Math.max(0, gears.findIndex((g, i) => v < (gears[i + 1] ?? 999)));
+      const lo = gears[gi], hi = gears[gi + 1] ?? 120, frac = (v - lo) / (hi - lo);
+      const target = 750 + frac * 2600 + gas * 500;
+      E.rpm += (target - E.rpm) * damp(5, dt || 0.016);
+      const f = E.rpm / 60 * 2;   // V8: 4 firing pulses per rev, heard an octave down
+      E.o1.frequency.setTargetAtTime(f, t, 0.05); E.o2.frequency.setTargetAtTime(f / 2, t, 0.05);
+      E.lp.frequency.setTargetAtTime(260 + E.rpm * 0.22 + gas * 500, t, 0.08);
+      E.out.gain.setTargetAtTime(0.045 + gas * 0.035, t, 0.1);
+    }
+    E.ng.gain.setTargetAtTime(Math.min(0.06, v * 0.0012), t, 0.2);
+  }
+  _engineStop() {
+    const E = this._eng; if (!E) return; this._eng = null;
+    try { const t = E.ac.currentTime; E.out.gain.setTargetAtTime(0, t, 0.12); E.ng.gain.setTargetAtTime(0, t, 0.12); for (const n of [E.o1, E.o2, E.ns]) n.stop(t + 0.8); } catch { /* optional */ }
+  }
+  _thud(k = 1) {
+    const ac = this._audio(); if (!ac) return;
+    try {
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+      g.gain.setValueAtTime(0.25 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.3);
+    } catch { /* optional */ }
+    if (navigator.vibrate) try { navigator.vibrate(30); } catch { /* optional */ }
+  }
+
+  // Underground (away from the ramp) nothing above grade is visible: skip drawing the exterior and the city.
+  _cullWorld() {
+    const now = performance.now(); if (now - (this._cwT || 0) < 250) return; this._cwT = now;
+    const c = this.camera.position, R = RAMP;
+    const nearRamp = c.x > R.x0 - 22 && c.x < R.x1 + 22 && c.z > R.z0 - 20 && c.z < R.z1 + 26;
+    const under = c.y < -0.6 && !nearRamp;
+    if (under === !!this._culled) return;
+    this._culled = under;
+    if (under) {
+      this._cullList = [];
+      const skip = o => { let l = false; o.traverse(q => { if (q.isLight) l = true; }); return l; };
+      for (const root of [this.env && this.env.group, this.complex && this.complex.group]) if (root) for (const o of root.children) if (o.visible && !o.isLight && !skip(o)) { o.visible = false; this._cullList.push(o); }
+      this._cullMode = this.envMode;
+    } else {
+      for (const o of this._cullList || []) o.visible = true;
+      this._cullList = [];
+      if (this._cullMode && this._cullMode !== this.envMode && this.env) try { this.env.setMode(this.envMode); } catch { /* */ }
+    }
+  }
+
   _onHudClick(ev) {
     if (this._phone && ev.target.closest('.vw-map')) return this._setMapOpen(false);
     const b = ev.target.closest('button'); if (!b) return;
@@ -2431,7 +2946,10 @@ export class Walkthrough {
     if (k === 'reserve') return this.opts.onReserve && this.opts.onReserve(this.unit && this.unit.id);
     if (k === 'ureserve') { const id = this._cardUnit ? this._cardUnit.id : this.unit && this.unit.id; this._hideUnitCard(); return this.opts.onReserve && this.opts.onReserve(id); }
     if (k === 'floors') { this._liftGridOpen = !this._liftGridOpen; return this._renderLiftPanel(); }
-    if (k === 'exit') return this.opts.onExit && this.opts.onExit();
+    if (k === 'carenter') return this._enterCar(this._chipRec);
+    if (k === 'carexit') return this._exitCar();
+    if (k === 'carview') return this._toggleCarView();
+    if (k === 'exit') { if (this.drive) this._engineStop(); return this.opts.onExit && this.opts.onExit(); }
     if (k === 'help') { this._setPopover(false); return this._showHelp(true); }
     if (k === 'photo') return this.takePhoto();
     if (k === 'helpok') return this._showHelp(false);

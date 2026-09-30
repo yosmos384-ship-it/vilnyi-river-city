@@ -797,6 +797,20 @@ export function getMaterials(styleId = 'milano') {
   m.bottle = phys({ color: '#1f3a24', roughness: 0.1, transparent: true, opacity: 0.85, clearcoat: 1 });
   m.oil = phys({ color: '#b39a2a', roughness: 0.1, transparent: true, opacity: 0.8 });
 
+  // ---------- cabinet interiors & their contents (openable joinery). Contents are vertex-coloured so a whole
+  // wardrobe of garments / a fridge of groceries bakes into a handful of draw calls.
+  m.cabinetIn = styleId === 'milano' ? woodM('#4a3326', 17, 0.6, 1.1, { contrast: 0.22, vertical: true })
+    : styleId === 'nordic' ? std({ color: '#efebe4', roughnessMap: smudge(0.9), roughness: 0.75, envMapIntensity: 0.5 })
+    : std({ color: '#e9dfcd', map: linen, roughness: 0.85, envMapIntensity: 0.5 });
+  m.clothes = std({ vertexColors: true, map: fab, normalMap: nWeave, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.95, envMapIntensity: 0.35 });
+  m.goods = phys({ vertexColors: true, roughness: 0.42, clearcoat: 0.25, clearcoatRoughness: 0.4, envMapIntensity: 0.6 });
+  m.food = phys({ vertexColors: true, roughness: 0.38, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.55 });
+  m.fridgeIn = std({ color: '#f3f5f6', roughness: 0.3, emissive: new THREE.Color('#dfeaf5'), emissiveIntensity: 0.07, envMapIntensity: 0.7 });
+  m.coldLed = std({ color: '#ffffff', emissive: new THREE.Color('#eef5ff'), emissiveIntensity: 3.2, roughness: 1 });
+  m.enamel = std({ color: '#26282b', roughness: 0.35, metalness: 0.1, envMapIntensity: 0.8 });
+  m.drum = std({ color: '#c3c6c8', metalness: 0.9, roughness: 0.28, side: THREE.DoubleSide, envMapIntensity: 1.0 });
+  m.hanger = styleId === 'nordic' ? m.woodLight : styleId === 'milano' ? m.woodDark : m.woodLight;
+
   // ---------- plants
   m.leaf = std({ map: tex(leafTex(styleId === 'riviera' ? '#6a7a48' : '#35602d')), roughness: 0.42, side: THREE.DoubleSide, envMapIntensity: 0.7 });
   m.leaf2 = std({ map: tex(leafTex(styleId === 'riviera' ? '#8a9868' : '#4f7a35')), roughness: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.6 });
@@ -840,6 +854,7 @@ export function getMaterials(styleId = 'milano') {
   m.glowFaint = dec({ color: GL, opacity: 0.18 * gk, blending: THREE.AdditiveBlending, fog: false });
   m.daylight = dec({ color: new THREE.Color('#fff3e2'), opacity: 0.15 * gk, blending: THREE.AdditiveBlending, fog: false });
   m.lampGlow = dec({ color: new THREE.Color(S.lightColor).lerp(new THREE.Color('#ffb870'), 0.25), opacity: 0.62 * gk, blending: THREE.AdditiveBlending, fog: false });
+  m.coldGlow = dec({ color: new THREE.Color('#dcecff'), opacity: 0.28, blending: THREE.AdditiveBlending, fog: false });   // fridge light
   // Camera-facing halos around bulbs / shades (one billboard mesh per apartment, built in apartment.js).
   // Each quad = 4 verts sharing the centre `position`; `corner` (±1,±1) and `bsize` expand it in view space.
   m.bloom = new THREE.ShaderMaterial({
@@ -855,8 +870,8 @@ export function getMaterials(styleId = 'milano') {
   // Export hints (glTF): the halo billboard is view-space shader magic → skip it; the decals are plain unlit
   // MeshBasicMaterial quads (KHR_materials_unlit) — additive ones are marked so an exporter/viewer may drop or re-blend them.
   m.bloom.userData.noExport = true;
-  for (const k of ['glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.additive = true;
-  for (const k of ['ao', 'aoSoft', 'shade', 'glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.decal = true;
+  for (const k of ['glow', 'glowFaint', 'daylight', 'lampGlow', 'coldGlow']) m[k].userData.additive = true;
+  for (const k of ['ao', 'aoSoft', 'shade', 'glow', 'glowFaint', 'daylight', 'lampGlow', 'coldGlow']) m[k].userData.decal = true;
 
   // The interior IBL (RoomEnvironment, set by the host) is a bright neutral-grey box: at full strength its diffuse
   // term floods every surface with the same grey-white fill — the "washed-out" look. Keep it mostly for reflections:

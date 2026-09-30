@@ -32,7 +32,29 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
   const finderCam = { az: -2.5, swing: 0 };
   let camGoalPos = null, camGoalTgt = null, curTgt = null;
 
+  // The hero 3D is one slide of the hero slideshow (js/hero-slides.js). It only counts as "on screen" while that slide
+  // is active, and the whole engine is only built once it is needed: that slide is reached, or the finder comes near.
+  let heroActive = false, needResolve = null;
+  const needed = new Promise(r => { needResolve = r; });
+  const onHeroEvt = e => {
+    heroActive = !!e.detail?.active;
+    if (heroActive) needResolve();
+    if (ready) { if (!heroActive) state.visible.set(heroHost, 0); else ioSync(); pickHost(); }
+  };
+  document.addEventListener('vrc:hero3d', onHeroEvt);
+  const nearIo = finderHost ? new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { needResolve(); nearIo.disconnect(); } }, { rootMargin: '900px 0px' }) : null;
+  nearIo?.observe(finderHost);
+  function ioSync() {
+    if (!heroHost) return;
+    const r = heroHost.getBoundingClientRect();
+    const vis = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+    state.visible.set(heroHost, r.height ? vis / r.height : 0);
+  }
+  const announce = st => { window.__vrcHero3D = st; document.dispatchEvent(new CustomEvent('vrc:hero3d-state', { detail: st })); };
+  announce('created');
+
   async function init() {
+    await needed;
     try {
       if (!window.WebGLRenderingContext) throw new Error('no webgl');
       THREE = await import('three');
@@ -70,13 +92,14 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
       placeHeroCamera(0, true);
       bindPointer(renderer.domElement);
       ready = true;
+      if (heroActive) ioSync();
       pickHost();
       renderOnce();
-      onState('ready');
+      onState('ready'); announce('ready');
       return true;
     } catch (e) {
       console.warn('[hero3d] 3D unavailable, using static imagery:', e?.message || e);
-      failed = true; onState('failed'); disposeGL();
+      failed = true; onState('failed'); announce('failed'); disposeGL();
       return false;
     }
   }
@@ -136,7 +159,7 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
 
   // ---------- host management (which container owns the canvas) ----------
   const io = new IntersectionObserver(entries => {
-    for (const e of entries) state.visible.set(e.target, e.isIntersecting ? e.intersectionRatio : 0);
+    for (const e of entries) state.visible.set(e.target, e.isIntersecting && (e.target !== heroHost || heroActive) ? e.intersectionRatio : 0);
     pickHost();
   }, { threshold: [0, 0.05, 0.25, 0.5, 0.75, 1] });
   if (heroHost) io.observe(heroHost);
@@ -178,7 +201,8 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
     const rtl = document.documentElement.dir === 'rtl';
     let ox = 0, oy = 0;
     if (state.where === 'hero') {
-      if (w / h > 1.15) ox = (rtl ? 1 : -1) * w * 0.17; else oy = -h * 0.14;
+      // v1.6: the hero text sits below the image, so the complex is centred, nudged up clear of the slide controls
+      oy = w / h > 1.15 ? h * 0.05 : h * 0.13; void rtl;
     }
     const key = [w, h, ox, oy].join();
     if (key === offKey) return; offKey = key;
@@ -258,6 +282,6 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
     highlightUnits(ids) { try { complex?.setUnitHighlight?.(ids && ids.length ? ids : null); } catch (e) {} kick(); },
     pause() { state.paused = true; cancelAnimationFrame(raf); raf = 0; },
     resume() { state.paused = false; kick(); },
-    dispose() { this.pause(); io.disconnect(); ro.disconnect(); disposeGL(); ready = false; },
+    dispose() { this.pause(); io.disconnect(); ro.disconnect(); nearIo?.disconnect(); document.removeEventListener('vrc:hero3d', onHeroEvt); disposeGL(); ready = false; },
   };
 }
