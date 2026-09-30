@@ -1245,9 +1245,9 @@ function buildLights(ctx) {
     if (lights.length >= MAX) break;
     // hung at ~1.8 m (not just under the slab): a point light 40 cm below the ceiling burns a hot, hue-shifted
     // spot onto it; lower and a little dimmer, the ceiling reads as the soft even wash of real downlights
-    const h = s.h ?? 1.8;
+    const h = s.h ?? 2.0;
     if (lights.some(l => Math.abs(l.position.y - (s.y + h)) < 1 && Math.hypot(l.position.x - s.u, l.position.z - s.v) < 1.6)) continue;
-    const l = new THREE.PointLight(s.col ? new THREE.Color(s.col) : col, (s.h == null ? 4.2 : 5.5) * s.k * (ctx.opts.lightScale ?? 1), s.dist ?? 7.5, 1.6);
+    const l = new THREE.PointLight(s.col ? new THREE.Color(s.col) : col, (s.h == null ? 5.2 : 6.0) * s.k * (ctx.opts.lightScale ?? 1), s.dist ?? 7.5, 1.6);
     l.position.set(s.u, s.y + h, s.v);
     l.name = 'apt-light';
     lights.push(l);
@@ -1292,7 +1292,9 @@ function build(unit, styleId, opts = {}) {
   ctx.tmpGeos.forEach(g => g.dispose());
   cg.updateMatrixWorld(true);
   root.add(cg);
-  const lights = opts.cutaway ? [] : buildLights(ctx);
+  // cutaway (dollhouse) models are viewed from outside the rooms: a soft warm sky/ground fill replaces the room lights
+  // (the materials take only a fraction of the IBL, so without it the walls read almost black)
+  const lights = opts.cutaway ? [Object.assign(new THREE.HemisphereLight(0xfff1e0, 0x9a8a74, 1.5), { name: 'apt-fill' })] : buildLights(ctx);
   lights.forEach(l => root.add(l));
   // rooms for HUD / minimap
   const rooms = [];

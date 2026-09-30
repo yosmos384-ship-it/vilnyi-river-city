@@ -466,20 +466,48 @@ function limewashTex(seed = 8, size = 512) {
   return pixels(size, (u, v) => { const t = f(u, v) * 0.75 + g2(u, v) * 0.25; const g = (0.84 + t * 0.2) * 240; return [g, g, g]; });
 }
 function woodFurnitureTex(base, seed, size = 512, o) { return woodTile(base, seed, size, o); }
+// Vienna straw cane (8 cells per tile): paired vertical + horizontal strands, two diagonal strands, octagonal
+// see-through holes (dark = the shadowed backing). `.height_` feeds a normal map so the strands catch the light.
 function caneTex(base, size = 256) {
-  const c = canvas(size), ctx = c.getContext('2d'); const col = hex(base);
-  ctx.fillStyle = rgbStr(col, 0.72); ctx.fillRect(0, 0, size, size);
-  const s = size / 8;
-  ctx.lineWidth = s * 0.28; ctx.lineCap = 'round';
-  for (let i = -8; i < 16; i++) {
-    ctx.strokeStyle = rgbStr(col, 1.05); ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s + size, size); ctx.stroke();
-    ctx.strokeStyle = rgbStr(col, 0.95); ctx.beginPath(); ctx.moveTo(i * s + size, 0); ctx.lineTo(i * s, size); ctx.stroke();
+  const c = canvas(size), ctx = c.getContext('2d'), col = hex(base), s = size / 8;
+  const h = canvas(size), hx = h.getContext('2d');
+  ctx.fillStyle = rgbStr(col, 0.34); ctx.fillRect(0, 0, size, size);
+  hx.fillStyle = '#000'; hx.fillRect(0, 0, size, size);
+  const strand = (x0, y0, x1, y1, w, k) => {
+    for (const [cx, cz, lw, a] of [[ctx, rgbStr(col, k * 0.8), w, 1], [ctx, rgbStr(col, k * 1.08), w * 0.45, 1], [hx, '#c8c8c8', w, 1], [hx, '#ffffff', w * 0.4, 1]]) {
+      cx.strokeStyle = cz; cx.lineWidth = lw; cx.lineCap = 'butt'; cx.globalAlpha = a;
+      for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) { cx.beginPath(); cx.moveTo(x0 + ox, y0 + oy); cx.lineTo(x1 + ox, y1 + oy); cx.stroke(); }
+    }
+  };
+  const r = rng(91);
+  for (let i = 0; i < 8; i++) {                         // paired verticals / horizontals (cell edges)
+    const t = i * s;
+    strand(t - s * 0.13, 0, t - s * 0.13, size, s * 0.16, 0.95 + r() * 0.08); strand(t + s * 0.13, 0, t + s * 0.13, size, s * 0.16, 0.95 + r() * 0.08);
   }
-  ctx.strokeStyle = rgbStr(col, 1.12); ctx.lineWidth = s * 0.22;
-  for (let i = 0; i <= 8; i++) { ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s, size); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, i * s); ctx.lineTo(size, i * s); ctx.stroke(); }
-  // holes
-  ctx.fillStyle = 'rgba(70,52,34,0.4)';
-  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { ctx.beginPath(); ctx.arc(i * s + s / 2, j * s + s / 2, s * 0.2, 0, 6.28); ctx.fill(); }
+  for (let i = 0; i < 8; i++) { const t = i * s; strand(0, t - s * 0.13, size, t - s * 0.13, s * 0.16, 1.02); strand(0, t + s * 0.13, size, t + s * 0.13, s * 0.16, 1.02); }
+  for (let i = -8; i < 16; i++) {                       // diagonals through the cell corners
+    strand(i * s, 0, i * s + size, size, s * 0.14, 1.1); strand(i * s + size, 0, i * s, size, s * 0.14, 1.06);
+  }
+  ctx.globalAlpha = 1; hx.globalAlpha = 1;
+  c.height_ = h;
+  return c;
+}
+// Woven rattan lantern (sphere UVs: u around, v top→bottom): tight horizontal wraps over vertical ribs, small gaps
+// where the lamp shines through. Returns colour; `.glow_` = emissive mask (gaps bright).
+function rattanWeave(base, size = 512) {
+  const col = hex(base), n = lattice(64, 17), rows = 72, ribs = 96;
+  const G = new Uint8Array(size * size);
+  const c = pixels(size, (u, v, x, y) => {
+    const fy = (v * rows) % 1, fx = (u * ribs) % 1, row = Math.floor(v * rows), rib = Math.floor(u * ribs);
+    const over = (row + rib) % 2 === 0;
+    const wrap = Math.sin(fy * Math.PI), ribP = Math.sin(fx * Math.PI);
+    let k = over ? 0.72 + 0.4 * wrap : 0.62 + 0.35 * ribP * (0.5 + 0.5 * wrap);
+    const gap = Math.max(0, 1 - Math.abs(fy - 0.5) * 12) * Math.max(0, 1 - Math.abs(fx - 0.5) * 10) * (over ? 0 : 1);
+    k *= 0.9 + (n(u, v) - 0.5) * 0.3;
+    G[y * size + x] = Math.min(255, (Math.pow(1 - wrap, 3) * 0.35 + gap) * 255);
+    return [col[0] * k, col[1] * k, col[2] * k];
+  });
+  c.glow_ = pixels(size, (u, v, x, y) => { const g = G[y * size + x]; return [g, g * 0.82, g * 0.6]; });
   return c;
 }
 // Rugs (whole rug in UV 0..1): milano = hand-knotted, faded abstract "marbled" wool with a border; nordic = cream
@@ -615,7 +643,7 @@ export function getMaterials(styleId = 'milano') {
     const sb = marbleTex(512, '#ebe6de', '#9a9084', { seed: 33, vein2: '#cfc7bb', strength: 0.7, network: 0.4, width: 1.4, gold: 0.5, rough: 1.2 });
     m.stone = phys({ map: tex(sb, { repeat: 1 / 1.2 }), roughnessMap: tex(sb.rough_, { srgb: false, repeat: 1 / 1.2 }), roughness: 1, clearcoat: 0.5, envMapIntensity: 0.9 });
   } else if (styleId === 'nordic') {
-    const wp = widePlanks(hex('#d3b88f'), 12), R = 1 / 2.4;
+    const wp = widePlanks(hex('#cdae83'), 12), R = 1 / 2.4;
     m.floor = std({ map: tex(wp.map, { repeat: R }), normalMap: tex(wp.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tex(wp.rough, { srgb: false, repeat: R }), roughness: 0.64, envMapIntensity: 0.7 });
     // Calacatta-style: warm white, soft grey veins with a wide haze and a faint gold cast
     const mb = marbleTex(1024, '#f2f0ec', '#8f887e', { seed: 22, vein2: '#d2ccc3', strength: 0.75, network: 0.45, width: 1.5, haze: 0.55, cloud: 0.7, gold: 0.35 });
@@ -628,20 +656,20 @@ export function getMaterials(styleId = 'milano') {
     m.counter = phys({ map: tex(cb, { repeat: 1 / 1.2 }), roughnessMap: tex(cb.rough_, { srgb: false, repeat: 1 / 1.2 }), roughness: 1, clearcoat: 0.4 });
     m.stone = m.counter;
   } else {
-    const tr = stoneTex(1024, '#dccbac', '#c4aa82', { bands: 14, pores: 0.06, seed: 7, contrast: 0.75 });
-    const tt = tileTex({ size: 1024, tilesX: 2, tilesY: 2, colors: ['#d9c7a6', '#d3c09f', '#ddccad'], grout: '#c2ad8a', groutW: 3, surface: tr, glaze: 0.03 });
+    const tr = stoneTex(1024, '#dcc6a0', '#b8966a', { bands: 14, pores: 0.08, seed: 7, contrast: 0.95 });
+    const tt = tileTex({ size: 1024, tilesX: 2, tilesY: 2, colors: ['#d2b994', '#cbb08a', '#d8c19e', '#c9ad86'], grout: '#b59c78', groutW: 3, surface: tr, glaze: 0.06 });
     // floor height = tile grid + the travertine pores
     const th = canvas(1024), thc = th.getContext('2d'); thc.drawImage(tt.bump, 0, 0); thc.globalCompositeOperation = 'multiply'; thc.drawImage(tr.height_, 0, 0);
-    m.floor = std({ map: tex(tt.map, { repeat: 1 / 1.6 }), normalMap: nrm(th, 2.2, 1 / 1.6), roughness: 0.5, envMapIntensity: 0.7 });
+    m.floor = std({ map: tex(tt.map, { repeat: 1 / 1.6 }), normalMap: nrm(th, 2.2, 1 / 1.6), roughnessMap: smudge(0.6), roughness: 0.62 / 0.59, envMapIntensity: 0.42 });
     const trN = nrm(tr.height_, 1.6, 1 / 1.4);
-    m.marble = std({ map: tex(tr, { repeat: 1 / 1.4 }), normalMap: trN, roughness: 0.42, envMapIntensity: 0.8 });
+    m.marble = std({ map: tex(tr, { repeat: 1 / 1.4 }), normalMap: trN, roughnessMap: smudge(0.8), roughness: 0.45 / 0.59, envMapIntensity: 0.6 });
     const zel = tileTex({ size: 512, tilesX: 8, tilesY: 8, colors: ['#ebe1cf', '#e7dcc8', '#eee5d5', '#e4d8c2', '#e9dfcc'], grout: '#dccdb3', groutW: 3, glaze: 0.035 });
     // zellige: hand-made undulating glaze → low-frequency height on top of the grout grid
     const zh = canvas(512), zhc = zh.getContext('2d'); zhc.drawImage(zel.bump, 0, 0); zhc.globalAlpha = 0.35; zhc.drawImage(plasterTex(31, 0.9, 512), 0, 0); zhc.globalAlpha = 1;
     m.wallBath = phys({ map: tex(zel.map, { repeat: 1 / 0.8 }), normalMap: nrm(zh, 2.2, 1 / 0.8), roughness: 0.32, clearcoat: 0.45, clearcoatRoughness: 0.22, envMapIntensity: 0.85 });
     const bt = tileTex({ size: 512, tilesX: 6, tilesY: 6, colors: ['#b8653f', '#c07049', '#ad5d39', '#c47a55', '#b26a44'], grout: '#d9c7aa', groutW: 3, glaze: 0.1 });
     m.floorBath = std({ map: tex(bt.map, { repeat: 1 / 1.2 }), normalMap: nrm(bt.bump, 1.6, 1 / 1.2), roughness: 0.62 });
-    m.counter = std({ map: tex(tr, { repeat: 1 / 1.2 }), normalMap: trN, roughness: 0.35 });
+    m.counter = std({ map: tex(tr, { repeat: 1 / 1.2 }), normalMap: trN, roughnessMap: smudge(0.8), roughness: 0.4 / 0.59, envMapIntensity: 0.55 });
     m.stone = m.counter;
   }
   // outdoor deck: large-format porcelain
@@ -654,8 +682,8 @@ export function getMaterials(styleId = 'milano') {
 
   // ---------- walls / ceiling
   const wallCol = { milano: '#bcb3a7', nordic: '#f1efea', riviera: '#eadcc6' }[styleId];
-  m.wall = std({ color: wallCol, map: styleId === 'riviera' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: smudge(0.4), roughness: 1.5, envMapIntensity: 0.35 });
-  m.ceiling = std({ color: { milano: '#f2eee7', nordic: '#fbfaf8', riviera: '#f5eee2' }[styleId], roughness: 0.95, envMapIntensity: 0.3 });
+  m.wall = std({ color: wallCol, map: styleId === 'riviera' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: smudge(0.4), roughness: 1.5, envMapIntensity: 0.24 });
+  m.ceiling = std({ color: { milano: '#e9e3da', nordic: '#f3f1ed', riviera: '#eee5d7' }[styleId], roughness: 0.95, envMapIntensity: 0.2 });
   m.cutCap = std({ color: '#f4f2ee', roughness: 0.9 });
   m.skirting = std({ color: { milano: '#2a2522', nordic: '#f4f2ee', riviera: '#e2d2b8' }[styleId], roughness: 0.45, envMapIntensity: 0.6 });
   m.exterior = std({ color: '#ece8e0', map: plaster, roughness: 0.85 });
@@ -663,9 +691,12 @@ export function getMaterials(styleId = 'milano') {
   // ---------- woods
   const woodBase = { milano: '#5a3a26', nordic: '#d2b893', riviera: '#9b7552' }[styleId];
   // tile ≈ 0.9 m; the grain runs along the texture's u → along world X/Z (horizontal) after the bake's world-UV projection
-  const woodM = (col, seed, rough, rep = 1.1, o) => { const c = woodFurnitureTex(hex(col), seed, 512, o); return std({ map: tex(c, { repeat: rep }), normalMap: tex(normalFromHeight(c.height_, 1.4), { srgb: false, repeat: rep }), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: tex(c.rough_, { srgb: false, repeat: rep }), roughness: rough, envMapIntensity: 0.6 }); };
+  // o.vertical: grain runs up the texture (cabinet fronts, doors, wall panels are veneered with vertical grain; the
+  // bake's world-UV projection maps texture v to world Y on vertical faces)
+  const rot90 = (src) => { const d = canvas(src.height, src.width), x = d.getContext('2d'); x.translate(d.width, 0); x.rotate(Math.PI / 2); x.drawImage(src, 0, 0); return d; };
+  const woodM = (col, seed, rough, rep = 1.1, o = {}) => { let c = woodFurnitureTex(hex(col), seed, 512, o); if (o.vertical) { const r = rot90(c); r.rough_ = rot90(c.rough_); r.height_ = rot90(c.height_); c = r; } return std({ map: tex(c, { repeat: rep }), normalMap: tex(normalFromHeight(c.height_, 1.4), { srgb: false, repeat: rep }), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: tex(c.rough_, { srgb: false, repeat: rep }), roughness: rough, envMapIntensity: 0.6 }); };
   m.wood = woodM(woodBase, 5, 0.6);
-  m.woodDark = woodM({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35' }[styleId], 6, 0.55, 1.1, { contrast: 0.3 });
+  m.woodDark = woodM({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35' }[styleId], 6, 0.55, 1.1, { contrast: 0.3, vertical: true });
   m.woodLight = woodM('#d8c3a2', 9, 0.72, 1.1, { contrast: 0.16, rings: 64 });
   m.teak = woodM('#8c6440', 10, 0.9, 2);
   // feature wall: milano = fluted walnut; nordic = oak slats; riviera = limewash plaster arch niche
@@ -674,6 +705,8 @@ export function getMaterials(styleId = 'milano') {
   // ---------- lacquer / cabinetry
   const lac = { milano: '#1f1e1d', nordic: '#efede8', riviera: '#6f7350' }[styleId];
   m.lacquer = phys({ color: lac, roughnessMap: smudge(0.9), roughness: styleId === 'milano' ? 0.55 : 0.8, clearcoat: styleId === 'riviera' ? 0.4 : 0.2, clearcoatRoughness: 0.4, envMapIntensity: 0.6 });
+  // nordic joinery: pale ash veneer (matt oiled) instead of flat white lacquer
+  if (styleId === 'nordic') m.lacquer = woodM('#e3d5bf', 15, 0.62, 1.1, { contrast: 0.1, rings: 72, vertical: true });
   m.lacquer2 = styleId === 'nordic' ? m.woodLight : styleId === 'milano' ? m.wood : phys({ color: '#e8dcc6', roughness: 0.6, clearcoat: 0.2 });
   m.doorLeaf = styleId === 'milano' ? m.woodDark : std({ color: { nordic: '#f4f2ee', riviera: '#e9dcc6' }[styleId], roughness: 0.6 });
   m.frame = std({ color: { milano: '#1d1c1b', nordic: '#262626', riviera: '#5a4a3a' }[styleId], roughness: 0.45, metalness: 0.4 });
@@ -681,7 +714,7 @@ export function getMaterials(styleId = 'milano') {
 
   // ---------- metals
   m.brass = std({ color: '#c49a5c', metalness: 1, roughness: 0.3, envMapIntensity: 1.2 });
-  m.blackMetal = std({ color: '#161616', metalness: 0.6, roughness: 0.45 });
+  m.blackMetal = std({ color: '#141414', metalness: 0.35, roughness: 0.5, envMapIntensity: 0.8 });   // powder-coated
   m.chrome = std({ color: '#e8e8e8', metalness: 1, roughness: 0.08, envMapIntensity: 1.3 });
   m.steel = std({ color: '#b9bbbd', metalness: 1, roughness: 0.32, envMapIntensity: 1.1 });
   m.metal = styleId === 'nordic' ? m.blackMetal : m.brass;       // style accent metal (handles, legs, lamp parts)
@@ -729,10 +762,10 @@ export function getMaterials(styleId = 'milano') {
   m.towel2 = std({ color: P.towel2, map: tex(fabricTex('boucle', 16), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.outdoorFabric = std({ color: P.outdoor, map: fab, normalMap: nWeave, roughness: 0.95 });
   m.rug = std({ map: tex(rugTex(styleId), { repeat: 1 }), normalMap: nRug, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 1, envMapIntensity: 0.2 });
-  m.cane = std({ map: tex(caneTex('#d8b98a'), { repeat: 9 }), roughness: 0.7, envMapIntensity: 0.5 });
+  { const ct = caneTex('#d9b98a'); m.cane = std({ map: tex(ct, { repeat: 9 }), normalMap: nrm(ct.height_, 2.2, 9), normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.62, envMapIntensity: 0.45 }); }
   m.rattan = std({ color: '#b98f5a', map: tex(fabricTex('jute', 18), { repeat: 4 }), normalMap: nBoucle, roughness: 0.85 });
   // woven shades keep their own sphere UVs (a world-UV projection shows patch seams on a sphere)
-  { const wv = tex(caneTex('#c7a57a'), { repeat: 16, repeatY: 8 }); m.rattanShade = std({ color: '#f3e8d8', map: wv, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.5 }); }
+  { const rw = rattanWeave('#c9a172'); m.rattanShade = std({ color: '#ffffff', map: tex(rw, { repeat: 1 }), emissiveMap: tex(rw.glow_, { repeat: 1 }), emissive: new THREE.Color(S.lightColor), emissiveIntensity: 1.6, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.4 }); }
   m.accentFabric = std({ color: P.accent, map: velvet, normalMap: nVelvet, roughness: 0.9 });
   // Cloth gets a sheen lobe (the soft bright rim fabric shows at grazing angles — the single biggest cue that reads
   // "textile" instead of "painted plastic"). Standard PBR extension (KHR_materials_sheen) → survives glTF export.
@@ -781,7 +814,9 @@ export function getMaterials(styleId = 'milano') {
   const L = new THREE.Color(S.lightColor);
   m.lightEmit = std({ color: '#ffffff', emissive: L, emissiveIntensity: 2.6, roughness: 1 });
   m.led = std({ color: '#ffffff', emissive: L, emissiveIntensity: 3.2, roughness: 1 });
-  m.lampShade = std({ color: { milano: '#e7dccb', nordic: '#f5f1ea', riviera: '#efe2cc' }[styleId], emissive: L, emissiveIntensity: 0.7, roughness: 0.9, side: THREE.DoubleSide });
+  m.lampShade = std({ color: { milano: '#dccdb4', nordic: '#ece5d8', riviera: '#e6d3b4' }[styleId], map: linen, emissive: L.clone().lerp(new THREE.Color('#ff9a4a'), 0.2), emissiveMap: linen, emissiveIntensity: 0.5, roughness: 0.9, side: THREE.DoubleSide, envMapIntensity: 0.3 });
+  // opal glass globes: smooth milky glass lit from inside (no fabric weave)
+  m.opal = std({ color: '#f3eee6', emissive: L.clone().lerp(new THREE.Color('#ffffff'), 0.25), emissiveIntensity: 0.85, roughness: 0.25, envMapIntensity: 0.5 });
   m.bulb = std({ color: '#fff', emissive: L, emissiveIntensity: 4 });
   m.plastic = std({ color: '#f2f2f0', roughness: 0.35 });
   m.darkPlastic = std({ color: '#1b1b1c', roughness: 0.4 });
@@ -792,11 +827,11 @@ export function getMaterials(styleId = 'milano') {
   // glow / glowFaint: additive warm light pools, downlight scallops, lamp halos, cove wash; daylight: window spill
   const fx = tex(fxAtlas(), { repeat: 1 }); fx.wrapS = fx.wrapT = THREE.ClampToEdgeWrapping;
   const dec = (o) => new THREE.MeshBasicMaterial({ map: fx, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, ...o });
-  const aoK = { milano: 0.72, nordic: 0.46, riviera: 0.52 }[styleId];
+  const aoK = { milano: 0.8, nordic: 0.6, riviera: 0.66 }[styleId];
   m.ao = dec({ color: 0x000000, opacity: aoK });
   m.aoSoft = dec({ color: 0x000000, opacity: aoK * 0.42 });
   // room-depth falloff: rooms darken away from the glazing (ceiling, floor, side walls) — the look of real daylight
-  m.shade = dec({ color: 0x000000, opacity: { milano: 0.42, nordic: 0.26, riviera: 0.32 }[styleId] });
+  m.shade = dec({ color: 0x000000, opacity: { milano: 0.5, nordic: 0.36, riviera: 0.42 }[styleId] });
   const gk = { milano: 1, nordic: 0.7, riviera: 0.8 }[styleId];
   // Additive light is tinted a little redder than the lamps: ACES compresses the red channel first when bright
   // light piles up on warm plaster, which otherwise drifts the pools towards a sickly yellow-green.
@@ -823,6 +858,17 @@ export function getMaterials(styleId = 'milano') {
   for (const k of ['glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.additive = true;
   for (const k of ['ao', 'aoSoft', 'shade', 'glow', 'glowFaint', 'daylight', 'lampGlow']) m[k].userData.decal = true;
 
+  // The interior IBL (RoomEnvironment, set by the host) is a bright neutral-grey box: at full strength its diffuse
+  // term floods every surface with the same grey-white fill — the "washed-out" look. Keep it mostly for reflections:
+  // matt surfaces take a fraction of it (the warm point lights, light decals and AO decals do the shaping), glossy
+  // ones more, metals / mirrors / glass all of it.
+  const envK = { milano: 1, nordic: 1.4, riviera: 1.12 }[styleId];   // the bright Scandinavian look keeps more fill
+  for (const v of Object.values(m)) {
+    if (!v || !v.isMaterial || v.userData.decal || !('envMapIntensity' in v)) continue;
+    if (v.metalness >= 0.5 || v.transparent) continue;
+    const r = v.roughness * (v.roughnessMap ? 0.6 : 1);
+    v.envMapIntensity *= Math.min(1, (r >= 0.6 ? 0.42 : r >= 0.3 ? 0.62 : 0.85) * envK);
+  }
   // name all materials (debug + stable bucket keys)
   for (const [k, v] of Object.entries(m)) if (v && v.isMaterial) v.name = `${styleId}.${k}`;
   // facade glazing: the cheap transparent glass plus a faint daylight emission, so windows read as the brightest

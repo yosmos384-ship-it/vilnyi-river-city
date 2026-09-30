@@ -1,0 +1,917 @@
+{
+ "version": 1,
+ "generated": "2026-09-30 04:52",
+ "eye": 1.6,
+ "projection": "equirect; centre = +v/+z, left quarter = +u/+x",
+ "renderer": "Blender Cycles (CPU, OIDN)",
+ "types": {
+  "2A": {
+   "refUnit": "C3-7-10",
+   "width": 7.313,
+   "depth": 7.4,
+   "azimuth": 108,
+   "facing": "E",
+   "building": "C3",
+   "floor": 7,
+   "rooms": [
+    {
+     "kind": "bath",
+     "name": "Baie",
+     "level": 0,
+     "poly": [
+      [
+       2.229,
+       0.15
+      ],
+      [
+       4.103,
+       0.15
+      ],
+      [
+       4.103,
+       2.45
+      ],
+      [
+       2.229,
+       2.45
+      ]
+     ]
+    },
+    {
+     "kind": "kitchen",
+     "name": "Bucătărie",
+     "level": 0,
+     "poly": [
+      [
+       4.103,
+       0.15
+      ],
+      [
+       7.213,
+       0.15
+      ],
+      [
+       7.213,
+       2.45
+      ],
+      [
+       4.103,
+       2.45
+      ]
+     ]
+    },
+    {
+     "kind": "hall",
+     "name": "Hol",
+     "level": 0,
+     "poly": [
+      [
+       0.1,
+       0.15
+      ],
+      [
+       2.229,
+       0.15
+      ],
+      [
+       2.229,
+       2.45
+      ],
+      [
+       3.316,
+       2.45
+      ],
+      [
+       3.316,
+       3.55
+      ],
+      [
+       0.1,
+       3.55
+      ]
+     ]
+    },
+    {
+     "kind": "bedroom",
+     "name": "Dormitor",
+     "level": 0,
+     "poly": [
+      [
+       0.1,
+       3.55
+      ],
+      [
+       3.316,
+       3.55
+      ],
+      [
+       3.316,
+       7.2
+      ],
+      [
+       0.1,
+       7.2
+      ]
+     ]
+    },
+    {
+     "kind": "living",
+     "name": "Living",
+     "level": 0,
+     "poly": [
+      [
+       3.316,
+       2.45
+      ],
+      [
+       7.213,
+       2.45
+      ],
+      [
+       7.213,
+       7.2
+      ],
+      [
+       3.316,
+       7.2
+      ]
+     ]
+    },
+    {
+     "kind": "balcony",
+     "name": "Balcon",
+     "level": 0,
+     "poly": [
+      [
+       0,
+       7.4
+      ],
+      [
+       7.313,
+       7.4
+      ],
+      [
+       7.313,
+       9
+      ],
+      [
+       0,
+       9
+      ]
+     ]
+    }
+   ],
+   "styles": {
+    "milano": {
+     "points": [
+      {
+       "id": "hall",
+       "room": "hall",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        1.5,
+        1.85,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -1.9075,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": -2.0779,
+         "dist": 2.88
+        },
+        {
+         "to": "bath",
+         "yaw": -1.3489,
+         "dist": 1.36
+        },
+        {
+         "to": "bedroom-1",
+         "yaw": 2.8899,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/hall-2k.jpg",
+        "4k": "2A/milano/hall-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-2",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        4.02,
+        3.25,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8049,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.0637,
+         "dist": 2.88
+        },
+        {
+         "to": "living-3",
+         "yaw": -2.632,
+         "dist": 3.89
+        },
+        {
+         "to": "kitchen",
+         "yaw": -0.8098,
+         "dist": 2.32
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/living-2-2k.jpg",
+        "4k": "2A/milano/living-2-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-3",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        5.92,
+        6.65,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.9442,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 0.5096,
+         "dist": 3.89
+        },
+        {
+         "to": "kitchen",
+         "yaw": 0.044,
+         "dist": 5.0
+        },
+        {
+         "to": "balcony",
+         "yaw": 2.1803,
+         "dist": 2.71
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/living-3-2k.jpg",
+        "4k": "2A/milano/living-3-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "kitchen",
+       "room": "kitchen",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        5.7,
+        1.65,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 2.3318,
+         "dist": 2.32
+        },
+        {
+         "to": "living-3",
+         "yaw": -3.0976,
+         "dist": 5.0
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/kitchen-2k.jpg",
+        "4k": "2A/milano/kitchen-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bedroom-1",
+       "room": "bedroom",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        0.6,
+        5.35,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8501,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": -0.2517,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/bedroom-1-2k.jpg",
+        "4k": "2A/milano/bedroom-1-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bath",
+       "room": "bath",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        2.83,
+        1.55,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.7926,
+         "dist": 1.36
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/bath-2k.jpg",
+        "4k": "2A/milano/bath-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "balcony",
+       "room": "balcony",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        3.7,
+        8.2,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.4669,
+       "links": [
+        {
+         "to": "living-3",
+         "yaw": -0.9613,
+         "dist": 2.71
+        }
+       ],
+       "img": {
+        "2k": "2A/milano/balcony-2k.jpg",
+        "4k": "2A/milano/balcony-4k.jpg"
+       },
+       "src": 2048
+      }
+     ]
+    },
+    "nordic": {
+     "points": [
+      {
+       "id": "hall",
+       "room": "hall",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        1.5,
+        1.85,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -1.9075,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": -2.0779,
+         "dist": 2.88
+        },
+        {
+         "to": "bath",
+         "yaw": -1.298,
+         "dist": 1.48
+        },
+        {
+         "to": "bedroom-1",
+         "yaw": 2.8899,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/hall-2k.jpg",
+        "4k": "2A/nordic/hall-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-2",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        4.02,
+        3.25,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8049,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.0637,
+         "dist": 2.88
+        },
+        {
+         "to": "living-3",
+         "yaw": -2.8899,
+         "dist": 3.61
+        },
+        {
+         "to": "kitchen",
+         "yaw": -0.8098,
+         "dist": 2.32
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/living-2-2k.jpg",
+        "4k": "2A/nordic/living-2-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-3",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        4.92,
+        6.75,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.9442,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 0.2517,
+         "dist": 3.61
+        },
+        {
+         "to": "kitchen",
+         "yaw": -0.1518,
+         "dist": 5.16
+        },
+        {
+         "to": "balcony",
+         "yaw": 2.4421,
+         "dist": 1.89
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/living-3-2k.jpg",
+        "4k": "2A/nordic/living-3-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "kitchen",
+       "room": "kitchen",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        5.7,
+        1.65,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 2.3318,
+         "dist": 2.32
+        },
+        {
+         "to": "living-3",
+         "yaw": 2.9898,
+         "dist": 5.16
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/kitchen-2k.jpg",
+        "4k": "2A/nordic/kitchen-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bedroom-1",
+       "room": "bedroom",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        0.6,
+        5.35,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8501,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": -0.2517,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/bedroom-1-2k.jpg",
+        "4k": "2A/nordic/bedroom-1-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bath",
+       "room": "bath",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        2.93,
+        1.45,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.8435,
+         "dist": 1.48
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/bath-2k.jpg",
+        "4k": "2A/nordic/bath-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "balcony",
+       "room": "balcony",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        3.7,
+        8.2,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.4669,
+       "links": [
+        {
+         "to": "living-3",
+         "yaw": -0.6995,
+         "dist": 1.89
+        }
+       ],
+       "img": {
+        "2k": "2A/nordic/balcony-2k.jpg",
+        "4k": "2A/nordic/balcony-4k.jpg"
+       },
+       "src": 2048
+      }
+     ]
+    },
+    "riviera": {
+     "points": [
+      {
+       "id": "hall",
+       "room": "hall",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        1.5,
+        1.85,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -1.9075,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": -2.0779,
+         "dist": 2.88
+        },
+        {
+         "to": "bath",
+         "yaw": -1.298,
+         "dist": 1.48
+        },
+        {
+         "to": "bedroom-1",
+         "yaw": 2.8899,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/hall-2k.jpg",
+        "4k": "2A/riviera/hall-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-2",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        4.02,
+        3.25,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8049,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.0637,
+         "dist": 2.88
+        },
+        {
+         "to": "living-3",
+         "yaw": -2.8899,
+         "dist": 3.61
+        },
+        {
+         "to": "kitchen",
+         "yaw": -0.8098,
+         "dist": 2.32
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/living-2-2k.jpg",
+        "4k": "2A/riviera/living-2-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "living-3",
+       "room": "living",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        4.92,
+        6.75,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.9442,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 0.2517,
+         "dist": 3.61
+        },
+        {
+         "to": "kitchen",
+         "yaw": -0.1518,
+         "dist": 5.16
+        },
+        {
+         "to": "balcony",
+         "yaw": 2.4421,
+         "dist": 1.89
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/living-3-2k.jpg",
+        "4k": "2A/riviera/living-3-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "kitchen",
+       "room": "kitchen",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        5.7,
+        1.65,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "living-2",
+         "yaw": 2.3318,
+         "dist": 2.32
+        },
+        {
+         "to": "living-3",
+         "yaw": 2.9898,
+         "dist": 5.16
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/kitchen-2k.jpg",
+        "4k": "2A/riviera/kitchen-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bedroom-1",
+       "room": "bedroom",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        0.6,
+        5.35,
+        0
+       ],
+       "yawOffset": 0,
+       "view": -2.8501,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": -0.2517,
+         "dist": 3.61
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/bedroom-1-2k.jpg",
+        "4k": "2A/riviera/bedroom-1-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "bath",
+       "room": "bath",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        2.93,
+        1.45,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 0.0,
+       "links": [
+        {
+         "to": "hall",
+         "yaw": 1.8435,
+         "dist": 1.48
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/bath-2k.jpg",
+        "4k": "2A/riviera/bath-4k.jpg"
+       },
+       "src": 2048
+      },
+      {
+       "id": "balcony",
+       "room": "balcony",
+       "roomIndex": 0,
+       "level": 0,
+       "pos": [
+        3.7,
+        8.2,
+        0
+       ],
+       "yawOffset": 0,
+       "view": 2.4669,
+       "links": [
+        {
+         "to": "living-3",
+         "yaw": -0.6995,
+         "dist": 1.89
+        }
+       ],
+       "img": {
+        "2k": "2A/riviera/balcony-2k.jpg",
+        "4k": "2A/riviera/balcony-4k.jpg"
+       },
+       "src": 2048
+      }
+     ]
+    }
+   }
+  }
+ },
+ "commons": {
+  "lobby": {
+   "building": "C3",
+   "floor": 0,
+   "frame": "building",
+   "points": [
+    {
+     "id": "lobby-1",
+     "room": "lobby",
+     "level": 0,
+     "pos": [
+      70.4,
+      -7.1,
+      0
+     ],
+     "yawOffset": 0,
+     "view": 3.1416,
+     "links": [
+      {
+       "to": "lobby-2",
+       "yaw": -2.985,
+       "dist": 1.92
+      }
+     ],
+     "img": {
+      "2k": "commons/lobby/lobby-1-2k.jpg",
+      "4k": "commons/lobby/lobby-1-4k.jpg"
+     },
+     "src": 2048
+    },
+    {
+     "id": "lobby-2",
+     "room": "lobby",
+     "level": 0,
+     "pos": [
+      70.7,
+      -5.2,
+      0
+     ],
+     "yawOffset": 0,
+     "view": 3.1416,
+     "links": [
+      {
+       "to": "lobby-1",
+       "yaw": 0.1566,
+       "dist": 1.92
+      }
+     ],
+     "img": {
+      "2k": "commons/lobby/lobby-2-2k.jpg",
+      "4k": "commons/lobby/lobby-2-4k.jpg"
+     },
+     "src": 2048
+    }
+   ]
+  },
+  "corridor": {
+   "building": "C3",
+   "floor": 7,
+   "frame": "building",
+   "points": [
+    {
+     "id": "corridor-1",
+     "room": "corridor",
+     "level": 0,
+     "pos": [
+      70.6,
+      0,
+      0
+     ],
+     "yawOffset": 0,
+     "view": 2.2455,
+     "links": [],
+     "img": {
+      "2k": "commons/corridor/corridor-1-2k.jpg",
+      "4k": "commons/corridor/corridor-1-4k.jpg"
+     },
+     "src": 2048
+    }
+   ]
+  }
+ },
+ "renderSeconds": {
+  "commons/corridor/corridor-1": 92.9,
+  "commons/lobby/lobby-1": 92.8,
+  "commons/lobby/lobby-2": 100.7,
+  "2A/riviera/bath": 369.6,
+  "2A/riviera/kitchen": 374.2,
+  "2A/riviera/hall": 359.1,
+  "2A/riviera/bedroom-1": 353.2,
+  "2A/riviera/living-2": 341.2,
+  "2A/riviera/living-3": 370.9,
+  "2A/riviera/balcony": 264.0,
+  "2A/milano/kitchen": 423.4,
+  "2A/milano/hall": 397.1,
+  "2A/milano/bedroom-1": 410.0,
+  "2A/milano/living-2": 422.0,
+  "2A/milano/living-3": 363.3,
+  "2A/milano/balcony": 335.0,
+  "2A/nordic/bath": 351.3,
+  "2A/nordic/kitchen": 414.5,
+  "2A/nordic/hall": 359.4,
+  "2A/nordic/bedroom-1": 379.6,
+  "2A/nordic/living-2": 372.7,
+  "2A/nordic/living-3": 358.7,
+  "2A/nordic/balcony": 306.8
+ }
+}

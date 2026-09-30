@@ -810,6 +810,9 @@ function kitchenRun(m, len = 3, o = {}) {
   box(g, bl, plinth, D - 0.06, carcass, (x0 + x1) / 2, 0, -0.03 - 0.03);
   box(g, bl, BH - plinth - T, D - 0.02, carcass, (x0 + x1) / 2, plinth, -0.01);
   const ctr = box(g, bl + 0.004, T, D + 0.02, m.counter, (x0 + x1) / 2, BH - T, 0.01);
+  // finished end panels (front material) where the run ends in the open, so the carcass never shows from the side
+  if (tallSide !== 'left' || !tallMods.length) box(g, 0.02, BH - T, D, front, x0 + 0.01, 0, 0);
+  if (tallSide !== 'right' || !tallMods.length) box(g, 0.02, BH - T, D, front, x1 - 0.01, 0, 0);
   // base fronts: split into modules of ~0.6, with appliances at hob/sink positions
   const mods = [];
   const hobL = hobX - hobW / 2, hobR = hobX + hobW / 2;
@@ -933,9 +936,11 @@ function island(m, o = {}) {
 // ================================================================== BATH
 function toilet(m, o = {}) {           // wall-hung, back at z = 0 (against the wall), bowl extends to +z
   const g = new THREE.Group();
-  box(g, 0.36, 0.34, 0.12, m.porcelain, 0, 0.3, 0.06);
-  rbox(g, 0.36, 0.3, 0.46, 0.12, m.porcelain, 0, 0.12, 0.28, null, 4);
-  rbox(g, 0.37, 0.03, 0.44, 0.1, m.porcelain, 0, 0.42, 0.29, null, 3);
+  // wall-hung pan: a rounded egg-shaped bowl flowing into the wall block, thin soft-close seat + lid
+  soft(g, 0.36, 0.36, 0.16, m.porcelain, 0, 0.1, 0.08, null, { e: [0.3, 0.3, 0.3], seg: 20 });
+  soft(g, 0.36, 0.3, 0.54, m.porcelain, 0, 0.11, 0.27, null, { e: [0.5, 0.35, 0.55], seg: 24 });
+  soft(g, 0.37, 0.035, 0.47, m.porcelain, 0, 0.405, 0.28, null, { e: [0.5, 0.6, 0.55], seg: 22 });
+  fxFlat(g, m.aoSoft, 'disc', 0, 0.012, 0.28, 0.5, 0.62);
   // flush plate on the wall
   box(g, 0.24, 0.16, 0.012, m.styleId === 'nordic' ? m.blackMetal : m.brass, 0, 0.95, 0.006);
   box(g, 0.1, 0.13, 0.004, m.styleId === 'nordic' ? m.darkPlastic : m.chrome, -0.055, 0.965, 0.013);
@@ -1169,7 +1174,7 @@ function pendant(m, o = {}) {
       const L = o.len || 1.2;
       for (const sx of [-1, 1]) rod(g, 0.002, drop - 0.1, m.brass, sx * L * 0.4, -(drop - 0.1) / 2, 0, null, 4);
       box(g, L, 0.025, 0.04, m.brass, 0, -drop, 0);
-      for (let i = 0; i < 5; i++) { sph(g, 0.07, m.lampShade, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, [1, 1, 1], 16); bloom(g, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, 0.42, 0.55); }
+      for (let i = 0; i < 5; i++) { sph(g, 0.07, m.opal, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, [1, 1, 1], 16); bloom(g, -L * 0.4 + i * L * 0.2, -drop - 0.07, 0, 0.42, 0.55); }
     } else {
       rod(g, 0.003, drop, m.brass, 0, -drop / 2, 0, null, 4);
       lathe(g, [[0.001, 0.02], [0.14, 0], [0.2, -0.12], [0.195, -0.12], [0.13, -0.01], [0.001, 0.01]], m.brass, 0, -drop, 0, 28);

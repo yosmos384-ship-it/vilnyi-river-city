@@ -6,6 +6,7 @@ import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, 
 import { createPlan, keyPlanSVG, statusClass } from './plan.js';
 import { openBooking, loadReservations, planBreakdown, bindCopy, esc } from './booking.js';
 import { createHero3D } from './hero3d.js';
+import { tt as tourT } from './i18n-tour.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -375,6 +376,7 @@ function renderUnit() {
       </div>
       <div class="sh-acts">
         <button type="button" class="act" data-act="walk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><span>${esc(t('unit.walk'))}</span></button>
+        ${photoBtnHTML(u)}
         <button type="button" class="act" data-act="tour"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3v18M16.5 7.5l2 1.5-2 1.5"/></svg><span>${esc(t('unit.tour'))}</span></button>
         <button type="button" class="act" data-act="balcony"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M5 20v-7h14v7M9 13v7M15 13v7M12 13v7M4 9l8-5 8 5"/></svg><span>${esc(t('unit.balcony'))}</span></button>
         <button type="button" class="act" data-act="lobby"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5l8-3 8 3v16M4 21h16M9 21v-5h6v5M8 8h2M14 8h2M8 12h2M14 12h2"/></svg><span>${esc(t('unit.lobby'))}</span></button>
@@ -432,6 +434,8 @@ function bindUnit() {
     const ug = e.target.closest('[data-ui]'); if (ug) return lbOpen($('#unitGal')._list || [], +ug.dataset.ui);
     if (a === 'close') closeUnit();
     else if (a === 'walk') openWalk(u.id, 'apartment', 'walk');
+    else if (a === 'photo') openPhoto({ unitId: u.id, styleId: S.styleId, room: 'living' });
+    else if (a === 'photo-soon') openWalk(u.id, 'apartment', 'walk');
     else if (a === 'tour') openWalk(u.id, 'apartment', '360');
     else if (a === 'balcony') openWalk(u.id, 'balcony', '360');
     else if (a === 'lobby') openWalk(u.id, 'lobby', 'walk');
@@ -458,7 +462,8 @@ function reserve(u) {
 
 // ---------------------------------------------------------------- walkthrough overlay (Agent E)
 let walk = null; let walkArgs = null; let walkFromUnit = false;
-async function openWalk(unitId, start, mode) {
+async function openWalk(unitId, start, mode, room) {
+  closePhoto(true);
   walkArgs = { unitId, start, mode };
   const W = $('#walk'); W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
   // A modal <dialog> sits in the top layer above any z-index, so step out of the unit sheet while walking
@@ -477,6 +482,7 @@ async function openWalk(unitId, start, mode) {
       onReserve: id => { closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
     });
     await walk.enter({ unitId, start, mode });
+    if (room && start === 'apartment' && room.kind && room.kind !== 'living' && walk.jumpToRoom) await walk.jumpToRoom(room.kind, room.index | 0);
     $('#walkVeil').hidden = true; W.classList.add('is-ready'); // the HUD has its own Exit button
   } catch (e) {
     console.warn('[walk] unavailable:', e);
@@ -486,7 +492,7 @@ async function openWalk(unitId, start, mode) {
   }
 }
 function closeWalk() {
-  const W = $('#walk'); if (W.hidden) return;
+  const W = $('#walk'); closePhoto(true); if (W.hidden) return;
   try { walk?.dispose(); } catch (e) { /* ignore */ }
   walk = null; $('#walkStage').innerHTML = ''; W.hidden = true;
   document.documentElement.classList.remove('walk-open');
@@ -504,6 +510,72 @@ function bindWalk() {
     openWalk(u.id, 'lobby', 'walk');
   });
 }
+
+// ---------------------------------------------------------------- photoreal 360° tour (js/pano-tour.js, lazy)
+// Pre-rendered path-traced panoramas per apartment type × design (assets/tour/tour.json). Shown in the #walk overlay,
+// either on its own (unit panel button) or on top of a running Walkthrough (walk.js calls window.VRC.openPhotoTour);
+// its "Live 3D" toggle goes back to / opens the Walkthrough at the same room.
+let TOUR = null; let photo = null;
+const tourReady = fetch('assets/tour/tour.json', { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+  .then(m => { TOUR = m && m.types ? m : { types: {} }; refreshPhotoBtn(); return TOUR; });
+const hasPhoto = u => !!(u && TOUR && TOUR.types[u.type] && Object.keys(TOUR.types[u.type].styles || {}).length);
+const PHOTO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.4"/></svg>';
+function photoBtnHTML(u) {
+  const ok = hasPhoto(u);
+  return `<button type="button" class="act" data-act="${ok ? 'photo' : 'photo-soon'}" ${ok ? '' : `title="${esc(tourT(lang, 'soonHint'))}"`}>${PHOTO_ICON}<span>${esc(tourT(lang, ok ? 'btn' : 'soon'))}</span></button>`;
+}
+function refreshPhotoBtn() {
+  const b = dlgU()?.querySelector?.('[data-act="photo"],[data-act="photo-soon"]');
+  if (b && S.unit) b.outerHTML = photoBtnHTML(S.unit);
+}
+const roomRef = r => (r && typeof r === 'object' ? { kind: r.kind || 'living', index: r.index | 0 } : { kind: r || 'living', index: 0 });
+async function openPhoto({ unitId, styleId, room, onBack } = {}) {
+  const W = $('#walk'); const overWalk = !!(walk && !W.hidden);
+  closePhoto(true);
+  if (!overWalk) {
+    walkArgs = { unitId, start: 'apartment', mode: 'walk' };
+    W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
+    if (dlgU().open) { walkFromUnit = true; dlgU().close(); }
+    $('#walkVeil').hidden = false; $('#walkVeil').classList.remove('failed'); $('#walkRetry').hidden = true;
+    $('#walkT').textContent = tourT(lang, 'loading'); $('#walkS').textContent = '';
+    hero?.pause();
+  }
+  const layer = document.createElement('div');
+  layer.className = 'tour-layer'; layer.style.cssText = 'position:absolute;inset:0;z-index:30;background:#050505';
+  W.appendChild(layer);
+  const P = photo = { layer, handle: null, overWalk };
+  const toLive = st => {
+    const r = roomRef(st && st.room ? st.room : room);
+    closePhoto(true);
+    if (overWalk && walk) { if (onBack) onBack(r.kind, r.index); else walk.jumpToRoom?.(r.kind, r.index); return; }
+    openWalk(unitId, r.kind === 'balcony' ? 'balcony' : ['lobby', 'corridor', 'parking'].includes(r.kind) ? r.kind : 'apartment', 'walk', r);
+  };
+  try {
+    const mod = await import('./pano-tour.js');
+    if (photo !== P) return;
+    P.handle = await mod.openPanoTour(layer, {
+      unitId, styleId: styleId || S.styleId, room: roomRef(room), i18n: i18nApi, lang, dir,
+      onExit: () => { closePhoto(true); closeWalk(); },
+      onReserve: id => { closePhoto(true); closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
+      onSwitchTo3D: toLive,
+    });
+    if (photo !== P) { P.handle?.dispose?.(); return; }
+    $('#walkVeil').hidden = true; W.classList.add('is-ready');
+  } catch (e) {
+    console.warn('[photo] unavailable:', e);
+    toLive(null);
+  }
+}
+function closePhoto(silent) {
+  const P = photo; if (!P) return; photo = null;
+  try { P.handle?.dispose?.(); } catch (e) { /* ignore */ }
+  P.layer.remove();
+}
+window.VRC = window.VRC || {};
+// walk.js hook: ({unitId, styleId, room:{kind,index}, onBack(kind,index)}) → Promise
+window.VRC.openPhotoTour = (o = {}) => openPhoto({ unitId: o.unitId, styleId: o.styleId, room: o.room || o.roomKind, onBack: o.onBack });
+window.VRC.hasPhotoTour = unitId => hasPhoto(unitById(unitId));
+window.VRC.photoTourReady = tourReady;
 
 // ---------------------------------------------------------------- gallery (assets/gallery/manifest.json, filled by the lead)
 const GAL_TYPES = ['exterior', 'interior', 'lobby', 'amenity'];

@@ -36,7 +36,7 @@ const EN = {
 // Strings introduced with the 3D lift panel / open-any-door features, in all 8 site languages
 // (used only when the site's i18n has no such key).
 const LOCAL = {
-  en: { 'walk.mode.live': 'Live 3D', 'walk.mode.photo': 'Photoreal 360°', 'walk.soonApt': 'Photoreal 360° is coming soon for this apartment', 'walk.mode3d': 'Free 3D', 'walk.modeReal': 'Photoreal', 'walk.soon': 'Coming soon', 'walk.reserveThis': 'Reserve this apartment', 'walk.floors': 'Floors', 'walk.tapDoor': 'Tap the door to open it', 'walk.tapKey': 'Tap a floor button on the panel', 'walk.alarm': 'Alarm bell (demo)', 'walk.roomsN': 'rooms', 'walk.status.reserved': 'Reserved', 'walk.status.sold': 'Sold' },
+  en: { 'walk.mode.live': 'Live 3D', 'walk.mode.photo': 'Photo-real', 'walk.soonApt': 'Photoreal 360° is coming soon for this apartment', 'walk.mode3d': 'Free 3D', 'walk.modeReal': 'Photoreal', 'walk.soon': 'Coming soon', 'walk.reserveThis': 'Reserve this apartment', 'walk.floors': 'Floors', 'walk.tapDoor': 'Tap the door to open it', 'walk.tapKey': 'Tap a floor button on the panel', 'walk.alarm': 'Alarm bell (demo)', 'walk.roomsN': 'rooms', 'walk.status.reserved': 'Reserved', 'walk.status.sold': 'Sold' },
   he: { 'walk.mode.live': '3D חי', 'walk.mode.photo': '360° אמיתי', 'walk.soonApt': 'סיור 360° אמיתי לדירה זו יגיע בקרוב', 'walk.mode3d': '3D חופשי', 'walk.modeReal': 'מציאותי', 'walk.soon': 'בקרוב', 'walk.reserveThis': 'שריינו את הדירה הזו', 'walk.floors': 'קומות', 'walk.tapDoor': 'הקישו על הדלת כדי לפתוח אותה', 'walk.tapKey': 'הקישו על כפתור הקומה בלוח המעלית', 'walk.alarm': 'פעמון אזעקה (הדגמה)', 'walk.roomsN': 'חד׳', 'walk.status.reserved': 'משוריינת', 'walk.status.sold': 'נמכרה', 'walk.lift': 'מעלית', 'walk.floor': 'קומה', 'walk.corridor': 'מסדרון', 'walk.ground': 'קומת קרקע', 'walk.room.loggia': 'לוג׳יה', 'walk.room.terrace': 'מרפסת גג', 'walk.room.storage': 'מחסן', 'walk.room.dressing': 'חדר ארונות' },
   ru: { 'walk.mode.live': 'Живое 3D', 'walk.mode.photo': 'Фото 360°', 'walk.soonApt': 'Фотореалистичный 360° для этой квартиры скоро появится', 'walk.mode3d': 'Свободный 3D', 'walk.modeReal': 'Фотореализм', 'walk.soon': 'Скоро', 'walk.reserveThis': 'Забронировать эту квартиру', 'walk.floors': 'Этажи', 'walk.tapDoor': 'Нажмите на дверь, чтобы открыть', 'walk.tapKey': 'Нажмите кнопку этажа на панели', 'walk.alarm': 'Кнопка вызова (демо)', 'walk.roomsN': 'комн.', 'walk.status.reserved': 'Забронирована', 'walk.status.sold': 'Продана' },
   uk: { 'walk.mode.live': 'Живе 3D', 'walk.mode.photo': 'Фото 360°', 'walk.soonApt': 'Фотореалістичний 360° для цієї квартири незабаром', 'walk.mode3d': 'Вільний 3D', 'walk.modeReal': 'Фотореалізм', 'walk.soon': 'Незабаром', 'walk.reserveThis': 'Забронювати цю квартиру', 'walk.floors': 'Поверхи', 'walk.tapDoor': 'Торкніться дверей, щоб відчинити', 'walk.tapKey': 'Натисніть кнопку поверху на панелі', 'walk.alarm': 'Кнопка виклику (демо)', 'walk.roomsN': 'кімн.', 'walk.status.reserved': 'Заброньована', 'walk.status.sold': 'Продана' },
@@ -292,6 +292,7 @@ const CSS = `
 .vw-modes button.off{opacity:.45;cursor:default}
 .vw-modes .soon{position:absolute;top:calc(100% + 7px);inset-inline-end:6px;padding:4px 10px;border-radius:999px;font-size:10.5px;white-space:nowrap;background:rgba(10,9,7,.9);border:1px solid var(--ln);color:var(--g2);opacity:0;transform:translateY(-3px);transition:opacity .25s,transform .25s;pointer-events:none}
 .vw-modes .soon.show{opacity:1;transform:none}
+.vw-modes[hidden]{display:none!important}
 .vw-modes .soon:before{content:"";position:absolute;top:-4px;inset-inline-end:18px;width:7px;height:7px;background:inherit;border-left:1px solid var(--ln);border-top:1px solid var(--ln);transform:rotate(45deg)}
 .vw.phone .vw-modes{top:calc(50px + var(--st))}
 .vw.phone .vw-modes button{height:30px;padding:0 12px}
@@ -1082,12 +1083,74 @@ export class Walkthrough {
     }
     return false;
   }
+  // The site's photo tour (app.js): window.VRC.openPhotoTour({unitId, styleId, room:{kind, index}}). Preferred over the
+  // legacy in-walk pano layer; when neither exists the Live 3D ↔ Photo-real toggle is hidden.
+  _photoTourFn() { const V = typeof window !== 'undefined' ? window.VRC : null; return V && typeof V.openPhotoTour === 'function' ? V.openPhotoTour : null; }
+  // Where the walker is, as the photo tour understands it: a room kind + its 0-based index among rooms of that kind
+  // (apartment), or a commons place ('corridor' | 'lobby' | 'parking' | 'lift').
+  _roomRef() {
+    const r = !this.riding && !this._carOf(this.player.pos) ? this._currentRoom() : null;
+    if (r) {
+      const same = (this.rooms || []).filter(x => x.kind === r.kind);
+      return { kind: r.kind, index: Math.max(0, same.indexOf(r)), level: r.level || 0 };
+    }
+    const kind = this.riding || this._carOf(this.player.pos) ? 'lift' : this.floor === -1 ? 'parking' : this.floor === 0 ? 'lobby' : 'corridor';
+    return { kind, index: 0, level: 0 };
+  }
+  _openPhotoTour() {
+    const fn = this._photoTourFn();
+    if (!fn || !this.unit || this.riding) return;
+    const room = this._roomRef();
+    this._setPopover(false); this._hideUnitCard();
+    this.keys.clear(); this.pad = { u: 0, d: 0, l: 0, r: 0 }; this.glide = null; this.player.vel.set(0, 0, 0);
+    let res;
+    try {
+      res = fn({ unitId: this.unit.id, styleId: this.styleId, room, roomKind: room.kind, roomIndex: room.index,
+        onBack: (kind, index) => this.jumpToRoom(kind ?? room.kind, index ?? room.index) });
+    } catch (e) { console.warn('[walk] openPhotoTour failed', e); return; }
+    // The tour covers the page: pause the live renderer until we are shown again (jumpToRoom / any touch on the live view).
+    this._photoPaused = true;
+    if (res && typeof res.then === 'function') res.catch(e => { console.warn('[walk] openPhotoTour failed', e); this._resumeLive(); });
+  }
+  _resumeLive() { if (!this._photoPaused) return; this._photoPaused = false; this.clock.getDelta(); }
+
+  /** Jump into the live 3D at a room of the current apartment: kind ('living', 'bedroom', 'balcony'…, or 'corridor',
+   *  'lobby', 'parking', 'apartment'), index = 0-based among rooms of that kind. Used by the photo-real tour to come back. */
+  async jumpToRoom(kind, index = 0) {
+    if (kind && typeof kind === 'object') ({ kind, index = 0 } = kind);
+    this._resumeLive();
+    await this._ready;
+    if (this.disposed || !this.unit) return false;
+    if (this._pano) await this._closePano(null);
+    if (this.riding) return false;
+    kind = String(kind || 'living').toLowerCase();
+    if (['lobby', 'corridor', 'parking', 'apartment'].includes(kind)) { await this._goto(kind); return true; }
+    if (kind === 'lift') { await this._goto('corridor'); return true; }
+    const same = (this.rooms || []).filter(r => r.kind === kind);
+    const r = same[Math.max(0, Math.min(same.length - 1, index | 0))]
+      || (OUTDOOR.has(kind) ? (this.rooms || []).find(x => OUTDOOR.has(x.kind)) : null)
+      || (this.rooms || []).find(x => x.kind === 'living');
+    if (!r) { await this._goto('apartment'); return true; }
+    // Switching back into another loaded apartment? _goto uses this.unit, which is the current one — fine.
+    await this._goto({ room: r });
+    return true;
+  }
+
+  // Has the photo tour renders for this unit (type × any style)? Unknown (no helper / manifest not loaded yet) → assume yes.
+  _tourHas() {
+    const V = window.VRC; if (!V || typeof V.hasPhotoTour !== 'function' || !this.unit) return true;
+    try { return V.hasPhotoTour(this.unit.id) !== false; } catch { return true; }
+  }
   _renderModes() {
     if (!this.el || !this.el.modes) return;
-    const avail = this._panoAvail(), real = !!this._pano;
-    const key = `${avail}|${real}`;
+    const tour = !!this._photoTourFn(), real = !!this._pano;
+    const show = tour || real || this._panoAvail();          // no photo tour anywhere → no toggle
+    const avail = tour ? this._tourHas() : show;             // shown but not rendered for this unit → "coming soon"
+    const key = `${show}|${avail}|${real}|${tour}`;
     if (key === this._modesKey) return;
     this._modesKey = key;
+    this.el.modes.hidden = !show;
+    this.root.classList.toggle('nomodes', !show);
     const [b3, bR] = this.el.modes.children;
     b3.classList.toggle('on', !real); bR.classList.toggle('on', real);
     b3.setAttribute('aria-pressed', String(!real)); bR.setAttribute('aria-pressed', String(real));
@@ -1102,7 +1165,9 @@ export class Walkthrough {
   // Load pano-tour.js in the background (it registers window.VRC_PANO and reads assets/pano/index.json) so the switch
   // knows early whether this type × style has been rendered. A missing module simply leaves the switch on "coming soon".
   _preloadPano() {
-    if (this._panoProbe || this.opts.pano === false) return this._panoProbe;
+    // Legacy in-walk pano layer: opt-in only (opts.pano === true or a registry already on the page). The site's photo
+    // tour (window.VRC.openPhotoTour) replaced it; probing for undeployed pano assets would only log 404s.
+    if (this._panoProbe || this.opts.pano !== true && !window.VRC_PANO) return this._panoProbe;
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
@@ -1274,7 +1339,11 @@ export class Walkthrough {
     const near = (l, rr) => this._near(l, origin, rr).forEach(o => objs.add(o));
     near(this.solids, 12); near(this.floors, forFloor ? 40 : 12); this.actions.forEach(a => a.o.parent && objs.add(a.o));
     const hits = this._cast([...objs], origin, dir, forFloor ? 40 : 12);
-    return hits[0] || null;
+    if (!hits.length) return null;
+    // Wall-mounted controls (call plates, keys) sit within millimetres of wall colliders: an action hit just behind
+    // the first surface still wins.
+    for (const h of hits) { if (h.distance - hits[0].distance > 0.05) break; if (this._actionOf(h)) return h; }
+    return hits[0];
   }
   _actionOf(hit) {
     if (!hit) return null;
@@ -1286,7 +1355,7 @@ export class Walkthrough {
   async _doAction(a) {
     const act = a.action;
     if (act.type === 'aptDoor') return this._onAptDoor(act.unitId, a.obj);
-    if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object);
+    if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object, a.hit);
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
     if (act.type === 'liftDoor') return this._liftDoorKey(act);
     if (act.type === 'liftAlarm') return this._liftAlarm(act);
@@ -1467,11 +1536,15 @@ export class Walkthrough {
   _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // Landing call plate: the tapped key lights, the car arrives, doors open, we step in and turn to the panel.
-  async _callLift(stair, building, plate, hitObj) {
+  async _callLift(stair, building, plate, hitObj, hit) {
     const inf = this._nearestLift(stair, true);
     if (!inf || this.busy || this.riding) return;
     this.busy = true; this.glide = null;
     const light = plate && plate.userData && typeof plate.userData.light === 'function' ? plate.userData.light : null;
+    if (plate && hit && (!hitObj || hitObj === plate)) {   // tapped the plate body → light the key nearest the finger
+      let bd = Infinity; const v = new THREE.Vector3();
+      for (const c of plate.children) if (c.userData && c.userData.dir) { const d = c.getWorldPosition(v).distanceTo(hit.point); if (d < bd) { bd = d; hitObj = c; } }
+    }
     try {
       this._click();
       if (light) light(true, hitObj);
@@ -1522,7 +1595,7 @@ export class Walkthrough {
     if (on) {
       if (this._zoomSaved == null) this._zoomSaved = this._zoomS;
       const a = this.camera.aspect || 1;
-      const want = (0.8 * a) / this._baseTanH;               // ≈ ±0.42 m of wall visible vertically at 0.52 m
+      const want = (0.66 * a) / this._baseTanH;              // ≈ ±0.34 m of wall visible vertically at 0.52 m → finger-sized keys
       if (want < this._zoomS) this._tweenZoom(want, dur);
     } else if (this._zoomSaved != null) {
       const to = this._zoomSaved; this._zoomSaved = null;
@@ -1701,7 +1774,7 @@ export class Walkthrough {
   _loop() {
     if (this.disposed) return;
     this._raf = requestAnimationFrame(this._loop);
-    if (this._paused || this._pano) return;   // hidden tab, or the photoreal tour owns the screen
+    if (this._paused || this._pano || this._photoPaused) return;   // hidden tab, or a photoreal tour owns the screen
     const dt = Math.min(this.clock.getDelta(), 0.1);
     this._update(dt);
     try { this.env && this.env.update && this.env.update(dt, this.camera); } catch (e) { if (!this._envErr) { console.warn(e); this._envErr = true; } }
@@ -2229,10 +2302,11 @@ export class Walkthrough {
   _poke() { this._lastAct = performance.now(); if (this._dim && !this._dragging && !this._pinch) this._setDim(false); }
   _setDim(on) { if (on === this._dim) return; this._dim = on; this.root.classList.toggle('dim', on); }
   _onAnyDown(ev) {
+    this._resumeLive();
     this._poke();
     if (this._popOpen && !(ev.target.closest && ev.target.closest('.vw-tools,.vw-gear'))) {
       this._setPopover(false);
-      if (ev.target === this.canvas) this._suppressTap = performance.now();   // closing tap doesn't also open a door
+      if (ev.target === this.canvas) this._suppressTap = ev.timeStamp || performance.now();   // closing tap doesn't also open a door
     }
   }
   _updateDim(now) {
@@ -2251,7 +2325,7 @@ export class Walkthrough {
     if (this._pointers.size > 1) { this._startPinch(); return; }
     if (this._pinch) return;
     const P = this.player;
-    this._drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, t: performance.now(), moved: 0,
+    this._drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, t: ev.timeStamp || performance.now(), moved: 0,
       yaw: P.yaw, tYaw: P.tYaw, pitch: P.pitch, tPitch: P.tPitch };
     this.touched360 = true;
   }
@@ -2299,11 +2373,13 @@ export class Walkthrough {
     const d = this._drag; if (!d || d.id !== ev.pointerId) return;
     this._drag = null; this._dragging = false; this.canvas.classList.remove('drag');
     if (ev.type === 'pointercancel') return;
-    if (d.moved < 8 && performance.now() - d.t < 450) this._tap(ev.clientX, ev.clientY);
+    // event timestamps (not handling time): a long frame between down and up must not turn a tap into a hold
+    const tUp = ev.timeStamp || performance.now();
+    if (d.moved < 8 && tUp - d.t < 450) this._tap(ev.clientX, ev.clientY, tUp);
   }
   // single tap = use the thing under the pointer; double tap/click = glide there
-  _tap(x, y) {
-    const now = performance.now(), prev = this._taps;
+  _tap(x, y, now = performance.now()) {
+    const prev = this._taps;
     if (now - this._suppressTap < 600) { this._taps = null; return; }
     if (prev && now - prev.t < 360 && Math.hypot(x - prev.x, y - prev.y) < 40) {
       this._taps = null;
@@ -2360,7 +2436,11 @@ export class Walkthrough {
     if (k === 'photo') return this.takePhoto();
     if (k === 'helpok') return this._showHelp(false);
     if (k === 'dlabel') return this.el.tools.classList.toggle('col');
-    if (b.dataset.vm) return b.dataset.vm === 'real' ? this._openPano() : this._closePano();
+    if (b.dataset.vm) {
+      if (b.dataset.vm !== 'real') return this._closePano();
+      if (this._photoTourFn()) return this._tourHas() ? this._openPhotoTour() : this._soonTip();
+      return this._openPano();
+    }
     if (b.dataset.m) return this.setMode(b.dataset.m);
     if (b.dataset.t) return this.setTimeMode(b.dataset.t);
     if (b.dataset.s) { this.el.tools.classList.add('col'); return this.setStyle(b.dataset.s); }
