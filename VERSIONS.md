@@ -19,3 +19,4 @@ Every published version has a commit id (below). To go back to one: ask Claude "
 | v2.2 | 9189850 | Two new luxury apartment designs (Monaco Art-Deco, Kyoto Japandi) for all types; two new building finishes for lobbies/corridors/lifts (Grand Marble, Stone & Oak) with a toggle; plans checked — no spa in the permit |
 | v2.3 | 0f659a8 | Contact email sales@vilnyirivercity.com shown on site and in reservation confirmations |
 | v2.4 | 0072824 | Lift buttons: numbers always visible on every phone (unlit engraved faces, glowing when pressed); small gold VILNYI emblem on the lift panel |
+| v2.5 | e1336d5 | Six luxury car designs with interiors; enter and drive from the −1 parking up the ramp, around the site, streets and lake road and back; headlights and sound toggles |
