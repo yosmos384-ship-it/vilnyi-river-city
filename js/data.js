@@ -31,7 +31,7 @@ export const PROJECT = {
   payments: { stripePaymentLink: '' },           // e.g. https://buy.stripe.com/xxxx — enables "Pay deposit by card"
   leadsEndpoint: 'https://api.web3forms.com/submit',
   leadsKey: '5d364ce6-3da2-4d17-9a79-405669f5bc9a',                                  // Web3Forms access key (public by design; only allows sending to the owner's email)                             // optional POST URL (Formspree / Google Apps Script / Netlify function)
-  contact: { whatsapp: '', email: '', phone: '' },
+  contact: { whatsapp: '', email: 'sales@vilnyirivercity.com', phone: '' },
 };
 
 // ---------- Levels ----------
