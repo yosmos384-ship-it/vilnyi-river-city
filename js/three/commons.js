@@ -366,6 +366,36 @@ const texKeysGlow = () => cached('keysGlow', () => {
   });
   return texOf(c, { repeat: false });
 });
+// Pressed keys: warm backlit face, bright glyph (same atlas cells)
+const texKeysLit = () => cached('keysLit', () => {
+  const c = canvas(512, 512), g = c.getContext('2d');
+  KEY_LIST.forEach((k, i) => {
+    const cx = (i % 4) * 128 + 64, cy = ((i / 4) | 0) * 128 + 64;
+    const gr = g.createRadialGradient(cx, cy, 4, cx, cy, 70);
+    gr.addColorStop(0, '#5a3a14'); gr.addColorStop(0.7, '#3a240c'); gr.addColorStop(1, '#c8893a');
+    g.fillStyle = gr; g.fillRect(cx - 64, cy - 64, 128, 128);
+    g.globalCompositeOperation = 'lighter';
+    g.drawImage(texKeysGlow().image, cx - 64, cy - 64, 128, 128, cx - 64, cy - 64, 128, 128);
+    g.globalCompositeOperation = 'source-over';
+  });
+  return texOf(c, { repeat: false });
+});
+// Gold VILNYI emblem for the lift operating panel (bird from assets/bird.png + engraved wordmark), transparent background
+const texCopLogo = () => cached('copLogo', () => {
+  const c = canvas(512, 150), g = c.getContext('2d');
+  const word = () => { g.fillStyle = '#e8c27a'; g.shadowColor = 'rgba(255,190,90,0.9)'; g.shadowBlur = 8; g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `600 56px ${SERIF}`; g.fillText('V I L N Y I', 210, 80); };
+  word();
+  const tex = texOf(c, { repeat: false });
+  const img = new Image();
+  img.onload = () => {   // knock out the dark background of the bird, keep the gold
+    const t = canvas(img.width, img.height), tg = t.getContext('2d'); tg.drawImage(img, 0, 0);
+    const d = tg.getImageData(0, 0, t.width, t.height), a = d.data;
+    for (let i = 0; i < a.length; i += 4) { const l = Math.max(a[i], a[i + 1], a[i + 2]); a[i + 3] = l < 40 ? 0 : Math.min(255, (l - 40) * 3); }
+    tg.putImageData(d, 0, 0); g.shadowBlur = 0; g.drawImage(t, 30, 5, 140 * img.width / img.height, 140); tex.needsUpdate = true;
+  };
+  img.src = new URL('../../assets/bird.png', import.meta.url).href;
+  return tex;
+});
 // Lift-lobby wall wash: warm light grazing down the wall from a ceiling cove (additive, u across, v = 0 at the bottom)
 const texWash = () => cached('wash', () => {
   const c = canvas(8, 256), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
@@ -497,8 +527,10 @@ function M(key) {
     // concierge figure: one vertex-coloured material for all her parts (skin, suit, blouse, hair) → 5 draw calls
     figure: () => S({ vertexColors: true, roughness: 0.58, metalness: 0, envMapIntensity: 0.75 }),
     // backlit keys: the engraved glyph always glows softly (legible in any light), much brighter when pressed
-    keyFace: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0x86827b, metalness: 0.6, roughness: 0.3, envMapIntensity: 1.0, emissive: 0xffb04e, emissiveMap: texKeysGlow(), emissiveIntensity: 1.25 }),
-    keyFaceLit: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0xa09a90, metalness: 0.45, roughness: 0.3, emissive: 0xffc46a, emissiveMap: texKeysGlow(), emissiveIntensity: 4 }),
+    // unlit so the engraved numbers read in any light / on any GPU (iOS rendered the lit version black)
+    keyFace: () => new THREE.MeshBasicMaterial({ map: texKeys(), color: 0xf2efe8 }),
+    keyFaceLit: () => new THREE.MeshBasicMaterial({ map: texKeysLit(), color: 0xffffff }),
+    copLogo: () => new THREE.MeshBasicMaterial({ map: texCopLogo(), transparent: true, depthWrite: false }),
     keyRing: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 0.66, 0.3) }),   // idle halo (dim amber)
     callFace: () => S({ color: 0xe4e0d8, metalness: 0.6, roughness: 0.28, map: texBrushed(), emissive: 0x6a5238, emissiveIntensity: 0.35 }),
     callFaceLit: () => S({ color: 0xfff0d0, metalness: 0.3, roughness: 0.3, emissive: 0xffc46a, emissiveIntensity: 1.6 }),
@@ -950,7 +982,7 @@ export class Lift {
     for (const sx of [-1, 1]) { s.box('carFrame', sx * 0.5, sx * x, 0, h, zb - 0.04, zb); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zb, zb + 0.012); }
     s.box('carFrame', -0.5, 0.5, LIFT_H, h, zb - 0.04, zb);
     // operating panel (COP) on the right (-x) wall, next to the door: black glass plate in a brass frame
-    const P = this.panel = { xs: -x + 0.026, zc: zf - 0.25, y0: 1.03, y1: 1.565 };
+    const P = this.panel = { xs: -x + 0.026, zc: zf - 0.25, y0: 1.03, y1: 1.63 };
     const pw = 0.145;
     b.box('blackGlass', -x + 0.012, P.xs, P.y0, P.y1, P.zc - pw, P.zc + pw);
     for (const [y0, y1, z0, z1] of [[P.y0 - 0.008, P.y0, P.zc - pw - 0.008, P.zc + pw + 0.008], [P.y1, P.y1 + 0.008, P.zc - pw - 0.008, P.zc + pw + 0.008],
@@ -967,6 +999,9 @@ export class Lift {
     fl.add('hidden', (() => { const g = new THREE.PlaneGeometry(2 * x, zf - zb + 0.3); g.rotateX(-Math.PI / 2); g.translate(0, 0, (zf + zb) / 2 + 0.08); return g; })());
     fl.flush(this.car, { floor: true });
     const ci = new THREE.Mesh(this._geos[0], this.indMat); ci.rotation.y = Math.PI; ci.position.set(0, LIFT_H + 0.14, zf - 0.022); this.car.add(ci);
+    // small VILNYI emblem (gold bird + wordmark) above the floor screen
+    { const lg = new THREE.PlaneGeometry(0.17, 0.05); lg.rotateY(Math.PI / 2); this._geos.push(lg);
+      const lm = new THREE.Mesh(lg, M('copLogo')); lm.position.set(P.xs + 0.0025, 1.588, P.zc); this.car.add(lm); }
     // small floor screen on the panel (same live indicator texture)
     const sg = new THREE.PlaneGeometry(0.15, 0.056); sg.rotateY(Math.PI / 2); this._geos.push(sg);
     const scr = new THREE.Mesh(sg, this.indMat); scr.position.set(P.xs + 0.0025, 1.497, P.zc); this.car.add(scr);
