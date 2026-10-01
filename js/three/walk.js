@@ -987,8 +987,10 @@ export class Walkthrough {
     const padMat = new THREE.MeshBasicMaterial({ visible: false });
     for (const inf of c._infos) {
       const pad = new THREE.Mesh(padGeo, padMat);
-      pad.position.set(inf.car[0] + inf.n[0] * 0.1, floorY(floor) - 0.01, inf.car[1] + inf.n[1] * 0.1);
-      pad.rotation.y = Math.atan2(inf.n[0], inf.n[1]);
+      const [pwx, pwz] = localToWorldXZ(inf.bId, inf.car[0] + inf.n[0] * 0.1, inf.car[1] + inf.n[1] * 0.1), [plx, plz] = worldToLocal(bId, pwx, pwz);
+      const [dnx, dnz] = dirToWorld(inf.bId, inf.n[0], inf.n[1]);
+      pad.position.set(plx, floorY(floor) - 0.01, plz);
+      pad.rotation.y = Math.atan2(dnx, dnz) - BUILDINGS[bId].rotY;
       pad.userData.floor = true; pad.userData._helper = true; c._helpers.add(pad);
     }
     c._padGeo = padGeo; c._padMat = padMat;
@@ -1011,6 +1013,7 @@ export class Walkthrough {
   }
 
   _liftInfo(lift, i, bId, floor) {
+    if (lift && BUILDINGS[lift.bId]) bId = lift.bId;   // parking lobbies also hold the other block's lifts
     let ci = typeof lift.core === 'number' ? lift.core : CORES.indexOf(lift.core);
     if (ci < 0 && lift.core && lift.core.stair != null) ci = CORES.findIndex(c => c.stair === lift.core.stair);
     if (ci < 0 || ci == null) ci = Math.floor(i / 2) % CORES.length;
@@ -1101,7 +1104,10 @@ export class Walkthrough {
       const a = ud.action ? o : act;
       const s = solid || !!ud.solid, f = floor || !!ud.floor, dd = d || !!ud.dynamic;
       if (o.isMesh) {
-        if (s && !f) this.solids.push({ o, src, dyn: dd || !!a, box: null });
+        // Toggleable blockers (balcony / sliding doors: userData.solid flips false while open) stay registered whatever
+        // their state at build time; _near() skips them while solid === false and re-reads their box every frame.
+        const tog = ud.solid === false || typeof ud.toggle === 'function';
+        if ((s || ud.solid === false) && !f) this.solids.push({ o, src, dyn: dd || !!a || tog, box: null });
         if (f) { this.floors.push({ o, src, dyn: dd, box: null }); if (!ud._helper) this.floorReq = true; }
         if (a) this.actions.push({ o, root: a, src });
       }
@@ -1779,11 +1785,12 @@ export class Walkthrough {
       .then(() => { leaf.userData._open = want; leaf.userData._anim = false; });
   }
 
-  _nearestLift(stair, needOpen = false) {
+  _nearestLift(stair, needOpen = false, building = null) {
     const P = this.player.pos;
     let best = null, bd = Infinity;
     for (const inf of this.liftInfos) {
       if (stair != null && inf.stair !== stair) continue;
+      if (building && BUILDINGS[building] && inf.bId !== building) continue;
       const [x, z] = localToWorldXZ(inf.bId, inf.door[0], inf.door[1]);
       let d = Math.hypot(P.x - x, P.z - z);
       if (needOpen && !inf.lift.doorsOpen) d += 5;
@@ -1805,13 +1812,13 @@ export class Walkthrough {
 
   _infOfAction(act) {
     if (!act) return null;
-    return this.liftInfos.find(i => i.core === act.core && i.doorIndex === act.doorIndex && (act.stair == null || i.stair === act.stair)) || null;
+    return this.liftInfos.find(i => i.core === act.core && i.doorIndex === act.doorIndex && (act.stair == null || i.stair === act.stair) && (act.building == null || i.bId === act.building)) || null;
   }
   _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // Landing call plate: the tapped key lights, the car arrives, doors open, we step in and turn to the panel.
   async _callLift(stair, building, plate, hitObj, hit) {
-    const inf = this._nearestLift(stair, true);
+    const inf = this._nearestLift(stair, true, building) || this._nearestLift(stair, true);
     if (!inf || this.busy || this.riding) return;
     this.busy = true; this.glide = null;
     const light = plate && plate.userData && typeof plate.userData.light === 'function' ? plate.userData.light : null;
@@ -1969,7 +1976,7 @@ export class Walkthrough {
     let next;
     try {
       next = await nextP;
-      const twin = (next._infos || []).find(i => i.core === inf.core && i.doorIndex === inf.doorIndex);
+      const twin = (next._infos || []).find(i => i.bId === inf.bId && i.core === inf.core && i.doorIndex === inf.doorIndex);
       if (twin && twin.lift.group) twin.lift.group.visible = false;
       if (typeof inf.lift.travelTo === 'function') await inf.lift.travelTo(target, onTick);
       else await tween(Math.min(6000, 1200 * Math.abs(target - from)), k => onTick(y0 + (y1 - y0) * k));
@@ -1985,7 +1992,7 @@ export class Walkthrough {
       this._disposeCommons();
       this._activateCommons(next);
       this.floor = target; this.bId = bId;
-      const twin = this.liftInfos.find(i => i.core === inf.core && i.doorIndex === inf.doorIndex);
+      const twin = this.liftInfos.find(i => i.bId === inf.bId && i.core === inf.core && i.doorIndex === inf.doorIndex);
       if (twin) {
         arrived = twin;
         if (twin.lift.group) twin.lift.group.visible = true;
@@ -2208,6 +2215,20 @@ export class Walkthrough {
     for (const r of cand) { const d = Math.hypot(r.center[0] - uv.u, r.center[1] - uv.v); if (d < bd) { bd = d; best = r; } }
     return best;
   }
+  _placeTitle(room, inf, outside, fl) {
+    if (room || this.drive || outside || this.floor == null) return null;   // in the apartment / outdoors → the unit title
+    const bId = (inf && inf.bId) || this.bId || (this.unit && this.unit.building);
+    const near = inf || this._nearestLift(null, false);
+    const sc = near && near.stair != null ? 'Sc.' + near.stair : '';
+    const f = this.riding ? (this._liftFloorNow ?? this.floor) : this.floor;
+    const parts = [bId];
+    if (f === -1) parts.push(this.t('walk.parking') + ' \u22121');
+    else if (f === 0) parts.push(this.t('walk.lobby'));
+    else parts.push(this._floorName(f));
+    if (this.riding || inf) parts.push(this.t('walk.lift') + (sc ? ' ' + sc : ''));
+    else { if (f > 0) parts.push(this.t('walk.corridor')); if (f === 0 && sc) parts.push(sc); }
+    return parts.filter(Boolean).join(' · ');
+  }
   _floorName(f) {
     if (f === -1) return this.t('walk.parking');
     if (f === 0) return this.t('walk.ground');
@@ -2331,12 +2352,22 @@ export class Walkthrough {
   /** Call after the site language changes. */
   refreshTexts() { this._applyTexts(); this._updateHud(true); }
 
-  _updateTitle() {
+  // Title line: the apartment while you are in it (or before the commons exist); otherwise where you are now —
+  // "C4 · Parking −1", "C4 · Lobby · Sc.2", "C4 · Floor 7 · Corridor", "C4 · Floor 7 · Lift Sc.1".
+  _updateTitle(place = this._titlePlace) {
     if (!this.el) return;
     const u = this.unit;
+    this._titlePlace = place || null;
+    const txt = place || (u ? ((this.i18n && typeof this.i18n.unitLabel === 'function' && this.i18n.unitLabel(u)) || unitLabel(u)) : '');
+    if (this.el.t1.dataset.txt === txt && this.el.t1.childNodes.length) return this._updateReserve();
+    this.el.t1.dataset.txt = txt;
     this.el.t1.innerHTML = '';
-    const br = document.createElement('span'); br.className = 'brand'; br.textContent = u ? 'VILNYI RIVER CITY · ' : 'VILNYI RIVER CITY';
-    this.el.t1.append(br, document.createTextNode(u ? ((this.i18n && typeof this.i18n.unitLabel === 'function' && this.i18n.unitLabel(u)) || unitLabel(u)) : ''));
+    const br = document.createElement('span'); br.className = 'brand'; br.textContent = txt ? 'VILNYI RIVER CITY · ' : 'VILNYI RIVER CITY';
+    this.el.t1.append(br, document.createTextNode(txt));
+    this._updateReserve();
+  }
+  _updateReserve() {
+    const u = this.unit;
     this.el.reserve.querySelector('.vw-price').textContent = u && u.price ? '· ' + money(u.price) : '';
     this.el.reserve.style.display = u && u.status && u.status !== 'available' ? 'none' : '';
   }
@@ -2405,6 +2436,7 @@ export class Walkthrough {
     else if (this.floor === 0) place = this.t('walk.lobby');
     else place = this.t('walk.corridor');
     this._placeKind = kind;
+    this._updateTitle(this._placeTitle(room, inf, outside, fl));
     let fname = this._floorName(fl);
     if (outside) { fname = place; place = ''; }
     if (place === fname) place = '';

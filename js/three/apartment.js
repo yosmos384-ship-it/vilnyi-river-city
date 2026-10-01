@@ -229,10 +229,17 @@ function buildMovers(ctx, sg, root) {
   };
   const hideComp = (c) => { if (c && c.group && c.users.every(u => u.t <= 0 && !u.open)) c.group.visible = false; };
   if (!COLMAT) { COLMAT = new THREE.MeshBasicMaterial({ visible: false }); COLMAT.name = 'collider'; }
-  const toggle = (mv, open) => {
+  const toggle = (mv, open, instant = false) => {
     const want = open === undefined ? !mv.open : !!open;
     const ud = mv.proxy.userData;
     if (want === mv.open) return mv.anim ? mv.anim.promise : Promise.resolve();
+    if (instant) {
+      if (mv.anim) { mv.anim.cancel = true; mv.anim = null; }
+      mv.open = want; ud._open = want; ud.open = want; ud._anim = false;
+      if (want && mv.comp) showComp(mv.comp);
+      mv.t = want ? 1 : 0; pose(mv); if (!want) hideComp(mv.comp);
+      return Promise.resolve();
+    }
     mv.open = want; ud._open = want; ud.open = want;
     if (want) {
       if (mv.spec.excl) for (const o of MV) if (o !== mv && o.open && o.spec.excl === mv.spec.excl) toggle(o, false);
@@ -257,10 +264,13 @@ function buildMovers(ctx, sg, root) {
   let disposed = false;
   const proxies = MV.map((mv, i) => {
     const px = new THREE.Mesh(UBOX, COLMAT);
-    px.name = 'cabinet-front'; px.matrixAutoUpdate = false;
-    px.userData.action = { type: 'aptDoor', unitId: unit.id, part: 'cabinet' };
-    px.userData.cabinet = true; px.userData.open = false; px.userData.piece = mv.piece || 'cabinet'; px.userData.motion = mv.spec.type === 'slide' ? 'slide' : 'hinge';
+    const door = mv.spec.door || null;
+    px.name = door ? 'balcony-door' : 'cabinet-front'; px.matrixAutoUpdate = false;
+    px.userData.action = door ? { type: 'aptDoor', unitId: unit.id, part: 'balconyDoor', door } : { type: 'aptDoor', unitId: unit.id, part: 'cabinet' };
+    px.userData.cabinet = !door; px.userData.open = false;
+    if (door) px.userData.balconyDoor = door; px.userData.piece = mv.piece || 'cabinet'; px.userData.motion = mv.spec.type === 'slide' ? 'slide' : 'hinge';
     px.userData.toggle = (open) => toggle(mv, open);
+    px.userData._leafToggle = (open, instant) => toggle(mv, open, instant);
     mv.proxy = px; root.add(px); pose(mv);
     // closed-pose centre and outward facing (unit-local), e.g. to frame a camera on it
     const c = mv.box.getCenter(new THREE.Vector3()).applyMatrix4(mv.B), f = new THREE.Vector3(0, 0, 1).transformDirection(mv.B);
@@ -269,13 +279,56 @@ function buildMovers(ctx, sg, root) {
   });
   return {
     proxies, count: MV.length, batches: batches.length,
-    closeAll: () => Promise.all(MV.filter(mv => mv.open).map(mv => toggle(mv, false))),
+    closeAll: () => Promise.all(MV.filter(mv => mv.open && !mv.spec.door).map(mv => toggle(mv, false))),
     dispose() {
       disposed = true;
       for (const bt of batches) bt.geo.dispose();
       for (const c of comps.values()) if (c.group) c.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     },
   };
+}
+
+// Balcony doors: group the leaf proxies of each door (a french pair opens together) and switch the opening's collider.
+// The collider's userData.solid is true while closed; every change fires window 'vrc:colliders-changed' so the
+// walkthrough can refresh its collider lists.
+const NO_RAYCAST = () => {}, MESH_RAYCAST = THREE.Mesh.prototype.raycast;
+function wireBalconyDoors(ctx, movers) {
+  const { unit } = ctx, out = [];
+  const fire = (d) => {
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('vrc:colliders-changed', { detail: { unitId: unit.id, door: d.id, open: d.open, collider: d.collider } })); } catch { /* no DOM */ }
+  };
+  for (const d of ctx.balconyDoors) {
+    d.proxies = movers ? movers.proxies.filter(p => p.userData.balconyDoor === d.id) : [];
+    if (!d.proxies.length) continue;
+    d.toggle = (open, o = {}) => {
+      const want = open === undefined ? !d.open : !!open;
+      if (want === d.open) return d.promise || Promise.resolve();
+      d.open = want;
+      for (const px of d.proxies) px.userData.open = px.userData._open = want;
+      if (d.collider) d.collider.userData.open = d.collider.userData._open = want;
+      // open: passable at once (the leaf clears the opening within ~1 s); close: blocks at once so nobody gets shut in
+      if (d.collider) { d.collider.userData.solid = !want; d.collider.raycast = want ? NO_RAYCAST : MESH_RAYCAST; }
+      fire(d);
+      const p = d.promise = Promise.all(d.proxies.map(px => px.userData._leafToggle(want, !!o.instant))).then(() => { if (d.promise === p) d.promise = null; });
+      return p;
+    };
+    for (const px of d.proxies) {
+      px.userData.toggle = (open) => d.toggle(open);
+      px.userData.doorKind = d.kind; px.userData.motion = d.kind === 'slide' ? 'slide' : 'hinge';
+      px.userData.doorCollider = d.collider;
+    }
+    // the closed door's collider is also its tap target (it sits in front of the leaves); once open it is
+    // neither solid nor pickable, so taps / glides pass through the opening and the moved leaves take the taps
+    if (d.collider) {
+      const cu = d.collider.userData;
+      cu.doorProxies = d.proxies;
+      cu.action = { type: 'aptDoor', unitId: unit.id, part: 'balconyDoor', door: d.id };
+      cu.toggle = (open) => d.toggle(open);
+      cu.open = false; cu.doorKind = d.kind; cu.motion = d.kind === 'slide' ? 'slide' : 'hinge';
+    }
+    out.push(d);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ small builders (unit-local)
@@ -826,11 +879,16 @@ function buildFacade(ctx, L) {
     // panes
     const n = Math.max(1, Math.round((b - a) / 1.25)), pw = (b - a) / n;
     let slideI = -1;
-    if (f.slide) {
-      const want = ctx.slideU[L.lv] ?? (a + b) / 2;
+    // every living room / bedroom that fronts the outdoor space gets its own openable door in one pane
+    const doorable = L.hasOutdoor && f.room && (f.room.kind === 'living' || f.room.kind === 'bedroom');
+    if (doorable) {
+      const want = f.slide ? (ctx.slideU[L.lv] ?? (a + b) / 2) : (f.room.slideU ?? (a + b) / 2);
       let best = 1e9;
       for (let k = 0; k < n; k++) { const c = a + (k + 0.5) * pw, dd = Math.abs(c - want); if (dd < best) { best = dd; slideI = k; } }
-      ctx.doorU[L.lv] = a + (slideI + 0.5) * pw;
+      if (f.slide) ctx.doorU[L.lv] = a + (slideI + 0.5) * pw;
+      (ctx.doorsU[L.lv] || (ctx.doorsU[L.lv] = [])).push([a + slideI * pw, a + (slideI + 1) * pw]);
+    }
+    if (f.slide) {
       // daylight fill from the main glazing (a cheap stand-in for an area light): neutral white, low, near the glass
       if (!cut) ctx.lightSpots.push({ u: (a + b) / 2, v: P.vF - 0.9, y: L.y, h: 1.5, k: 0.75, pri: 0.5, col: 0xfff2e4, dist: 6.5 });
     }
@@ -838,13 +896,7 @@ function buildFacade(ctx, L) {
     for (let k = 0; k < n; k++) {
       const p0 = a + k * pw, p1 = p0 + pw;
       if (k === slideI) {
-        // sliding panel pushed over its neighbour (outside plane), leaving the opening free
-        const dir = k + 1 < n ? 1 : -1;
-        const q0 = p0 + dir * (pw - 0.06), q1 = q0 + pw;
-        box(sg, m.glazing, q0 + 0.03, y0 + 0.06, vg + 0.05, q1 - 0.03, topY - 0.05, vg + 0.062);
-        box(sg, fr, q0, y0 + 0.012, vg + 0.04, q0 + 0.05, topY, vg + 0.072); box(sg, fr, q1 - 0.05, y0 + 0.012, vg + 0.04, q1, topY, vg + 0.072);
-        box(sg, fr, q0, y0 + 0.012, vg + 0.04, q1, y0 + 0.06, vg + 0.072); box(sg, fr, q0, topY - 0.05, vg + 0.04, q1, topY, vg + 0.072);
-        box(sg, m.metal, q0 + (dir > 0 ? 0.06 : pw - 0.08), y0 + 0.9, vg + 0.02, q0 + (dir > 0 ? 0.08 : pw - 0.06), y0 + 1.3, vg + 0.04);
+        buildBalconyDoor(ctx, L, f, p0, p1, n === 1 ? 0 : k + 1 < n ? 1 : -1, vg, topY);
         f.openU = [p0 + 0.03, p1 - 0.03];
         continue;
       }
@@ -867,6 +919,64 @@ function buildFacade(ctx, L) {
   // slab band between the levels (outside view)
   if (P.duplex && L.lv === 0 && !cut) box(sg, m.exterior, 0, y0 + CH, vF, P.W, y0 + LH, D);
   if (L.hasOutdoor) buildOutdoor(ctx, L);
+}
+// Openable door to the balcony / loggia / terrace in pane [p0, p1] (glazing plane vg). Leaves are movers (see
+// buildMovers) tagged with spec.door; a thin collider fills the opening while the door is closed.
+//   milano / nordic: lift-and-slide leaf on the outer track, slides over its neighbour pane (dir = ±1)
+//   riviera (or a single-pane bay, dir = 0): a pair of outward-opening french doors
+function buildBalconyDoor(ctx, L, f, p0, p1, dir, vg, topY) {
+  const { m, sg, cut } = ctx, y0 = L.y, pw = p1 - p0, fr = m.frame, gl = m.glazing;
+  const hm = m.styleId === 'nordic' ? m.blackMetal : m.styleId === 'milano' ? m.brass : (m.brass || m.metal);
+  const id = 'bd' + L.lv + '-' + ctx.balconyDoors.length;
+  const french = dir === 0 || m.styleId === 'riviera';
+  const H = topY - y0;
+  const rec = { id, level: L.lv, room: f.room.kind, roomName: f.room.name, u: (p0 + p1) / 2, v: vg, y: y0, p0, p1, kind: french ? 'french' : 'slide', collider: null, proxies: [], open: false };
+  if (french) {
+    // outward-opening (onto the balcony): the leaves never sweep through curtains / plants inside
+    const lw = pw / 2 - 0.03 - 0.004, rb = 0.12, st = 0.065, T = 0.06, yb = 0.052, hh = H - 0.047 - yb;
+    for (const side of [-1, 1]) {
+      // side -1: hinged on p0, leaf extends +x; side +1: hinged on p1, extends -x. Origin at the hinge, outer face.
+      const hx = side < 0 ? p0 + 0.03 : p1 - 0.03, sx = -side;
+      const lf = new THREE.Group(); lf.position.set(hx, y0 + yb, vg + T / 2);
+      lf.userData.mover = { type: 'hinge', axis: 'y', angle: -sx * 1.62, dur: 1000, tag: 'balconyDoor', door: id };
+      const bx = (x0, x1, yA, yB, z0, z1, mat) => box(lf, mat, Math.min(sx * x0, sx * x1), yA, z0, Math.max(sx * x0, sx * x1), yB, z1);
+      bx(0, st, 0, hh, -T, 0, fr); bx(lw - st, lw, 0, hh, -T, 0, fr);               // stiles
+      bx(st, lw - st, 0, rb, -T, 0, fr); bx(st, lw - st, hh - st, hh, -T, 0, fr);   // bottom + top rails
+      for (const k of [1, 2]) { const y = rb + (hh - st - rb) * k / 3; bx(st, lw - st, y - 0.012, y + 0.012, -T / 2 - 0.012, -T / 2 + 0.012, fr); }   // glazing bars
+      bx(st, lw - st, rb, hh - st, -T / 2 - 0.004, -T / 2 + 0.004, gl);
+      // lever handle on the meeting stile (inside face) + rose; small pull outside
+      bx(lw - st / 2 - 0.02, lw - st / 2 + 0.02, 1.0, 1.16, -T - 0.008, -T, hm);
+      bx(lw - st / 2 - 0.13, lw - st / 2 + 0.005, 1.1, 1.12, -T - 0.05, -T - 0.03, hm);
+      bx(lw - st / 2 - 0.01, lw - st / 2 + 0.01, 1.1, 1.12, -T - 0.035, -T - 0.008, hm);
+      bx(lw - st / 2 - 0.01, lw - st / 2 + 0.01, 1.02, 1.18, 0, 0.012, hm);
+      // hinges (outside)
+      for (const y of [0.25, hh / 2, hh - 0.25]) bx(-0.004, 0.012, y - 0.06, y + 0.06, -0.004, 0.012, hm);
+      sg.add(lf);
+    }
+  } else {
+    // outer track: clear of the mullions (vg ± 0.0275) so the leaf and its inner handle pass over the fixed pane
+    const z0 = vg + 0.05, z1 = vg + 0.084, sw = 0.055;
+    const lf = new THREE.Group(); lf.position.set(p0, y0, 0);
+    lf.userData.mover = { type: 'slide', dir: [dir, 0, 0], dist: pw - 0.06, dur: 1300, tag: 'balconyDoor', door: id };
+    const bx = (x0, x1, yA, yB, zA, zB, mat) => box(lf, mat, x0, yA, zA, x1, yB, zB);
+    bx(0, sw, 0.012, H, z0, z1, fr); bx(pw - sw, pw, 0.012, H, z0, z1, fr);
+    bx(sw, pw - sw, 0.012, 0.075, z0, z1, fr); bx(sw, pw - sw, H - sw, H, z0, z1, fr);
+    bx(sw, pw - sw, 0.075, H - sw, z0 + 0.013, z0 + 0.021, gl);
+    // pull handle on the leading stile (the edge away from the stack), inside and outside
+    const hx = dir > 0 ? sw / 2 : pw - sw / 2;
+    bx(hx - 0.011, hx + 0.011, 0.86, 1.34, z0 - 0.02, z0 - 0.008, hm);
+    for (const y of [0.9, 1.3]) bx(hx - 0.007, hx + 0.007, y - 0.008, y + 0.008, z0 - 0.008, z0, hm);
+    bx(hx - 0.008, hx + 0.008, 0.95, 1.25, z1, z1 + 0.012, hm);
+    // lift-and-slide lever
+    bx(hx - 0.012, hx + 0.012, 1.02, 1.08, z0 - 0.014, z0, hm);
+    sg.add(lf);
+  }
+  if (!cut) {
+    rec.collider = collider(ctx.cg, p0, y0 + 0.02, vg - 0.06, p1, y0 + 2.2, vg + 0.08);
+    rec.collider.name = 'col-balcony-door'; rec.collider.userData.balconyDoor = id;
+  }
+  ctx.balconyDoors.push(rec);
+  return rec;
 }
 // Rooms lit from one glazed side fall off towards the back: gradient shade decals on the ceiling, floor and side walls
 // (dense at the corridor side, clear at the glass). Cheap stand-in for baked GI; unlit decals → merge into 1 draw call.
@@ -932,16 +1042,28 @@ function buildOutdoor(ctx, L) {
   // furniture
   const bp = ctx.doorU[L.lv] ?? W / 2;
   const cv = D + BD / 2 - 0.05;
-  const rf = F.outdoorTable(m); const tu = bp < W / 2 ? Math.max(bp + 1.55, W - 1.1) : Math.min(bp - 1.55, 1.1);
+  // keep the table and the potted plant out of the swing / path of every door to this outdoor space
+  const doors = ctx.doorsU[L.lv] || [];
+  const blocks = (u0, u1) => doors.some(([q0, q1]) => u1 > q0 - 0.12 && u0 < q1 + 0.12);
+  let tu = bp < W / 2 ? Math.max(bp + 1.55, W - 1.1) : Math.min(bp - 1.55, 1.1);
+  if (blocks(tu - 0.85, tu + 0.85)) {
+    const cands = [1.1, W - 1.1];
+    const edges = [0, ...doors.flat().sort((x, y) => x - y), W];
+    for (let i = 0; i + 1 < edges.length; i += 2) cands.push((edges[i] + edges[i + 1]) / 2);
+    tu = cands.find(c => c > 0.95 && c < W - 0.95 && !blocks(c - 0.85, c + 0.85)) ?? -1;
+  }
+  const rf = F.outdoorTable(m);
   if (W > 4.2 && tu > 0.95 && tu < W - 0.95) put(sg, rf, tu, cv, '+v', fy);
   const pl = F.planter(m, { len: Math.min(1.2, W * 0.18) }); put(sg, pl, tu < W / 2 ? W - 0.75 : 0.75, v1 - 0.28, '-v', fy);
-  if (kind === 'terrace') {
-    const p2 = F.plant(m, { kind: 'olive', h: 1.6, seed: 9 }); put(sg, p2, tu < W / 2 ? 0.45 : W - 0.45, D + 0.4, '+v', fy);
-  } else {
-    const p3 = F.plant(m, { kind: 'snake', h: 0.8, seed: 21 }); put(sg, p3, tu < W / 2 ? 0.35 : W - 0.35, D + 0.35, '+v', fy);
+  const pu = tu < W / 2 ? W - 0.4 : 0.4, pu2 = W - pu;
+  const plantU = !blocks(pu - 0.3, pu + 0.3) ? pu : !blocks(pu2 - 0.3, pu2 + 0.3) ? pu2 : null;
+  if (plantU != null) {
+    if (kind === 'terrace') put(sg, F.plant(m, { kind: 'olive', h: 1.6, seed: 9 }), plantU, D + 0.4, '+v', fy);
+    else put(sg, F.plant(m, { kind: 'snake', h: 0.8, seed: 21 }), plantU, D + 0.35, '+v', fy);
   }
-  // exterior wall light next to the door
-  if (!cut) { FX.box(sg, 0.08, 0.2, 0.06, m.frame, 0.3, y0 + 2.0, D + 0.03); FX.box(sg, 0.06, 0.15, 0.005, m.lightEmit, 0.3, y0 + 2.02, D + 0.062); }
+  // exterior wall light next to the door (clear of every door leaf)
+  const lu = [0.3, W - 0.3].find(u => !blocks(u - 0.1, u + 0.1));
+  if (!cut && lu != null) { FX.box(sg, 0.08, 0.2, 0.06, m.frame, lu, y0 + 2.0, D + 0.03); FX.box(sg, 0.06, 0.15, 0.005, m.lightEmit, lu, y0 + 2.02, D + 0.062); }
 }
 
 // ---------------- skirting, bath tiling, feature walls
@@ -1371,6 +1493,8 @@ function furnishBedroom(ctx, L, g, r, idx) {
     if (!master && !leftUsed && a1 - 2.1 - a0 >= 1.0) put(g, F.desk(m, { len: 1.0 }), a0 + 0.3, b1 - 0.7, '+u');
     else if (master && !leftUsed && a1 - 2.1 - a0 >= 2.0) put(g, F.armchair(m), a0 + 0.55, b1 - 0.6, 2.4);
     if (master && !L.zones.livRoom) ctx.slideU[L.lv] = (a0 + (leftUsed ? 0.95 : a1 - 2.1 - a0 >= 2.0 ? 1.2 : 0.3) + a1 - 2.15) / 2;
+    // balcony door lane: between the left-wall piece (wardrobe / desk / armchair) and the bed zone
+    r.slideU = master ? (a0 + (leftUsed ? 0.95 : a1 - 2.1 - a0 >= 2.0 ? 1.2 : 0.3) + a1 - 2.15) / 2 : (a0 + (leftUsed ? 0.95 : 0.75) + a1 - 2.15) / 2;
     put(g, F.rug(m, { w: Math.min(2.4, bw + 1.2), d: 2.0 }), a1 - 1.3, vcb, '+u');
   } else {
     // narrow room: headboard on the back wall beside the door, bed along v
@@ -1385,6 +1509,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     if (free > 1.3 && a1 - a0 > 2.3) { const wl = Math.min(1.6, free - 0.2); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH, seed: idx + 2 }), a0 + 0.3, b1 - 0.1 - wl / 2, '+u'); }
     else put(g, F.plant(m, { kind: 'snake', h: 0.9, seed: 7 + idx }), a1 - 0.3, b1 - 0.3, '+v');
     if (master && !L.zones.livRoom) ctx.slideU[L.lv] = bu;
+    r.slideU = bu;
   }
   if (!ctx.cut) put(g, F.curtains(m, { w: w - 0.2, h: CH - 0.16, drape: 0.5 }), (a0 + a1) / 2, b1 - 0.12, '-v', CH - 0.05);
   if (!ctx.cut) put(g, F.pendant(m, { kind: 'bed', drop: 0.45 }), bedC[0], bedC[1], '+v', CH);
@@ -1440,7 +1565,7 @@ function build(unit, styleId, opts = {}) {
   const root = new THREE.Group(); root.name = 'apartment-' + unit.id + '-' + m.styleId + (opts.cutaway ? '-cut' : '');
   const sg = new THREE.Group(); sg.name = 'static-src';
   const cg = new THREE.Group(); cg.name = 'colliders';
-  const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {} };
+  const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {}, doorsU: {}, balconyDoors: [] };
   const onlyLevel = opts.cutaway && P.duplex ? (opts.level ?? 0) : null;
   CUR_M = m;
   const T0 = performance.now();
@@ -1465,6 +1590,7 @@ function build(unit, styleId, opts = {}) {
   // openable fronts → dynamic batch + click proxies (the cutaway bakes them closed with everything else)
   const T1 = performance.now();
   const movers = opts.cutaway ? null : buildMovers(ctx, sg, root);
+  const doors = opts.cutaway ? [] : wireBalconyDoors(ctx, movers);
   const T2 = performance.now();
   const halos = opts.cutaway ? null : bloomMesh(sg, m);
   bake(sg, baked);
@@ -1490,6 +1616,12 @@ function build(unit, styleId, opts = {}) {
   }
   const outRoom = rooms.find(r => OUTDOOR.has(r.kind) && r.level === 0) || rooms.find(r => OUTDOOR.has(r.kind));
   const balconyPoint = outRoom ? { u: clamp(ctx.doorU[outRoom.level] ?? P.W / 2, 0.6, P.W - 0.6), v: P.D + 0.75, level: outRoom.level } : null;
+  // the door the balconyPoint faces (the main one of that level), else the first door of the level
+  const mainDoor = (lv = balconyPoint ? balconyPoint.level : 0) => {
+    const list = doors.filter(d => d.level === lv), u = ctx.doorU[lv];
+    return list.find(d => u != null && Math.abs(d.u - u) < 0.01) || list[0] || doors[0] || null;
+  };
+  if (opts.startOnBalcony && doors.length) mainDoor()?.toggle(true, { instant: true });
   const disposeAll = () => {
     baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     if (ctx.door) ctx.door.leaf.geometry.dispose();
@@ -1501,7 +1633,12 @@ function build(unit, styleId, opts = {}) {
     stats: { meshes: baked.children.length + (ctx.door ? 2 : 0) + (movers ? movers.batches : 0), colliders: cg.children.length, fronts: movers ? movers.count : 0, ms: { furnish: Math.round(T1 - T0), fronts: Math.round(T2 - T1), bake: Math.round(T3 - T2) } },
     doorLeaf: ctx.door ? ctx.door.leaf : null,
     // every openable cabinet door / drawer / appliance door (invisible click proxies with action + toggle)
-    cabinets: movers ? movers.proxies : [], closeCabinets: movers ? movers.closeAll : () => Promise.resolve(),
+    cabinets: movers ? movers.proxies.filter(p => !p.userData.balconyDoor) : [], closeCabinets: movers ? movers.closeAll : () => Promise.resolve(),
+    // doors to the balcony / loggia / terrace: [{id, level, room, u, v, y, kind:'slide'|'french', open, toggle(open)→Promise,
+    //   collider, proxies}] (unit-local). Each toggle fires window 'vrc:colliders-changed'.
+    balconyDoors: doors,
+    openBalconyDoor: (lv) => { const d = mainDoor(lv); return d ? d.toggle(true) : Promise.resolve(); },
+    closeBalconyDoors: () => Promise.all(doors.filter(d => d.open).map(d => d.toggle(false))),
     dispose: disposeAll,
   };
 }

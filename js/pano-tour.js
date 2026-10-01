@@ -11,6 +11,7 @@
 // Manifest: assets/tour/tour.json (written by pano-work/build_tour.py)
 //   types[typeId]  = { refUnit, width, depth, azimuth, rooms:[{kind,name,level,poly:[[u,v]…]}], styles:{ styleId:{ points:[…] } } }
 //   commons[key]   = { building, floor, frame:'building', points:[…] }          (key: lobby | corridor | parking)
+//   commonsBy[bId][key] = same, per building (C3 is mirrored); the viewer uses the unit's building, else `commons`
 //   point = { id, room, level, pos:[u, v, y], yawOffset, links:[{ to, yaw, dist }], img:{ '2k': path, '4k': path } }
 //   pos is unit-local (types) or building-local x/z (commons); y = floor height of the level; the camera sat at y + eye.
 // Projection: image centre = +v (+z) of the scene frame, left quarter = +u; yaw = three.js camera rotation.y (+ yawOffset).
@@ -184,7 +185,10 @@ export async function openPanoTour(container, opts = {}) {
     for (const [k, v] of Object.entries(t.styles || {})) styles[k] = { points: norm(v.points) };
     sceneDefs.apt = { kind: 'apt', def: { ...t, styles }, typeId, sample: !!(unit && t.refUnit && unit.id !== t.refUnit) };
   }
-  for (const c of COMMONS) if (man.commons && man.commons[c]) sceneDefs[c] = { kind: 'commons', def: { ...man.commons[c], styles: { default: { points: norm(man.commons[c].points) } } } };
+  // common areas of the unit's own building (commonsBy[building]), else the default set
+  const bld = (unit && unit.building) || opts.building;
+  const CM = (bld && man.commonsBy && man.commonsBy[bld]) || man.commons || {};
+  for (const c of COMMONS) if (CM[c]) sceneDefs[c] = { kind: 'commons', def: { ...CM[c], styles: { default: { points: norm(CM[c].points) } } } };
   const stylesOf = (key) => { const d = sceneDefs[key]; return d ? Object.keys(d.def.styles || {}).filter(s => (d.def.styles[s].points || []).length) : []; };
 
   // ---------------------------------------------------------------- DOM

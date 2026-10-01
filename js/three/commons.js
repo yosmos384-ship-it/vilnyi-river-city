@@ -284,6 +284,31 @@ const texKeys = () => cached('keys', () => {
   });
   return texOf(c, { repeat: false });
 });
+// Backlight mask for the keys (same atlas cells): the engraved glyph glows warm, everything else black.
+const texKeysGlow = () => cached('keysGlow', () => {
+  const c = canvas(512, 512), g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 512, 512);
+  KEY_LIST.forEach((k, i) => {
+    const cx = (i % 4) * 128 + 64, cy = ((i / 4) | 0) * 128 + 64;
+    g.save(); g.translate(cx, cy); g.fillStyle = k === 'bell' ? '#ff9a7a' : '#fff'; g.strokeStyle = g.fillStyle; g.shadowColor = g.fillStyle; g.shadowBlur = 6;
+    if (typeof k === 'number') {
+      const t = floorLabel(k).replace('-', '−');
+      g.font = `600 ${t.length > 1 ? 58 : 66}px ${SANS}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 0, 4);
+    } else if (k === 'open' || k === 'close') {
+      const s = k === 'open' ? 1 : -1; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(0, -30); g.lineTo(0, 30); g.stroke();
+      for (const side of [-1, 1]) { g.beginPath(); const tip = side * (s > 0 ? 40 : 8), base = side * (s > 0 ? 12 : 36); g.moveTo(tip, 0); g.lineTo(base, -17); g.lineTo(base, 17); g.closePath(); g.fill(); }
+    } else { g.beginPath(); g.arc(0, 0, 26, 0, TAU); g.lineWidth = 6; g.stroke(); }
+    g.restore();
+  });
+  return texOf(c, { repeat: false });
+});
+// Lift-lobby wall wash: warm light grazing down the wall from a ceiling cove (additive, u across, v = 0 at the bottom)
+const texWash = () => cached('wash', () => {
+  const c = canvas(8, 256), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, 'rgb(255,214,160)'); gr.addColorStop(0.08, 'rgb(190,150,104)'); gr.addColorStop(0.35, 'rgb(84,64,42)'); gr.addColorStop(0.75, 'rgb(22,16,10)'); gr.addColorStop(1, 'rgb(0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 8, 256); return texOf(c, { repeat: false });
+});
 // 3 columns × 4 rows (top row = highest floors), then a row with door-open / door-close / alarm
 const PANEL_ROWS = [[8, 9, 10], [5, 6, 7], [2, 3, 4], [-1, 0, 1], ['open', 'close', 'bell']];
 const KEY_R = 0.019, KEY_PITCH = 0.062;   // 3.8 cm keys on a 6.2 cm grid
@@ -324,8 +349,10 @@ function M(key) {
     glass: () => S({ color: 0xc9d6d4, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 1.3 }),
     frosted: () => S({ color: 0xefe6d6, roughness: 0.5, emissive: 0xffdcb0, emissiveIntensity: 0.45, emissiveMap: texGlow() }),
     blackGlass: () => S({ color: 0x0b0a09, roughness: 0.06, metalness: 0.3, envMapIntensity: 1.2 }),
-    mirror: () => S({ color: 0x5e554a, metalness: 1, roughness: 0.04, envMapIntensity: 1.0 }),
-    bronzeCar: () => S({ color: 0x8e6a47, metalness: 1, roughness: 0.22, map: texBrushed() }, 0.9),
+    mirror: () => S({ color: 0x9a8e80, metalness: 1, roughness: 0.04, envMapIntensity: 1.3 }),
+    // car walls: brushed bronze that also picks up the LED ceiling (a little self-glow so it never reads black)
+    bronzeCar: () => S({ color: 0xa27a52, metalness: 0.8, roughness: 0.26, map: texBrushed(), envMapIntensity: 1.35, emissive: 0x4a3018, emissiveIntensity: 0.55 }, 0.9),
+    carFrame: () => S({ color: 0x5a4230, metalness: 0.85, roughness: 0.34, envMapIntensity: 1.2, emissive: 0x24170c, emissiveIntensity: 0.6 }),
     velvet: () => S({ color: 0x2f3c3a, roughness: 0.85, envMapIntensity: 0.6 }),
     velvetSand: () => S({ color: 0xb49a78, roughness: 0.9, envMapIntensity: 0.6 }),
     rug: () => S({ color: 0x8e7f6c, roughness: 1, envMapIntensity: 0.5 }),
@@ -339,9 +366,17 @@ function M(key) {
     bulb: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 2.4, 1.6) }),
     wordmark: () => { const m = new THREE.MeshStandardMaterial({ map: texWordmark(), transparent: true, metalness: 0.85, roughness: 0.28, alphaTest: 0.02, emissive: 0x8a6528, emissiveMap: texWordmark(), emissiveIntensity: 0.8 }); return m; },
     signs: () => new THREE.MeshBasicMaterial({ map: texSigns(), color: new THREE.Color(1.15, 1.15, 1.15) }),
-    keyFace: () => new THREE.MeshStandardMaterial({ map: texKeys(), metalness: 0.75, roughness: 0.3, envMapIntensity: 1.1 }),
-    keyFaceLit: () => new THREE.MeshStandardMaterial({ map: texKeys(), metalness: 0.6, roughness: 0.3, emissive: 0xffc46a, emissiveMap: texKeys(), emissiveIntensity: 0.32 }),
-    keyRing: () => S({ color: 0x2a2119, metalness: 0.8, roughness: 0.4 }),
+    // backlit keys: the engraved glyph always glows softly (legible in any light), much brighter when pressed
+    keyFace: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0x86827b, metalness: 0.6, roughness: 0.3, envMapIntensity: 1.0, emissive: 0xffb04e, emissiveMap: texKeysGlow(), emissiveIntensity: 1.25 }),
+    keyFaceLit: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0xa09a90, metalness: 0.45, roughness: 0.3, emissive: 0xffc46a, emissiveMap: texKeysGlow(), emissiveIntensity: 4 }),
+    keyRing: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 0.66, 0.3) }),   // idle halo (dim amber)
+    callFace: () => S({ color: 0xe4e0d8, metalness: 0.6, roughness: 0.28, map: texBrushed(), emissive: 0x6a5238, emissiveIntensity: 0.35 }),
+    callFaceLit: () => S({ color: 0xfff0d0, metalness: 0.3, roughness: 0.3, emissive: 0xffc46a, emissiveIntensity: 1.6 }),
+    glyph: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(2.0, 1.45, 0.8) }),
+    brassPlate: () => S({ color: 0xd2ac66, metalness: 0.85, roughness: 0.24, emissive: 0x3a2812, emissiveIntensity: 1 }),
+    ledCar: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(3.4, 2.85, 2.1) }),
+    ledCarDot: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 4.1, 2.9) }),
+    wash: () => new THREE.MeshBasicMaterial({ map: texWash(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.32, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
     keyRingLit: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.2, 0.95) }),
     keyRingRed: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 0.5, 0.3) }),
     btn: () => S({ color: 0xcaa566, metalness: 1, roughness: 0.25 }),
@@ -512,7 +547,7 @@ function lightRig() {
   RIG.group = new THREE.Group(); RIG.group.name = 'vrc-commons-lights';
   for (let i = 0; i < 4; i++) { const l = new THREE.PointLight(0xffd4a0, 0, 11, 2); RIG.pts.push(l); RIG.group.add(l); }
   RIG.hemi = new THREE.HemisphereLight(0xfff1dc, 0x3b342c, 0); RIG.group.add(RIG.hemi);
-  RIG.car = new THREE.PointLight(0xffe6c8, 0, 3.2, 2); RIG.group.add(RIG.car);
+  RIG.car = new THREE.PointLight(0xffdcb0, 0, 4.2, 2); RIG.group.add(RIG.car);
   return RIG;
 }
 function claimRig(root, spots, hemi = 0.12) {
@@ -662,6 +697,7 @@ function tween(ms, fn) {
 }
 // Car interior (lift-local frame: +z = liftNormal, z = 0 on the landing wall line, x across the door):
 const CAR = { x: 0.8, zf: -0.18, zb: -1.9, h: 2.45 };
+const CAR_LUX = 4.5;   // the one shared car light (candela), moved to whichever car is active
 
 export class Lift {
   // core: CORES index (or the core object); doorIndex: 0/1; floor: landing floor of this instance (the car starts here);
@@ -681,7 +717,7 @@ export class Lift {
     this.car = new THREE.Group(); this.car.position.y = floorY(floor); frame.add(this.car); this.car.visible = false;
     // indicator (shared by landing + car)
     this.ind = canvas(256, 96); this.indTex = texOf(this.ind, { repeat: false });
-    this.indMat = new THREE.MeshBasicMaterial({ map: this.indTex, color: new THREE.Color(1.4, 1.4, 1.4) });
+    this.indMat = new THREE.MeshBasicMaterial({ map: this.indTex, color: new THREE.Color(2.3, 2.3, 2.3) });
     this._drawInd(floor, 0);
     this._buildLanding(opts);
     this._buildCar();
@@ -708,7 +744,7 @@ export class Lift {
     return [L, R, g];
   }
   _buildLanding(opts) {
-    const b = new Batch();
+    const b = new Batch(null);   // lifts sit on the true (already reflected) cores: never mirror their geometry
     // shaft side walls + back (only near this landing; the shaft above/below is never seen)
     b.box('plasterW', -POCKET - 0.1, -POCKET, -0.3, 2.95, 0.02, -2.42);
     b.box('plasterW', POCKET, POCKET + 0.1, -0.3, 2.95, 0.02, -2.42);
@@ -728,11 +764,11 @@ export class Lift {
     if (this.rear) { const [L2, R2] = this._panelPair(this.landing, -2.345); this.landDoors.push(L2, R2); }
   }
   _buildCar() {
-    const b = new Batch(), s = new Batch(), fl = new Batch();
+    const b = new Batch(null), s = new Batch(null), fl = new Batch(null);
     const { x, zf, zb, h } = CAR;
     // floor & ceiling
     b.box('nero', -x, x, -0.06, 0, zb - 0.1, zf + 0.08);
-    b.box('bronzeDark', -x - 0.04, x + 0.04, h, h + 0.05, zb - 0.06, zf + 0.02);
+    b.box('carFrame', -x - 0.04, x + 0.04, h, h + 0.05, zb - 0.06, zf + 0.02);
     // soft contact darkening along the car walls (floor) and around the LED ceiling
     const xi = x - 0.012, fy = 0.003;
     aoQuad(b, 'aoFloor', [-xi, fy, zb], [-xi, fy, zf], [0.22, 0, 0]); aoQuad(b, 'aoFloor', [xi, fy, zb], [xi, fy, zf], [-0.22, 0, 0]);
@@ -740,7 +776,10 @@ export class Lift {
     aoQuad(b, 'aoCeil', [-xi, h - 0.053, zb], [-xi, h - 0.053, zf], [0.12, 0, 0]); aoQuad(b, 'aoCeil', [xi, h - 0.053, zb], [xi, h - 0.053, zf], [-0.12, 0, 0]);
     // LED ceiling: glowing panel framed in bronze with dot grid
     b.box('bronze', -x + 0.02, x - 0.02, h - 0.05, h, zb + 0.02, zf - 0.02);
-    b.box('ledSoft', -x + 0.14, x - 0.14, h - 0.052, h - 0.05, zb + 0.14, zf - 0.14);
+    b.box('ledCar', -x + 0.14, x - 0.14, h - 0.052, h - 0.05, zb + 0.14, zf - 0.14);
+    // perimeter light slot (cove) between the bronze frame and the car walls + a strip over the door header
+    for (const sx of [-1, 1]) b.box('ledCarDot', sx * (x - 0.035), sx * (x - 0.02), h - 0.056, h - 0.05, zb + 0.03, zf - 0.03);
+    for (const zz of [zb + 0.025, zf - 0.035]) b.box('ledCarDot', -x + 0.03, x - 0.03, h - 0.056, h - 0.05, zz, zz + 0.012);
     for (let i = 1; i < 4; i++) { const xx = -x + 0.14 + (i / 4) * (2 * x - 0.28); b.box('brass', xx - 0.01, xx + 0.01, h - 0.09, h - 0.052, zb + 0.14, zf - 0.14); }
     for (let i = 1; i < 4; i++) { const zz = zb + 0.14 + (i / 4) * (zf - zb - 0.28); b.box('brass', -x + 0.14, x - 0.14, h - 0.09, h - 0.052, zz - 0.01, zz + 0.01); }
     b.box('brass', -x + 0.13, x - 0.13, h - 0.09, h - 0.052, zb + 0.13, zb + 0.15); b.box('brass', -x + 0.13, x - 0.13, h - 0.09, h - 0.052, zf - 0.15, zf - 0.13);
@@ -748,9 +787,9 @@ export class Lift {
     // side walls: brushed bronze panels with dark reveals
     for (const sx of [-1, 1]) {
       const xi = sx * x, xo = sx * (x + 0.04);
-      s.box('bronzeDark', xi, xo, 0, h, zb - 0.04, zf);
+      s.box('carFrame', xi, xo, 0, h, zb - 0.04, zf);
       for (const [z0, z1] of [[zb, zb + 0.56], [zb + 0.58, zb + 1.14], [zb + 1.16, zf]]) b.box('bronzeCar', xi, xi - sx * 0.012, 0.12, h - 0.06, z0 + 0.005, z1 - 0.005);
-      b.box('bronzeDark', xi, xi - sx * 0.02, 0, 0.12, zb, zf);   // kick
+      b.box('carFrame', xi, xi - sx * 0.02, 0, 0.12, zb, zf);   // kick
     }
     // mirror on the left (+x) wall, framed
     b.box('mirror', x - 0.014, x - 0.018, 0.95, h - 0.14, zb + 0.12, zf - 0.12);
@@ -761,17 +800,19 @@ export class Lift {
     for (const zz of [zb + 0.2, zf - 0.2]) b.box('brass', x - 0.09, x - 0.012, 0.905, 0.935, zz - 0.015, zz + 0.015);
     rail(-x + 0.15, x - 0.15, zb + 0.05, zb + 0.09);
     // front return walls + header (doors between)
-    for (const sx of [-1, 1]) { s.box('bronzeDark', sx * 0.5, sx * x, 0, h, zf, zf + 0.04); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zf - 0.012, zf); }
-    s.box('bronzeDark', -0.5, 0.5, LIFT_H, h, zf, zf + 0.04);
+    for (const sx of [-1, 1]) { s.box('carFrame', sx * 0.5, sx * x, 0, h, zf, zf + 0.04); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zf - 0.012, zf); }
+    s.box('carFrame', -0.5, 0.5, LIFT_H, h, zf, zf + 0.04);
     // back: rear doors opening in a bronze wall (through-car; rear doors only open at the ground-floor lobbies)
-    for (const sx of [-1, 1]) { s.box('bronzeDark', sx * 0.5, sx * x, 0, h, zb - 0.04, zb); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zb, zb + 0.012); }
-    s.box('bronzeDark', -0.5, 0.5, LIFT_H, h, zb - 0.04, zb);
+    for (const sx of [-1, 1]) { s.box('carFrame', sx * 0.5, sx * x, 0, h, zb - 0.04, zb); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zb, zb + 0.012); }
+    s.box('carFrame', -0.5, 0.5, LIFT_H, h, zb - 0.04, zb);
     // operating panel (COP) on the right (-x) wall, next to the door: black glass plate in a brass frame
     const P = this.panel = { xs: -x + 0.026, zc: zf - 0.25, y0: 1.03, y1: 1.565 };
     const pw = 0.145;
     b.box('blackGlass', -x + 0.012, P.xs, P.y0, P.y1, P.zc - pw, P.zc + pw);
     for (const [y0, y1, z0, z1] of [[P.y0 - 0.008, P.y0, P.zc - pw - 0.008, P.zc + pw + 0.008], [P.y1, P.y1 + 0.008, P.zc - pw - 0.008, P.zc + pw + 0.008],
       [P.y0, P.y1, P.zc - pw - 0.008, P.zc - pw], [P.y0, P.y1, P.zc + pw, P.zc + pw + 0.008]]) b.box('brass', -x + 0.012, P.xs + 0.003, y0, y1, z0, z1);
+    // soft LED edge-light behind the COP plate (reads as a lit panel from the doorway)
+    b.box('ledSoft', -x + 0.011, -x + 0.013, P.y0 - 0.012, P.y1 + 0.012, P.zc - pw - 0.012, P.zc + pw + 0.012);
     // screen bezel + hairline under the floor keys
     b.box('bronzeDark', P.xs, P.xs + 0.002, 1.462, 1.532, P.zc - 0.085, P.zc + 0.085);
     b.box('brass', P.xs, P.xs + 0.002, 1.1495, 1.1525, P.zc - 0.1, P.zc + 0.1);
@@ -840,7 +881,7 @@ export class Lift {
     if (!on) { R.car.intensity = 0; R.carOwner = null; return; }
     this.car.updateMatrixWorld(true); R.group.parent.updateMatrixWorld(true);
     const v = this.car.localToWorld(new THREE.Vector3(0, CAR.h - 0.35, (CAR.zf + CAR.zb) / 2));
-    R.group.worldToLocal(v); R.car.position.copy(v); R.car.intensity = 0.3;
+    R.group.worldToLocal(v); R.car.position.copy(v); R.car.intensity = CAR_LUX;
   }
   async open() {
     if (this.doorsOpen) return;
@@ -926,27 +967,49 @@ export class Lift {
 // ============================================================ shared pieces
 function callPlate(ctx, x, y, z, yaw, act) {   // brass hall-call plate with up/down keys (one action mesh); keys light when pressed
   const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = yaw;
-  const plate = new THREE.Mesh(ctx.geo('callPlate', () => new THREE.BoxGeometry(0.13, 0.28, 0.012)), M('brass'));
+  const plate = new THREE.Mesh(ctx.geo('callPlate', () => new THREE.BoxGeometry(0.13, 0.28, 0.012)), M('brassPlate'));
   plate.userData.action = act; plate.name = 'vrc-lift-call';
   const bg = ctx.geo('callBtn', () => { const c = new THREE.CylinderGeometry(0.027, 0.027, 0.01, 32); c.rotateX(Math.PI / 2); return c; });
   const rg = ctx.geo('callRing', () => new THREE.TorusGeometry(0.031, 0.0026, 8, 40));
   const keys = [];
   for (const dy of [0.052, -0.052]) {
-    const b = new THREE.Mesh(bg, M('keyFace')); b.position.set(0, dy, 0.009); b.userData.dir = dy > 0 ? 1 : -1;
+    const b = new THREE.Mesh(bg, M('callFace')); b.position.set(0, dy, 0.009); b.userData.dir = dy > 0 ? 1 : -1;
     const r = new THREE.Mesh(rg, M('keyRing')); r.position.set(0, dy, 0.0065);
     plate.add(b, r); keys.push([b, r]);
   }
   // engraved-look arrows (tiny dark triangles on the key faces)
   const tri = ctx.geo('callTri', () => { const s = new THREE.Shape(); s.moveTo(0, 0.011); s.lineTo(0.011, -0.008); s.lineTo(-0.011, -0.008); s.closePath(); return new THREE.ShapeGeometry(s); });
-  for (const [b] of keys) { const t = new THREE.Mesh(tri, M('bronzeDark')); t.position.set(0, 0, 0.0052); if (b.userData.dir < 0) t.rotation.z = Math.PI; b.add(t); }
+  for (const [b] of keys) { const t = new THREE.Mesh(tri, M('glyph')); t.position.set(0, 0, 0.0052); if (b.userData.dir < 0) t.rotation.z = Math.PI; b.add(t); }
   plate.userData.light = (on, which) => {
     for (const [b, r] of keys) {
       const lit = on && (!which || which === b || which.parent === b || which === r);
-      b.material = M(lit ? 'keyFaceLit' : 'keyFace'); r.material = M(lit ? 'keyRingLit' : 'keyRing');
+      b.material = M(lit ? 'callFaceLit' : 'callFace'); r.material = M(lit ? 'keyRingLit' : 'keyRing');
     }
   };
-  g.add(plate); ctx.root.add(g); return g;
+  // soft backlight halo on the wall around the plate (the plate floats 1 cm off a glowing edge)
+  const halo = new THREE.Mesh(ctx.geo('callHalo', () => new THREE.PlaneGeometry(0.16, 0.31)), M('ledSoft')); halo.position.z = -0.0052;
+  g.add(halo, plate); ctx.root.add(g); return g;
 }
+// Lift-lobby cove: a linear LED slot where the lift wall meets the ceiling + a warm wash grazing down the wall.
+// Wall along x at surface z = zs, facing `dir` (±1 in z); gaps = [[a0, a1, top]] openings the wash must skip below `top`.
+const WASH_H = 2.3;
+function coveWall(B, a0, a1, zs, dir, H, gaps = []) {
+  B.box('led', a0, a1, H - 0.032, H - 0.018, zs, zs + dir * 0.045);
+  B.box('bronzeDark', a0, a1, H - 0.018, H, zs, zs + dir * 0.055);
+  const yaw = dir > 0 ? 0 : Math.PI, zp = zs + dir * 0.003, yb = H - WASH_H;
+  const quad = (x0, x1, y0, y1) => {
+    if (x1 - x0 < 0.02 || y1 - y0 < 0.02) return;
+    const g = new THREE.PlaneGeometry(x1 - x0, y1 - y0); g.translate(0, (y0 + y1) / 2, 0);
+    const p = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, uv.getX(i), clamp((p.getY(i) - yb) / WASH_H));
+    B.add('wash', g, mat4((x0 + x1) / 2, 0, zp, yaw));
+  };
+  const gs = gaps.map(([g0, g1, t]) => [Math.max(a0, g0), Math.min(a1, g1), t]).filter(([g0, g1]) => g1 > g0).sort((p, q) => p[0] - q[0]);
+  let a = a0;
+  for (const [g0, g1, t] of gs) { quad(a, g0, Math.max(0, yb), H - 0.032); quad(g0, g1, Math.max(t + 0.02, yb), H - 0.032); a = Math.max(a, g1); }
+  quad(a, a1, Math.max(0, yb), H - 0.032);
+}
+const opGaps = ops => ops.map(o => [o.c - o.w / 2 - 0.08, o.c + o.w / 2 + 0.08, o.kind === 'lift' ? LIFT_H + 0.3 : o.h + 0.06]);
 function framedArt(ctx, x, y, z, yaw, w, h, k) {   // canvas in a slim bronze frame + picture light
   const b = new Batch(null);
   b.box('bronze', -w / 2 - 0.035, w / 2 + 0.035, -h / 2 - 0.035, h / 2 + 0.035, 0, 0.03);
@@ -1297,6 +1360,8 @@ function buildTypical(bId, floor) {
       signPlane(ctx, 0, WX0 + FACE + SKIN + 0.02, 2.5, -6.0, Math.PI / 2, 0.2, 0.2);
     }
     featureSpots.push({ a: xm, zone: [g0, g1] });
+    // lift-lobby cove over the marble zone (skipping the lift, door and passage openings)
+    coveWall(B, Math.max(g0, L0 - 1.7), Math.min(g1, L1 + 1.7), -1.1 + FACE + SKIN, 1, H, opGaps(nOps));
   });
   // wall runs
   const sOps = doorOp(s1), sZones = portals(s1);
@@ -1389,6 +1454,7 @@ function buildGround(bId) {
     callPlate(ctx, (L0 + L1) / 2, 1.12, -1.1 + FACE + SKIN + 0.006, 0, { type: 'liftCall', building: bId, stair: c.stair });
     c.liftDoors.forEach((_, di) => ctx.lifts.push(new Lift(bId, ci, di, 0, { rear: true })));
     buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR);
+    coveWall(B, c.x0 + 0.02, Math.min(c.x1, WX0 - 0.18), -1.1 + FACE + SKIN, 1, H, opGaps(nOps));
   });
   // spine walls
   const sOps = doorOp(s1), sZones = portals(s1);
@@ -1451,6 +1517,7 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   const rOps = [L0, L1].map(L => ({ c: L, w: LIFT_W, h: LIFT_H, kind: 'lift' }));
   wallRun(ctx, { axis: 'x', c: zL, side: -1, a0: sh0, a1: sh1, openings: rOps, finish: 'marble', H });
   callPlate(ctx, xm, 1.12, zL - FACE - SKIN - 0.006, Math.PI, { type: 'liftCall', building: ctx.bId, stair: c.stair });
+  coveWall(B, sh0 + 0.02, sh1 - 0.02, zL - FACE - SKIN, -1, H, opGaps(rOps));
   // gold numeral-free lobby mark: bronze band above the lift doors
   B.box('bronze', sh0 + 0.1, sh1 - 0.1, 2.62, 2.66, zL - FACE - SKIN - 0.02, zL - FACE - SKIN);
   // shaft block between spine wall and lift wall
@@ -1607,6 +1674,14 @@ function buildParking(bId) {
   B.box('paintGreen', X0, X0 + 0.01, 0, 1.1, Z0, Z1); B.box('paintGreen', X1 - 0.01, X1, 0, 1.1, Z0, Z1);
   B.box('paintGreen', X0, X1, 0, 1.1, Z0, Z0 + 0.01); B.box('paintGreen', X0, X1, 0, 1.1, Z1 - 0.01, Z1);
   const aisles = []; for (let k = 0; k < 9; k++) { const a = 3.9 - 16 * k; if (a > Z0 + 3 && a < Z1 - 3) aisles.push(a); }
+  // pedestrian walkway from every lobby door straight to the driving aisle ahead of it (no bays / columns / cars on it)
+  for (const L of lobbies) {
+    const xm = (L.x0 + L.x1) / 2, ahead = aisles.filter(a => (a - L.front) * L.dir > 3.2);
+    const pool = ahead.length ? ahead : aisles;
+    L.aisle = pool.reduce((a, b) => Math.abs(b - L.front) < Math.abs(a - L.front) ? b : a);
+    const zB = L.aisle - L.dir * 3;
+    obst.push([xm - 1.6, xm + 1.6, Math.min(L.front, zB), Math.max(L.front, zB)]);
+  }
   // columns
   const colM = [], colBand = [];
   const colXs = []; for (let x = X0 + 1.5; x < X1 - 1; x += 8.1) colXs.push(x);
@@ -1683,7 +1758,7 @@ function buildParking(bId) {
   for (const ac of aisles) for (let x = X0 + 2; x < X1 - 3; x += 3) if (!hit(x, x + 1.6, ac - 0.1, ac + 0.1)) B.box('paintYellow', x, x + 1.6, 0.001, 0.004, ac - 0.06, ac + 0.06);
   for (const L of lobbies) {
     const xm = (L.x0 + L.x1) / 2;
-    const ac = aisles.reduce((a, b) => Math.abs(b - L.front) < Math.abs(a - L.front) ? b : a);
+    const ac = L.aisle;
     for (let k = -3; k <= 3; k++) B.box('paint', xm + k * 0.5 - 0.2, xm + k * 0.5 + 0.2, 0.001, 0.004, L.front + L.dir * 0.6, ac - L.dir * 3);
   }
   // LED battens over the aisles and bays, sprinkler mains
@@ -1765,8 +1840,10 @@ function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core
   const { B, C } = w; const H = 3.1, h = 2.7;
   const { x0, x1, z0, z1, c } = L;
   const [L0, L1] = c.liftDoors.map(d => L.ox + d[0]);
-  // core volume (concrete) behind the lifts
-  B.box('concreteLight', x0, x1, 0, H, L.oz + c.z0, z0 - WALL_T); C.box(x0, x1, 0, H, L.oz + c.z0, z0 - WALL_T);
+  // core volume (concrete) behind the lift wall, leaving the two shafts free (the cars stand in them)
+  const sh0 = L0 - POCKET - 0.1, sh1 = L1 + POCKET + 0.1, zw = z0 - WALL_T, zs = zw - 2.45, zc = L.oz + c.z0;
+  for (const [a0, a1, b0, b1] of [[x0, sh0, zc, zw], [sh1, x1, zc, zw], [sh0, sh1, zc, zs]]) if (a1 - a0 > 0.01 && b1 - b0 > 0.01) { B.box('concreteLight', a0, a1, 0, H, b0, b1); C.box(a0, a1, 0, H, b0, b1); }
+  B.box('concreteLight', L0 + POCKET + 0.1, L1 - POCKET - 0.1, 0, H, zs, zw); C.box(L0 + POCKET + 0.1, L1 - POCKET - 0.1, 0, H, zs, zw);   // pier between the shafts
   // lobby floor + ceiling
   B.box('stone', x0, x1, 0, 0.02, z0, z1); w.C.rect(x0, x1, z0, z1, 0.02);
   B.box('walnut', x0, x1, h, h + 0.04, z0, z1); B.box('bronzeDark', x0, x1, h + 0.04, H, z1 - 0.06, z1);
@@ -1776,11 +1853,12 @@ function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core
   const sd = { c: x1 - 0.7, w: 0.95, h: 2.2, kind: 'service' };
   if (x1 - 0.7 - 0.5 < L1 + POCKET) sd.c = x0 + 0.7;
   wallRun(w, { axis: 'x', c: z0, side: 1, a0: x0, a1: x1, openings: [...ops, sd], finish: 'marble', H: h });
+  coveWall(B, x0 + 0.07, x1 - 0.07, z0 + FACE + SKIN, 1, h, opGaps([...ops, sd]));
   B.box('concreteLight', x0, x1, h, H, z0 - WALL_T, z0 + 0.02);
   const sdoor = new THREE.Mesh(ctx.geo('svcDoorP', () => { const g = new THREE.BoxGeometry(0.94, 2.19, 0.05); worldUV(g, 1); return g; }), M('walnutDoor'));
   sdoor.position.set(sd.c, 1.095, z0 - 0.045); sdoor.userData.solid = true; w.root.add(sdoor);
   signPlane(w, 0, sd.c, 2.42, z0 + FACE + SKIN + 0.01, 0, 0.18, 0.18);
-  callPlate(w, (L0 + L1) / 2, 1.12, z0 + FACE + SKIN + 0.006, 0, own ? { type: 'liftCall', building: L.id, stair: c.stair } : { type: 'none' });
+  callPlate(w, (L0 + L1) / 2, 1.12, z0 + FACE + SKIN + 0.006, 0, { type: 'liftCall', building: L.id, stair: c.stair });
   // glass enclosure with bronze frame; open sliding doors at the front centre
   const xm = (x0 + x1) / 2, dw = 0.85;
   const glassSide = (ax, a0, a1) => { B.box('glass', ax - 0.006, ax + 0.006, 0.03, h, a0, a1); B.box('bronze', ax - 0.03, ax + 0.03, 0, 0.06, a0, a1); B.box('bronze', ax - 0.03, ax + 0.03, h - 0.06, h, a0, a1); C.box(ax - 0.05, ax + 0.05, 0, H, a0, a1); for (let z = a0; z <= a1 + 0.01; z += (a1 - a0) / 2) B.box('bronze', ax - 0.03, ax + 0.03, 0, h, z - 0.025, z + 0.025); };
@@ -1793,13 +1871,14 @@ function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core
   // door leaves slid open behind the fixed panes
   for (const s of [-1, 1]) B.box('glass', xm + s * dw - 0.02 * s, xm + s * (2 * dw - 0.1), 0.03, h - 0.1, z1 - 0.05, z1 - 0.04);
   B.box('bronze', xm - dw, xm + dw, h - 0.1, h, z1 - 0.06, z1 + 0.03);
-  // lifts
-  const b = BUILDINGS[L.id];
-  if (own) c.liftDoors.forEach((_, di) => ctx.lifts.push(new Lift(L.id, CORES.indexOf(c), di, -1)));
-  else {
-    // decorative lifts of the other building (closed), positioned via the world sub-group
-    for (let di = 0; di < 2; di++) { const Lf = new Lift(L.id, CORES.indexOf(c), di, -1, { decor: true }); Lf.group.position.set(b.origin[0], floorY(-1) * 0 - floorY(-1), b.origin[1]); NOMIRROR.add(Lf.group); w.root.add(Lf.group); ctx.decor = ctx.decor || []; ctx.decor.push(Lf); }
-  }
+  // lifts: every core of both blocks is served (a lift of the other block rides up into that block). Lift groups are
+  // building-local to their own block; finish() parents them to this block's group, so offset by the origin difference.
+  const b = BUILDINGS[L.id], me = BUILDINGS[ctx.bId];
+  c.liftDoors.forEach((_, di) => {
+    const Lf = new Lift(L.id, CORES.indexOf(c), di, -1);
+    if (!own) Lf.group.position.set(b.origin[0] - me.origin[0], 0, b.origin[1] - me.origin[1]);
+    ctx.lifts.push(Lf);
+  });
   // "P −1" level pictogram on the lobby glass above the doors
   signPlane(w, 2, xm, h - 0.35, z1 + 0.02, 0, 0.28, 0.28);
 }
