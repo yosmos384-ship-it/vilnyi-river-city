@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TYPES, GEOM, LEVELS } from '../data.js';
-import { getMaterials } from './materials.js';
+import { getMaterials, tickTv } from './materials.js';
 import { F, FX } from './furniture.js';
 
 const CH = LEVELS.ceiling;            // clear ceiling height 2.7
@@ -102,13 +102,18 @@ function bake(src, dst) {
   return meshes;
 }
 
-// ------------------------------------------------------------------ openable joinery (doors, drawers, appliances)
-// furniture.js marks movers (userData.mover: a door leaf / drawer / appliance door with everything that moves with
-// it) and compartments (userData.compartment.build: contents built on the first opening). Here all movers are pulled
-// out of the static bake into ONE dynamic batch per material — the closed state costs a handful of draw calls no
+// ------------------------------------------------------------------ openable joinery (doors, drawers, appliances, curtains)
+// furniture.js marks movers (userData.mover: a door leaf / drawer / appliance door / curtain panel with everything that
+// moves with it) and compartments (userData.compartment.build: contents built on the first opening). Here all movers are
+// pulled out of the static bake into ONE dynamic batch per material — the closed state costs a handful of draw calls no
 // matter how many fronts there are — and each gets an invisible box proxy that carries the click contract of the
-// walkthrough: userData.action = {type:'aptDoor', unitId, part:'cabinet'} + userData.toggle(open) → Promise.
-// Animating a mover rewrites only its vertex range (a few hundred vertices) in the batch buffers.
+// walkthrough: userData.action = {type:'aptDoor', unitId, part:'cabinet'|'curtain'|'curtainSwitch'|…} + userData.toggle(open)
+// → Promise. Animating a mover rewrites only its vertex range (a few hundred vertices) in the batch buffers.
+// spec.type: 'slide' {dir, dist} | 'hinge' {axis, angle} | 'scale' {s:[sx,sy,sz] at t = 1, about the mover origin}.
+// spec.group: movers sharing a group open / close together, each after its own delay (spec.dOpen / spec.dClose, ms):
+//   a curtain's sheer + blackout layers and its wall switch; a dishwasher door followed by its sliding racks.
+// spec.proxy === false: no click proxy of its own (it follows its group). A compartment placed INSIDE a mover is
+// carried by it (dish racks: the plates ride out with the rack).
 const _mT = new THREE.Matrix4(), _mM = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _n3b = new THREE.Matrix3(), _bx = new THREE.Box3();
 function buildMovers(ctx, sg, root) {
   const { m, unit } = ctx;
@@ -117,7 +122,10 @@ function buildMovers(ctx, sg, root) {
   const comps = new Map(), movers = [];
   sg.traverse(o => {
     const ud = o.userData;
-    if (ud.compartment) comps.set(o, { M: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), build: ud.compartment.build, group: null, users: [] });
+    if (ud.compartment) {
+      let carrier = null; for (let p = o.parent; p; p = p.parent) if (p.userData.mover) { carrier = p; break; }
+      comps.set(o, { M: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), build: ud.compartment.build, group: null, users: [], carrierObj: carrier, carrier: null });
+    }
     if (ud.mover) { for (let p = o.parent; p; p = p.parent) if (p.userData.mover) return; movers.push(o); }
   });
   if (!movers.length) return null;
@@ -136,11 +144,13 @@ function buildMovers(ctx, sg, root) {
     const spec = o.userData.mover;
     let piece = spec.tag; for (let p = o.parent; !piece && p; p = p.parent) piece = p.userData.piece;
     const comp = spec.comp ? comps.get(spec.comp) || null : null;
-    const mv = { spec, piece, B, box, t: 0, open: false, anim: null, ranges: [], comp, proxy: null };
+    const mv = { spec, piece, B, Binv: new THREE.Matrix4().copy(B).invert(), box, t: 0, open: false, anim: null, ranges: [], comp, proxy: null, ud: {}, carry: [], obj: o };
     if (comp) comp.users.push(mv);
     return mv;
   });
+  for (const c of comps.values()) if (c.carrierObj) { c.carrier = MV.find(mv => mv.obj === c.carrierObj) || null; if (c.carrier) c.carrier.carry.push(c); }
   movers.forEach(o => o.parent && o.parent.remove(o));
+  MV.forEach(mv => { mv.obj = null; });
   // one batch mesh per material
   const batches = [];
   for (const [mat, list] of buckets) {
@@ -177,11 +187,12 @@ function buildMovers(ctx, sg, root) {
     mesh.name = 'movers:' + (mat.name || '?'); mesh.matrixAutoUpdate = false; mesh.frustumCulled = false;
     if (mat.transparent) mesh.renderOrder = 2;
     root.add(mesh);
-    batches.push({ geo, pos, nor, uv, lp, ln, worldUV, pa, na, mesh });
+    batches.push({ geo, pos, nor, uv, lp, ln, worldUV, pa, na, mesh, ready: false });
   }
   const pose = (mv) => {
     const sp = mv.spec, t = mv.t;
     if (sp.type === 'slide') _mT.makeTranslation(sp.dir[0] * sp.dist * t, sp.dir[1] * sp.dist * t, sp.dir[2] * sp.dist * t);
+    else if (sp.type === 'scale') _mT.makeScale(1 + (sp.s[0] - 1) * t, 1 + (sp.s[1] - 1) * t, 1 + (sp.s[2] - 1) * t);
     else if (sp.axis === 'x') _mT.makeRotationX(sp.angle * t); else _mT.makeRotationY(sp.angle * t);
     _mM.multiplyMatrices(mv.B, _mT);
     const e = _mM.elements, nm = _n3b.getNormalMatrix(_mM).elements;
@@ -191,10 +202,15 @@ function buildMovers(ctx, sg, root) {
         const x = lp[j * 3], y = lp[j * 3 + 1], z = lp[j * 3 + 2];
         P[j * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; P[j * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; P[j * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
         const a = ln[j * 3], b = ln[j * 3 + 1], c = ln[j * 3 + 2];
-        N[j * 3] = nm[0] * a + nm[3] * b + nm[6] * c; N[j * 3 + 1] = nm[1] * a + nm[4] * b + nm[7] * c; N[j * 3 + 2] = nm[2] * a + nm[5] * b + nm[8] * c;
+        let nx = nm[0] * a + nm[3] * b + nm[6] * c, ny = nm[1] * a + nm[4] * b + nm[7] * c, nz = nm[2] * a + nm[5] * b + nm[8] * c;
+        if (sp.type === 'scale') { const l = 1 / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1); nx *= l; ny *= l; nz *= l; }
+        N[j * 3] = nx; N[j * 3 + 1] = ny; N[j * 3 + 2] = nz;
       }
+      // upload only the moved range (the batch of a material can hold dozens of fronts)
+      if (bt.ready) { bt.pa.addUpdateRange(r.start * 3, (r.end - r.start) * 3); bt.na.addUpdateRange(r.start * 3, (r.end - r.start) * 3); }
       bt.pa.needsUpdate = true; bt.na.needsUpdate = true;
     }
+    for (const c of mv.carry) if (c.group) { c.group.matrix.multiplyMatrices(_mM, mv.Binv); c.group.matrixWorldNeedsUpdate = true; }
     if (mv.proxy) {
       const bx = mv.box, px = mv.proxy;
       bx.getCenter(_v3);
@@ -204,15 +220,19 @@ function buildMovers(ctx, sg, root) {
     }
   };
   // closed pose + world-projected UVs (the bake's projection, frozen at the closed pose so the veneer moves with the door)
-  for (const mv of MV) { mv.proxy = null; pose(mv); }
-  for (const bt of batches) if (bt.worldUV) {
-    const P = bt.pos, N = bt.nor, U = bt.uv;
-    for (let j = 0; j < P.length / 3; j++) {
-      const ax = Math.abs(N[j * 3]), ay = Math.abs(N[j * 3 + 1]), az = Math.abs(N[j * 3 + 2]);
-      if (ay >= ax && ay >= az) { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 2]; }
-      else if (ax >= az) { U[j * 2] = P[j * 3 + 2]; U[j * 2 + 1] = P[j * 3 + 1]; }
-      else { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 1]; }
+  for (const mv of MV) pose(mv);
+  for (const bt of batches) {
+    if (bt.worldUV) {
+      const P = bt.pos, N = bt.nor, U = bt.uv;
+      for (let j = 0; j < P.length / 3; j++) {
+        const ax = Math.abs(N[j * 3]), ay = Math.abs(N[j * 3 + 1]), az = Math.abs(N[j * 3 + 2]);
+        if (ay >= ax && ay >= az) { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 2]; }
+        else if (ax >= az) { U[j * 2] = P[j * 3 + 2]; U[j * 2 + 1] = P[j * 3 + 1]; }
+        else { U[j * 2] = P[j * 3]; U[j * 2 + 1] = P[j * 3 + 1]; }
+      }
     }
+    // partial uploads only after the first full upload of the buffer; `watch` lets the apartment see each frame
+    bt.mesh.onBeforeRender = (r, sc, cam) => { bt.ready = true; if (bt.watch) bt.watch(cam); };
   }
   // compartments: contents baked on first use, visible only while one of their doors is open (interior LED "on")
   const showComp = (c) => {
@@ -222,16 +242,21 @@ function buildMovers(ctx, sg, root) {
       try { c.build(inner, m); } catch (err) { console.warn('[apartment] contents', err); }
       c.group = new THREE.Group(); c.group.name = 'contents';
       bake(tmp, c.group);
-      c.group.traverse(o => { if (o.isMesh) o.raycast = () => {}; });
-      root.add(c.group); c.group.updateMatrixWorld(true);
+      c.group.traverse(o => { if (o.isMesh) o.raycast = NO_RAYCAST; });
+      c.group.matrixAutoUpdate = false;
+      root.add(c.group);
+      if (c.carrier) pose(c.carrier);
+      c.group.updateMatrixWorld(true);
     }
     c.group.visible = true;
   };
   const hideComp = (c) => { if (c && c.group && c.users.every(u => u.t <= 0 && !u.open)) c.group.visible = false; };
   if (!COLMAT) { COLMAT = new THREE.MeshBasicMaterial({ visible: false }); COLMAT.name = 'collider'; }
-  const toggle = (mv, open, instant = false) => {
+  let disposed = false;
+  // raw toggle of one mover; `delay` (ms) holds the start of the motion (sequenced groups)
+  const toggle = (mv, open, instant = false, delay = 0) => {
     const want = open === undefined ? !mv.open : !!open;
-    const ud = mv.proxy.userData;
+    const ud = mv.ud;
     if (want === mv.open) return mv.anim ? mv.anim.promise : Promise.resolve();
     if (instant) {
       if (mv.anim) { mv.anim.cancel = true; mv.anim = null; }
@@ -246,12 +271,12 @@ function buildMovers(ctx, sg, root) {
       if (mv.comp) showComp(mv.comp);
     }
     if (mv.anim) mv.anim.cancel = true;
-    const from = mv.t, to = want ? 1 : 0, dur = (mv.spec.dur || 600) * Math.max(0.35, Math.abs(to - from)), t0 = performance.now();
+    const from = mv.t, to = want ? 1 : 0, dur = (mv.spec.dur || 600) * Math.max(0.35, Math.abs(to - from)), t0 = performance.now() + delay;
     const me = { cancel: false }; ud._anim = true;
     me.promise = new Promise(res => {
       const step = () => {
         if (me.cancel || disposed) return res();
-        const k = Math.min(1, (performance.now() - t0) / dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        const k = Math.max(0, Math.min(1, (performance.now() - t0) / dur)), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
         mv.t = from + (to - from) * e; pose(mv);
         if (k < 1) requestAnimationFrame(step);
         else { mv.anim = null; ud._anim = false; if (!want) hideComp(mv.comp); res(); }
@@ -261,25 +286,58 @@ function buildMovers(ctx, sg, root) {
     mv.anim = me;
     return me.promise;
   };
-  let disposed = false;
-  const proxies = MV.map((mv, i) => {
+  // groups: one state, every member after its own delay
+  const groups = new Map();
+  for (const mv of MV) {
+    const id = mv.spec.group; if (!id) continue;
+    let g = groups.get(id);
+    if (!g) groups.set(id, g = { id, mvs: [], open: false, promise: null, curtain: !!mv.spec.curtain, listeners: [] });
+    g.mvs.push(mv); mv.group = g;
+  }
+  for (const g of groups.values()) {
+    g.toggle = (open, o = {}) => {
+      const want = open === undefined ? !g.open : !!open;
+      if (want === g.open) return g.promise || Promise.resolve();
+      g.open = want;
+      for (const mv of g.mvs) if (mv.proxy) { mv.proxy.userData.open = want; }
+      const p = g.promise = Promise.all(g.mvs.map(mv => toggle(mv, want, !!o.instant, o.instant ? 0 : (want ? mv.spec.dOpen : mv.spec.dClose) || 0)))
+        .then(() => { if (g.promise === p) g.promise = null; });
+      for (const f of g.listeners) { try { f(want); } catch { /* listener */ } }
+      return p;
+    };
+  }
+  const proxies = [];
+  for (const mv of MV) {
+    if (mv.spec.proxy === false) continue;
     const px = new THREE.Mesh(UBOX, COLMAT);
-    const door = mv.spec.door || null;
-    px.name = door ? 'balcony-door' : 'cabinet-front'; px.matrixAutoUpdate = false;
-    px.userData.action = door ? { type: 'aptDoor', unitId: unit.id, part: 'balconyDoor', door } : { type: 'aptDoor', unitId: unit.id, part: 'cabinet' };
-    px.userData.cabinet = !door; px.userData.open = false;
-    if (door) px.userData.balconyDoor = door; px.userData.piece = mv.piece || 'cabinet'; px.userData.motion = mv.spec.type === 'slide' ? 'slide' : 'hinge';
-    px.userData.toggle = (open) => toggle(mv, open);
+    const sp = mv.spec, door = sp.door || null, part = door ? 'balconyDoor' : sp.curtain ? (sp.part || 'curtain') : (sp.part || 'cabinet');
+    px.name = door ? 'balcony-door' : sp.curtain ? 'curtain-' + part : 'cabinet-front'; px.matrixAutoUpdate = false;
+    px.userData.action = door ? { type: 'aptDoor', unitId: unit.id, part, door } : sp.curtain ? { type: 'aptDoor', unitId: unit.id, part, curtain: sp.group } : { type: 'aptDoor', unitId: unit.id, part };
+    px.userData.cabinet = !door && !sp.curtain; px.userData.open = false;
+    if (sp.curtain) { px.userData.curtain = sp.group; px.userData.motion = 'curtain'; }
+    if (door) px.userData.balconyDoor = door;
+    px.userData.piece = mv.piece || 'cabinet'; if (!sp.curtain) px.userData.motion = sp.type === 'slide' ? 'slide' : 'hinge';
+    mv.ud = px.userData;
+    px.userData.toggle = mv.group ? (open) => mv.group.toggle(open) : (open) => toggle(mv, open);
     px.userData._leafToggle = (open, instant) => toggle(mv, open, instant);
     mv.proxy = px; root.add(px); pose(mv);
     // closed-pose centre and outward facing (unit-local), e.g. to frame a camera on it
     const c = mv.box.getCenter(new THREE.Vector3()).applyMatrix4(mv.B), f = new THREE.Vector3(0, 0, 1).transformDirection(mv.B);
     px.userData.center = [c.x, c.y, c.z]; px.userData.front = [f.x, f.y, f.z];
-    return px;
-  });
+    proxies.push(px);
+  }
   return {
-    proxies, count: MV.length, batches: batches.length,
-    closeAll: () => Promise.all(MV.filter(mv => mv.open && !mv.spec.door).map(mv => toggle(mv, false))),
+    proxies, count: MV.length, batches: batches.length, groups,
+    onFrame: (fn) => { if (batches[0]) batches[0].watch = fn; },
+    closeAll: () => {
+      const ps = [], done = new Set();
+      for (const mv of MV) {
+        if (!mv.open || mv.spec.door || mv.spec.curtain) continue;
+        if (mv.group) { if (!done.has(mv.group)) { done.add(mv.group); ps.push(mv.group.toggle(false)); } }
+        else ps.push(toggle(mv, false));
+      }
+      return Promise.all(ps);
+    },
     dispose() {
       disposed = true;
       for (const bt of batches) bt.geo.dispose();
@@ -1175,10 +1233,10 @@ function buildStair(ctx) {
 function furnish(ctx, L) {
   const { P, m, sg, cut } = ctx;
   const Z = L.zones, y = L.y;
-  const lights = ctx.lightSpots;
+  ctx.curLevel = L;
   const g = new THREE.Group(); g.position.y = y; sg.add(g);
-  // ---- hall
-  if (Z.hall) furnishHall(ctx, L, g, Z.hall);
+  // service rooms and the kitchen first: they decide where the washing machine goes (utility room / kitchen run),
+  // the hall then gets a laundry cupboard if neither could take it
   for (const r of Z.svc) {
     if (r.kind === 'bath') furnishBath(ctx, L, g, r);
     else if (r.kind === 'dressing') furnishDressing(ctx, L, g, r);
@@ -1186,15 +1244,28 @@ function furnish(ctx, L) {
   }
   if (Z.kitchenRoom) furnishKitchenBack(ctx, L, g, Z.kitchenRoom);
   if (Z.kitFront) furnishKitchenFront(ctx, L, g, Z.kitFront);
+  if (Z.hall) furnishHall(ctx, L, g, Z.hall);
   if (Z.livRoom) furnishLiving(ctx, L, g, Z.livRoom);
   Z.bedRooms.forEach((r, i) => furnishBedroom(ctx, L, g, r, i));
 }
+// Motorised curtains for a room's glazing: registers the group (its wall switch is placed after furnishing).
+function motorCurtains(ctx, L, g, r, w, u, v, y, ref) {
+  const id = 'cur' + L.lv + '-' + ctx.curtains.length;
+  put(g, F.motorCurtains(ctx.m, { w, h: y - 0.04, id }), u, v, '-v', y);
+  ctx.curtains.push({ id, level: L.lv, room: r, kind: r.kind, roomName: r.name, u, v, y: L.y + y, ref });
+}
+// a wall item: keeps wall switches clear of it (plan position of its centre on the wall face, half-length along the wall)
+function busy(ctx, L, u, v, face, half, y0, y1) { ctx.busy.push({ lv: L.lv, u, v, face, half, y0, y1 }); }
 
 function hang(ctx, g, obj, u, yTop, v, face) {  // wall items (art / mirrors) — skipped in the cutaway
   if (ctx.cut) return null;
   return put(g, obj, u, v, face, yTop);
 }
-function artOn(ctx, g, u, v, face, w, h, i, yc = 1.55) { const a = F.artFrame(ctx.m, { w, h, i }); return hang(ctx, g, a, u, yc + h / 2, v, face); }
+function artOn(ctx, g, u, v, face, w, h, i, yc = 1.55) {
+  const a = F.artFrame(ctx.m, { w, h, i });
+  if (ctx.curLevel) busy(ctx, ctx.curLevel, u, v, face, w / 2 + 0.05, yc - h / 2 - 0.08, yc + h / 2);
+  return hang(ctx, g, a, u, yc + h / 2, v, face);
+}
 
 function furnishHall(ctx, L, g, r) {
   const { P, m } = ctx;
@@ -1204,9 +1275,16 @@ function furnishHall(ctx, L, g, r) {
   const w = a1 - a0;
   if (L.lv === 0) {
     // built-in coat wardrobe on the left party wall (if the entrance leaf does not sweep it)
+    const needLaundry = !ctx.laundry && !ctx.cut;
     if (!P.duplex && P.doorU - ENTRY_W / 2 - a0 >= 0.62 && b1 - b0 > 1.2) {
-      const len = Math.min(b1 - b0 - 0.1, 2.0);
-      put(g, F.wardrobe(m, { len, h: ctx.tallH, kind: 'hall', sliding: true }), a0 + 0.3, b0 + 0.05 + len / 2, '+u');
+      let v0 = b0 + 0.05;
+      if (needLaundry && b1 - b0 > 1.6) { put(g, F.laundryTower(m, { h: ctx.tallH, cabinet: true }), a0 + 0.32, b0 + 0.36, '+u'); ctx.laundry = 'hall'; v0 = b0 + 0.71; }
+      const len = Math.min(b1 - v0 - 0.05, 2.0);
+      if (len > 0.85) put(g, F.wardrobe(m, { len, h: ctx.tallH, kind: 'hall', sliding: true }), a0 + 0.3, v0 + len / 2, '+u');
+    } else if (needLaundry && P.doorU - ENTRY_W / 2 - a0 >= 0.7 && b1 - b0 > 1.5) {
+      // utility niche in the corner by the entrance (duplex halls)
+      put(g, F.laundryTower(m, { h: ctx.tallH, cabinet: true }), a0 + 0.32, b0 + 0.36, '+u'); ctx.laundry = 'hall';
+      if (!ctx.cut && b1 - b0 > 1.6) { const mir = F.mirror(m, { w: 0.5, h: 0.9 }); hang(ctx, g, mir, a0, 1.15, Math.min(b1 - 0.3, b0 + 1.0), '+u'); }
     } else if (w > 1.9) {
       // bench + hooks on the side wall away from the leaf
       const bench = new THREE.Group(); FX.box(bench, 0.9, 0.06, 0.36, m.wood, 0, 0.42, 0); for (const sx of [-1, 1]) FX.box(bench, 0.04, 0.42, 0.34, m.metal, sx * 0.42, 0, 0);
@@ -1311,9 +1389,17 @@ function furnishStorage(ctx, L, g, r) {
   const w = a1 - a0, d = b1 - b0;
   // utility: shelving along the back wall, washer + dryer if wide
   let u = a0 + 0.05;
-  if (w >= 1.5) { put(g, F.washer(m), u + 0.3, b0 + 0.3, '+v'); const dr = F.washer(m); put(g, dr, u + 0.3, b0 + 0.3, '+v', 0.86); dr.userData.solidBox = null; u += 0.65; }
+  if (w >= 0.66 && !ctx.laundry) { put(g, F.laundryTower(m, {}), u + 0.3, b0 + 0.31, '+v'); ctx.laundry = 'storage'; u += 0.65; }
   const sw = a1 - u - 0.05;
   if (sw > 0.4) put(g, F.bookshelf(m, { w: sw, h: ctx.cut ? 1.05 : 2.1 }), u + sw / 2, b0 + 0.17, '+v');
+  else if (sw > 0.22) {   // slim shelf: detergents, iron, laundry basket
+    const sh = new THREE.Group();
+    for (const y of [0.0, 0.6, 1.2]) FX.box(sh, sw, 0.02, 0.28, m.woodLight, 0, y + 0.35, 0);
+    for (const sx of [-1, 1]) FX.box(sh, 0.015, 1.6, 0.28, m.metal, sx * (sw / 2 - 0.008), 0, 0);
+    FX.cyl(sh, 0.12, 0.1, 0.3, m.rattan, 0, 0, 0.0, 16);
+    sh.userData.solidBox = { w: sw, d: 0.3, h: 1.6 };
+    put(g, sh, u + sw / 2, b0 + 0.16, '+v');
+  }
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.3, pri: 6 });
 }
 function furnishDressing(ctx, L, g, r) {
@@ -1329,7 +1415,8 @@ function furnishKitchenBack(ctx, L, g, r) {
   const { P, m } = ctx;
   const [a0, b0, a1, b1] = clearRect(P, r);
   const len = a1 - a0;
-  put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !L.zones.svc.some(s => s.kind === 'storage'), uppers: !ctx.cut, hood: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+  const kr = put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !ctx.laundry, uppers: !ctx.cut, hood: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+  if (kr.userData.hasWasher) ctx.laundry = 'kitchen';
   ctx.kitchen = { u0: a0, u1: a1, v: b1 };
   // pendant pair over the counter zone
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2 + 0.2, y: L.y, k: 0.7, pri: 2 });
@@ -1339,12 +1426,14 @@ function furnishKitchenFront(ctx, L, g, r) {
   const [a0, b0, a1, b1] = clearRect(P, r);
   if (r.front === 'back') {
     const len = a1 - a0;
-    put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'right', ceiling: CH, washer: true, uppers: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+    const kr = put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'right', ceiling: CH, washer: !ctx.laundry, uppers: !ctx.cut, cut: ctx.cut }), (a0 + a1) / 2, b0 + 0.31, '+v');
+    if (kr.userData.hasWasher) ctx.laundry = 'kitchen';
     ctx.kitchen = { u0: a0, u1: a1, v: b0 + 0.62 };
   } else {
     // along the right side wall, fronts facing -u
     const len = b1 - b0;
-    put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !L.zones.svc.some(s => s.kind === 'storage'), uppers: !ctx.cut, cut: ctx.cut }), a1 - 0.31, (b0 + b1) / 2, '-u');
+    const kr = put(g, F.kitchenRun(m, len, { tall: ctx.cut ? 'none' : 'left', ceiling: CH, washer: !ctx.laundry, uppers: !ctx.cut, cut: ctx.cut }), a1 - 0.31, (b0 + b1) / 2, '-u');
+    if (kr.userData.hasWasher) ctx.laundry = 'kitchen';
     ctx.kitchenSide = { u: a1 - 0.62, v0: b0, v1: b1 };
   }
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.6, pri: 2 });
@@ -1372,7 +1461,7 @@ function furnishLiving(ctx, L, g, r) {
   } else {
     lounge(ctx, L, g, [a0, Math.max(zb0, vEnd - 3.3), kitSide ? kitSide.u - 0.2 : a1, vEnd], kitSide ? 'u0' : 'u1', true);
   }
-  if (!ctx.cut) put(g, F.curtains(m, { w: w - 0.2, h: CH - 0.16 }), (a0 + a1) / 2, b1 - 0.2, '-v', CH - 0.15);
+  if (!ctx.cut) motorCurtains(ctx, L, g, r, w - 0.2, (a0 + a1) / 2, b1 - 0.2, CH - 0.15, [P.doorU, P.duplex && L.lv === 0 ? P.stair.v1 : P.vb]);
   ctx.balconyU = clamp((a0 + a1) / 2, 1.2, P.W - 1.2);
 }
 // Lounge zone z = [u0, v0, u1, v1]; TV on side tvOn ('u0' | 'u1'); farIsWall: the opposite side is a real wall.
@@ -1392,8 +1481,9 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   put(g, F.rug(m, { w: rugV, d: rugU }), sofaU + t * (rugU / 2 - 0.35), lc, '+u');
   const tvLen = Math.min(2.2, zd - 0.45);
   put(g, F.tvUnit(m, { len: tvLen }), tvWall - t * 0.3, lc, fromTV);
-  if (!ctx.cut) put(g, F.tv(m, { w: 1.45 }), tvWall - t * 0.1, lc, fromTV, 1.0);
+  if (!ctx.cut) { put(g, F.tv(m, { w: 1.45, live: true, glowZ: s === 'riviera' ? -0.012 : -0.043 }), tvWall - t * 0.1, lc, fromTV, 1.0); (ctx.tvRooms ||= []).push('living'); }
   featureWall(ctx, g, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3));
+  busy(ctx, L, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3) / 2 + 0.05, 0, CH);
   // the lane between the coffee table and the TV leads to the sliding door
   ctx.slideU[L.lv] = tvWall - t * 1.15;
   // armchair facing the sofa from the window side (only in deep lounges, keeps the lane free)
@@ -1488,7 +1578,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     featureWallBed(ctx, g, a1, vcb, '-u', Math.min(bw + 1.2, d - 0.1));
     artOn(ctx, g, a1, vcb, '-u', Math.min(1.2, bw), 0.7, 1 + idx, 1.55);
     let leftUsed = false;
-    if (wardrobeBack) { const wu0 = doorU + 0.5, wlen = Math.min(a1 - wu0 - 0.02, 2.4); if (wlen > 0.9) put(g, F.wardrobe(m, { len: wlen, h: ctx.tallH, seed: idx }), wu0 + wlen / 2, b0 + 0.3, '+v'); }
+    if (wardrobeBack) { const wu0 = doorU + 0.72, wlen = Math.min(a1 - wu0 - 0.02, 2.4); if (wlen > 0.9) put(g, F.wardrobe(m, { len: wlen, h: ctx.tallH, seed: idx }), wu0 + wlen / 2, b0 + 0.3, '+v'); }
     else if (a1 - 2.1 - a0 >= 1.3 && d > 2.2) { const wl = Math.min(1.8, d - 1.4); put(g, F.wardrobe(m, { len: wl, h: ctx.tallH, seed: idx + 1 }), a0 + 0.3, b0 + 1.0 + wl / 2, '+u'); leftUsed = true; }
     if (!master && !leftUsed && a1 - 2.1 - a0 >= 1.0) put(g, F.desk(m, { len: 1.0 }), a0 + 0.3, b1 - 0.7, '+u');
     else if (master && !leftUsed && a1 - 2.1 - a0 >= 2.0) put(g, F.armchair(m), a0 + 0.55, b1 - 0.6, 2.4);
@@ -1496,6 +1586,21 @@ function furnishBedroom(ctx, L, g, r, idx) {
     // balcony door lane: between the left-wall piece (wardrobe / desk / armchair) and the bed zone
     r.slideU = master ? (a0 + (leftUsed ? 0.95 : a1 - 2.1 - a0 >= 2.0 ? 1.2 : 0.3) + a1 - 2.15) / 2 : (a0 + (leftUsed ? 0.95 : 0.75) + a1 - 2.15) / 2;
     put(g, F.rug(m, { w: Math.min(2.4, bw + 1.2), d: 2.0 }), a1 - 1.3, vcb, '+u');
+    // master bedroom: a wall TV facing the bed (left wall), unless the wardrobe stands there
+    const tw = 1.1;
+    if (master && !ctx.cut && !leftUsed && vcb - tw / 2 > b0 + 0.15 && vcb + tw / 2 < b1 - 0.35) {
+      put(g, F.tv(m, { w: tw, live: true, glowZ: -0.02 }), a0 + 0.035, vcb, '+u', 1.05); (ctx.tvRooms ||= []).push('bedroom');
+      busy(ctx, L, a0, vcb, '+u', tw / 2 + 0.1, 0.9, 1.75);
+      const ledge = new THREE.Group(); FX.box(ledge, 1.3, 0.035, 0.24, s3(m), 0, 0.62, 0.12); FX.bookStack(ledge, m, 2, -0.4, 0.655, 0.12, 41 + idx, 0.2); FX.vase(ledge, m, 0.45, 0.655, 0.12, 0.22, m.ceramic2, false);
+      ledge.userData.noSolid = true; put(g, ledge, a0, vcb, '+u');
+    } else if (master && !ctx.cut && leftUsed && (a1 - 2.1 - 0.3 - 0.42) - (a0 + 0.62) >= 0.7) {
+      // the wardrobe has the opposite wall: a low media console at the foot of the bed with the TV on a pedestal
+      const bu = a1 - 2.1 - 0.3 - 0.21, con = F.tvUnit(m, { len: Math.min(1.5, bw + 0.1) });
+      put(g, con, bu, vcb, '+u');
+      const tvg = new THREE.Group(); FX.box(tvg, 0.28, 0.012, 0.2, m.blackMetal, 0, 0, -0.02); FX.box(tvg, 0.05, 0.12, 0.03, m.blackMetal, 0, 0, -0.05);
+      put(g, tvg, bu - 0.05, vcb, '+u', 0.475);
+      put(g, F.tv(m, { w: 1.0, live: true, glowZ: -0.02 }), bu - 0.05, vcb, '+u', 0.56); (ctx.tvRooms ||= []).push('bedroom');
+    }
   } else {
     // narrow room: headboard on the back wall beside the door, bed along v
     const start = doorU + 0.43, bw = a1 - start >= 1.62 ? 1.6 : a1 - start >= 1.42 ? 1.4 : 1.2;
@@ -1511,7 +1616,7 @@ function furnishBedroom(ctx, L, g, r, idx) {
     if (master && !L.zones.livRoom) ctx.slideU[L.lv] = bu;
     r.slideU = bu;
   }
-  if (!ctx.cut) put(g, F.curtains(m, { w: w - 0.2, h: CH - 0.16, drape: 0.5 }), (a0 + a1) / 2, b1 - 0.12, '-v', CH - 0.05);
+  if (!ctx.cut) motorCurtains(ctx, L, g, r, w - 0.2, (a0 + a1) / 2, b1 - 0.12, CH - 0.05, [doorU, L.zones.vs]);
   if (!ctx.cut) put(g, F.pendant(m, { kind: 'bed', drop: 0.45 }), bedC[0], bedC[1], '+v', CH);
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.7, pri: 1 });
 }
@@ -1522,9 +1627,11 @@ function halo(ctx, obj, x, z, y = 1.0) {
   FX.fxQuad(obj, ctx.m.lampGlow, 'lamp', [x, y, z], [1.35, 0, 0], [0, 1.9, 0]);
   return obj;
 }
+const s3 = (m) => m.styleId === 'nordic' ? m.woodLight : m.styleId === 'milano' ? m.woodDark : m.woodDark;
 function featureWallBed(ctx, g, u, v, face, len) {
   const { m } = ctx;
   if (ctx.cut) return;
+  if (ctx.curLevel) busy(ctx, ctx.curLevel, u, v, face, len / 2 + 0.05, 0, CH);
   const s = m.styleId, grp = new THREE.Group(), H = CH - 0.02;
   if (s === 'milano') { FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01); for (let i = 1; i < 4; i++) FX.box(grp, 0.006, H, 0.004, m.brass, -len / 2 + i * len / 4, 0, 0.022); }
   else if (s === 'nordic') { FX.box(grp, len, 1.2, 0.02, m.wallAccent, 0, 0, 0.01); FX.box(grp, len, 0.02, 0.12, m.woodLight, 0, 1.2, 0.06); FX.vase(grp, m, len / 2 - 0.2, 1.22, 0.06, 0.18, m.ceramic2, false); FX.bookStack(grp, m, 2, -len / 2 + 0.25, 1.22, 0.06, 55, 0.2); }
@@ -1535,6 +1642,102 @@ function featureWallBed(ctx, g, u, v, face, len) {
   FX.fxQuad(grp, m.glowFaint, 'grad', [0, CH - 0.004, 0.25], [len, 0, 0], [0, 0, -0.45]);
   put(g, grp, u, v, face, 0);
 }
+
+// ================================================================== CURTAIN SWITCHES
+// Each curtained room gets its wall switch on the room side of a wall, as close as possible to where you come in
+// (the room's door / the hall opening), at 1.05 m: clear of furniture, wall art / TV / feature panels, door openings and
+// the leaf of an open door, and away from the window wall (where the curtains stack).
+function placeSwitches(ctx, L) {
+  const { P, m, sg } = ctx;
+  const recs = ctx.curtains.filter(c => c.level === L.lv);
+  if (!recs.length) return;
+  sg.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(sg.matrixWorld).invert(), boxes = [], b = new THREE.Box3(), M = new THREE.Matrix4();
+  sg.traverse(o => {
+    if (!o.userData.collider || o.name !== 'col-furniture') return;
+    b.copy(UBOX.boundingBox || (UBOX.computeBoundingBox(), UBOX.boundingBox)).applyMatrix4(M.multiplyMatrices(inv, o.matrixWorld));
+    if (b.min.y < L.y + 1.25 && b.max.y > L.y + 0.2) boxes.push([b.min.x - 0.07, b.min.z - 0.07, b.max.x + 0.07, b.max.z + 0.07]);
+  });
+  // door zones along walls: [axis, c, face, s0, s1]
+  const dz = [], leaves = [];
+  for (const d of L.doors) {
+    const hinge = d.axis === 'u' ? d.p + d.hinge * 0.39 * (d.into > 0 ? 1 : -1) : d.p - d.hinge * 0.39 * (d.into > 0 ? 1 : -1);
+    dz.push([d.axis, d.c, 0, d.p - 0.56, d.p + 0.56], [d.axis, d.c, d.into, Math.min(d.p, hinge) - 0.4, Math.max(d.p, hinge) + 0.4]);
+    // the open leaf stands ~perpendicular to its wall at the hinge: nothing goes on a wall right behind it
+    const a = d.c + d.into * 0.05, b = d.c + d.into * 0.9;
+    leaves.push(d.axis === 'u' ? [hinge, a, hinge, b] : [a, hinge, b, hinge]);
+  }
+  const segD = (px, pz, [x0, z0, x1, z1]) => { const dx = x1 - x0, dzz = z1 - z0, t = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dzz) / (dx * dx + dzz * dzz || 1))); return Math.hypot(px - x0 - dx * t, pz - z0 - dzz * t); };
+  if (L.lv === 0) dz.push(['u', CW / 2, 0, P.doorU - 0.62, P.doorU + 0.95]);
+  const FACEOF = { '+v': ['u', 1], '-v': ['u', -1], '+u': ['v', 1], '-u': ['v', -1] };
+  const used = [];
+  for (const rec of recs) {
+    const r = rec.room, [ra0, rb0, ra1, rb1] = clearRect(P, r), ref = rec.ref || [(ra0 + ra1) / 2, rb0];
+    let best = null;
+    for (const sgm of ctx.segs[L.lv] || []) for (const f of sgm.faces) {
+      const off = sgm.c + f * sgm.t / 2;
+      const onRoom = sgm.axis === 'u' ? ((f > 0 && Math.abs(off - rb0) < 0.04) || (f < 0 && Math.abs(off - rb1) < 0.04)) : ((f > 0 && Math.abs(off - ra0) < 0.04) || (f < 0 && Math.abs(off - ra1) < 0.04));
+      if (!onRoom) continue;
+      const lo = Math.max(sgm.a0, sgm.axis === 'u' ? ra0 : rb0) + 0.12, hi = Math.min(sgm.a1, sgm.axis === 'u' ? ra1 : rb1) - 0.12;
+      for (let a = lo; a <= hi; a += 0.04) {
+        const [u, v] = sgm.axis === 'u' ? [a, off] : [off, a];
+        if (v > P.vF - 0.55) continue;                                          // window wall / curtain stacks
+        const pu = sgm.axis === 'u' ? u : u + f * 0.08, pv = sgm.axis === 'u' ? v + f * 0.08 : v;
+        if (!pointInPoly([pu, pv], r.poly)) continue;
+        if (dz.some(([ax, c, fc, s0, s1]) => ax === sgm.axis && Math.abs(c - sgm.c) < 0.08 && (fc === 0 || fc === f) && a > s0 && a < s1)) continue;
+        if (boxes.some(([x0, z0, x1, z1]) => pu > x0 && pu < x1 && pv > z0 && pv < z1)) continue;
+        if (leaves.some(l => segD(u, v, l) < 0.32)) continue;
+        if (ctx.busy.some(q => { if (q.lv !== L.lv) return false; const [ax, fs] = FACEOF[q.face] || []; if (ax !== sgm.axis || fs !== f) return false;
+          const qc = ax === 'u' ? q.v : q.u, qa = ax === 'u' ? q.u : q.v; return Math.abs(qc - off) < 0.12 && Math.abs(qa - a) < q.half + 0.06 && q.y0 < 1.2 && q.y1 > 0.95; })) continue;
+        if (used.some(([uu, vv]) => Math.hypot(uu - u, vv - v) < 0.3)) continue;
+        const d = Math.hypot(pu - ref[0], pv - ref[1]);
+        if (!best || d < best.d) best = { d, u, v, face: sgm.axis === 'u' ? (f > 0 ? '+v' : '-v') : (f > 0 ? '+u' : '-u') };
+      }
+    }
+    if (!best) continue;
+    used.push([best.u, best.v]);
+    const sw = F.curtainSwitch(m, { id: rec.id });
+    sw.position.set(best.u, L.y + 1.05, best.v); sw.rotation.y = FACE[best.face]; sg.add(sw);
+    rec.switch = { u: best.u, v: best.v, y: L.y + 1.05, face: best.face };
+    busy(ctx, L, best.u, best.v, best.face, 0.08, 0.95, 1.15);
+  }
+}
+
+// Curtain groups → public records (state lives in the mover group).
+function wireCurtains(ctx, movers) {
+  const out = [];
+  for (const rec of ctx.curtains) {
+    const g = movers.groups.get(rec.id);
+    if (!g) continue;
+    out.push({ id: rec.id, level: rec.level, room: rec.kind, roomName: rec.roomName, u: rec.u, v: rec.v, y: rec.y, switch: rec.switch || null,
+      get open() { return g.open; }, toggle: (open, o) => g.toggle(open, o) });
+  }
+  return out;
+}
+// Live TV screens (kept out of the bake by furniture.js): tap toggles; the picture advances only while drawn.
+function wireTvs(ctx, root) {
+  const { m, unit } = ctx, out = [], roomsQ = ctx.tvRooms.slice();
+  const tick = () => tickTv();
+  root.traverse(o => { if (o.userData.tvScreen) out.push(o); });
+  return out.map((scr, i) => {
+    const glow = scr.children.find(c => c.name === 'tv-glow');
+    let on = true;
+    const ud = scr.userData;
+    ud.action = { type: 'aptDoor', unitId: unit.id, part: 'tv' }; ud.piece = 'tv'; ud.open = ud._open = true; ud.tv = true;
+    scr.onBeforeRender = tick;
+    const toggle = (want) => {
+      want = want === undefined ? !on : !!want;
+      on = want; ud.open = ud._open = want;
+      scr.material = want ? m.tvLive : m.screen;
+      scr.onBeforeRender = want ? tick : NOOP_R;
+      if (glow) glow.visible = want;
+      return Promise.resolve();
+    };
+    ud.toggle = toggle;
+    return { room: roomsQ[i] || 'living', mesh: scr, get on() { return on; }, toggle };
+  });
+}
+const NOOP_R = () => {};
 
 // ================================================================== LIGHTS
 function buildLights(ctx) {
@@ -1565,7 +1768,7 @@ function build(unit, styleId, opts = {}) {
   const root = new THREE.Group(); root.name = 'apartment-' + unit.id + '-' + m.styleId + (opts.cutaway ? '-cut' : '');
   const sg = new THREE.Group(); sg.name = 'static-src';
   const cg = new THREE.Group(); cg.name = 'colliders';
-  const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {}, doorsU: {}, balconyDoors: [] };
+  const ctx = { tallH: opts.cutaway ? 1.05 : CH - 0.05, P, m, sg, cg, root, unit, cut: !!opts.cutaway, opts, segs: {}, lightSpots: [], showers: [], tmpGeos: [], slideU: {}, doorU: {}, doorsU: {}, balconyDoors: [], curtains: [], busy: [], tvRooms: [], laundry: null, curLevel: null };
   const onlyLevel = opts.cutaway && P.duplex ? (opts.level ?? 0) : null;
   CUR_M = m;
   const T0 = performance.now();
@@ -1574,6 +1777,7 @@ function build(unit, styleId, opts = {}) {
     buildShell(ctx, L);
     furnish(ctx, L);
     buildFacade(ctx, L);
+    if (!ctx.cut) placeSwitches(ctx, L);
   }
   if (P.duplex && onlyLevel == null) buildStair(ctx);
   else if (P.duplex && onlyLevel === 0) buildStairLow(ctx);
@@ -1591,6 +1795,7 @@ function build(unit, styleId, opts = {}) {
   const T1 = performance.now();
   const movers = opts.cutaway ? null : buildMovers(ctx, sg, root);
   const doors = opts.cutaway ? [] : wireBalconyDoors(ctx, movers);
+  const curtains = movers ? wireCurtains(ctx, movers) : [];
   const T2 = performance.now();
   const halos = opts.cutaway ? null : bloomMesh(sg, m);
   bake(sg, baked);
@@ -1622,7 +1827,36 @@ function build(unit, styleId, opts = {}) {
     return list.find(d => u != null && Math.abs(d.u - u) < 0.01) || list[0] || doors[0] || null;
   };
   if (opts.startOnBalcony && doors.length) mainDoor()?.toggle(true, { instant: true });
+  const tvs = opts.cutaway ? [] : wireTvs(ctx, root);
+  // curtains start closed and open (room by room) when the visitor enters: on window 'vrc:apt-enter' {unitId},
+  // on apt.openCurtains(), or — as a fallback — the first time a frame is rendered from inside the apartment.
+  // opts.curtains: 'open' (built open, e.g. stills / panoramas) | 'closed' (no automatic opening) | 'auto' (default)
+  let seqTok = 0, autoDone = opts.curtains === 'open' || opts.curtains === 'closed';
+  const openCurtains = (o = {}) => {
+    autoDone = true;
+    const tok = ++seqTok, gap = o.instant ? 0 : (o.stagger ?? 650);
+    return Promise.all(curtains.map((c, i) => new Promise(res => {
+      const go = () => { if (tok !== seqTok) return res(); c.toggle(true, { instant: !!o.instant }).then(res); };
+      if (!gap || !i) go(); else setTimeout(go, gap * i);
+    })));
+  };
+  const closeCurtains = (o = {}) => { ++seqTok; return Promise.all(curtains.map(c => c.toggle(false, o))); };
+  if (opts.curtains === 'open') openCurtains({ instant: true });
+  const onEnter = (e) => { const id = e && e.detail && e.detail.unitId; if (!id || id === unit.id) openCurtains(); };
+  const hasWin = typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+  if (hasWin && curtains.length) window.addEventListener('vrc:apt-enter', onEnter);
+  if (movers && curtains.length && !autoDone) {
+    const cp = new THREE.Vector3(), H = P.levels.length * LH;
+    movers.onFrame((cam) => {
+      if (autoDone || !cam) return;
+      cp.setFromMatrixPosition(cam.matrixWorld); root.worldToLocal(cp);
+      if (cp.x > 0.1 && cp.x < P.W - 0.1 && cp.z > 0.2 && cp.z < P.D - 0.25 && cp.y > -0.3 && cp.y < H) { autoDone = true; setTimeout(() => { if (!disposed) openCurtains(); }, 500); }
+    });
+  }
+  let disposed = false;
   const disposeAll = () => {
+    disposed = true; ++seqTok;
+    if (hasWin) window.removeEventListener('vrc:apt-enter', onEnter);
     baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     if (ctx.door) ctx.door.leaf.geometry.dispose();
     if (movers) movers.dispose();
@@ -1633,11 +1867,17 @@ function build(unit, styleId, opts = {}) {
     stats: { meshes: baked.children.length + (ctx.door ? 2 : 0) + (movers ? movers.batches : 0), colliders: cg.children.length, fronts: movers ? movers.count : 0, ms: { furnish: Math.round(T1 - T0), fronts: Math.round(T2 - T1), bake: Math.round(T3 - T2) } },
     doorLeaf: ctx.door ? ctx.door.leaf : null,
     // every openable cabinet door / drawer / appliance door (invisible click proxies with action + toggle)
-    cabinets: movers ? movers.proxies.filter(p => !p.userData.balconyDoor) : [], closeCabinets: movers ? movers.closeAll : () => Promise.resolve(),
+    cabinets: movers ? movers.proxies.filter(p => !p.userData.balconyDoor && !p.userData.curtain) : [], closeCabinets: movers ? movers.closeAll : () => Promise.resolve(),
     // doors to the balcony / loggia / terrace: [{id, level, room, u, v, y, kind:'slide'|'french', open, toggle(open)→Promise,
     //   collider, proxies}] (unit-local). Each toggle fires window 'vrc:colliders-changed'.
     balconyDoors: doors,
     openBalconyDoor: (lv) => { const d = mainDoor(lv); return d ? d.toggle(true) : Promise.resolve(); },
+    // motorised curtains: [{id, level, room, roomName, u, v, y, switch:{u,v,y,face}, open, toggle(open, {instant})}]
+    curtains, openCurtains, closeCurtains,
+    get curtainsOpen() { return curtains.some(c => c.open); },
+    // TVs (living + master bedroom): [{room, mesh, on, toggle(on)}]; on while the apartment is shown
+    tvs, setTvs: (on) => Promise.all(tvs.map(t => t.toggle(on))),
+    laundry: ctx.laundry,
     closeBalconyDoors: () => Promise.all(doors.filter(d => d.open).map(d => d.toggle(false))),
     dispose: disposeAll,
   };

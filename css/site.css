@@ -337,7 +337,9 @@ select:focus, input:focus { outline: none; border-color: var(--gold); background
 :lang(he) .tb-s { font-size: 13px; letter-spacing: 0; }
 .fd-viz { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; }
 .f3d { position: relative; aspect-ratio: 4 / 3.3; min-height: 0; background: radial-gradient(120% 90% at 50% 100%, #1a1611 0%, #0c0b09 70%); border: 1px solid var(--line); overflow: hidden; }
-.f3d .hero3d-canvas { cursor: pointer; touch-action: pan-y; }
+.f3d .hero3d-canvas { cursor: default; touch-action: pan-y; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+/* fixed boxes in the finder: the 3D view, the floor strip and the plan never change size on selection */
+.f3d { contain: layout paint; }
 .elev { position: absolute; inset: 0; padding: 30px 14px 22px; display: grid; }
 .elev svg { width: 100%; height: 100%; }
 .f3d.is-live .elev { opacity: 0; transition: opacity .8s; }
@@ -361,6 +363,7 @@ select:focus, input:focus { outline: none; border-color: var(--gold); background
 .fl { position: relative; flex: 1; min-height: 26px; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 3px; align-items: center; column-gap: 4px; padding: 3px 8px; border: 1px solid var(--hair); background: var(--bg-2); color: var(--muted); border-radius: 1px; transition: all .2s; text-align: start; }
 .fl:hover { border-color: var(--line-2); color: var(--ivory); }
 .fl.on { border-color: var(--gold); background: rgba(201, 169, 106, .14); color: var(--gold-hi); }
+.fl.is-hover:not(.on) { border-color: var(--gold-lo); color: var(--ivory); background: rgba(201, 169, 106, .07); }
 .fl-n { font: 500 15px/1 "Cormorant Garamond", serif; }
 .fl-n sup { font-size: 9px; color: var(--gold); margin-inline-start: 1px; }
 .fl-c { font-size: 10.5px; font-weight: 600; color: var(--dim); }
@@ -398,8 +401,10 @@ select:focus, input:focus { outline: none; border-color: var(--gold); background
 .plan-tools { position: absolute; top: 10px; inset-inline-end: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 3; }
 .plan-tools .icon-btn { width: 38px; height: 38px; font-size: 20px; line-height: 1; background: rgba(12, 11, 9, .8); }
 .plan-tools .icon-btn svg { width: 16px; height: 16px; }
-.plan-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
-.plan-note[hidden] { display: none; }
+/* the note line always keeps room for its longest text (ground floor), so choosing a floor never shifts what is below */
+.plan-note { margin: 10px 0 0; font-size: 13px; line-height: 1.5; min-height: 3em; color: var(--muted); }
+.plan-note.is-empty { visibility: hidden; }
+@media (max-width: 759.98px) { .plan-note { min-height: 4.5em; } }
 
 /* plan drawing */
 .pl-slab { fill: #110f0c; stroke: rgba(201, 169, 106, .5); stroke-width: .16; }
@@ -832,8 +837,10 @@ dialog.is-closing { animation: sheetOut .2s ease-in forwards; }
 @media (max-width: 1099.98px) {
   .fd-viz { grid-template-columns: minmax(0, 1fr); }
   .f3d { aspect-ratio: 16 / 9; }
-  .floors { flex-direction: row-reverse; justify-content: flex-end; overflow-x: auto; gap: 4px; padding-bottom: 4px; scrollbar-width: thin; scroll-snap-type: x proximity; }
-  .fl { flex: 0 0 auto; min-width: 54px; min-height: 44px; scroll-snap-align: start; }
+  /* P first at the reading start, ascending. Plain row + order (not row-reverse + flex-end): with those, the chips that
+     overflow land on the side a scroll container cannot reach, so floors 6–10 were unreachable on phones. */
+  .floors { flex-direction: row; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain; gap: 4px; padding-bottom: 4px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+  .fl { flex: 0 0 auto; order: var(--o, 0); min-width: 54px; min-height: 44px; scroll-snap-align: start; }
 }
 @media (max-width: 759.98px) {
   .plan-stage { overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y; scrollbar-width: thin; }

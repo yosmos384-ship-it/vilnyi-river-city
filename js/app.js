@@ -218,16 +218,31 @@ function renderTabs() {
 }
 
 function renderStack() {
+  const st = $('#floorStack'); const keep = st.scrollLeft;
   let h = '';
   for (let f = TOP_FLOOR; f >= 0; f--) {
     const us = unitsOn(S.b, f); const av = us.filter(u => statusOf(u) === 'available' && matches(u)).length;
     const on = f === S.f;
-    h += `<button type="button" role="option" aria-selected="${on}" class="fl${on ? ' on' : ''}${f === TOP_FLOOR ? ' top' : ''}" data-f="${f}">
+    h += `<button type="button" role="option" aria-selected="${on}" class="fl${on ? ' on' : ''}${f === TOP_FLOOR ? ' top' : ''}" data-f="${f}" style="--o:${f}">
       <span class="fl-n" dir="ltr">${f === 0 ? esc(t('finder.parterShort')) : f}${f === TOP_FLOOR ? '<sup>D</sup>' : ''}</span>
       <span class="fl-bar" aria-hidden="true"><i style="width:${us.length ? Math.round(av / us.length * 100) : 0}%"></i></span>
       <span class="fl-c">${av}</span></button>`;
   }
-  $('#floorStack').innerHTML = h;
+  st.innerHTML = h;
+  st.scrollLeft = keep;   // re-rendering must not reset the phone strip's sideways scroll
+}
+// Bring the selected floor chip into view inside the sideways strip (phones) — never scrolls the page itself.
+function revealChip(f, smooth = true) {
+  const st = $('#floorStack'), c = st.querySelector(`[data-f="${f}"]`);
+  if (!c || st.scrollWidth <= st.clientWidth + 1) return;
+  const sr = st.getBoundingClientRect(), cr = c.getBoundingClientRect(), pad = 12;
+  let dx = 0;
+  if (cr.left < sr.left + pad) dx = cr.left - sr.left - pad; else if (cr.right > sr.right - pad) dx = cr.right - sr.right + pad;
+  if (Math.abs(dx) > 1) st.scrollBy({ left: dx, behavior: smooth && !reduced ? 'smooth' : 'auto' });
+}
+function markHoverChip(a) {
+  $$('#floorStack .fl.is-hover').forEach(x => x.classList.remove('is-hover'));
+  if (a && a.building === S.b) $(`#floorStack [data-f="${a.floor}"]`)?.classList.add('is-hover');
 }
 
 // Elevation (the long courtyard facade of the chosen building) from LEVELS/floorY — also the no-WebGL "floor highlight"
@@ -260,14 +275,24 @@ function setFloor(b, f, { scroll = false, focusPlan = false } = {}) {
   S.b = b; S.f = f;
   renderTabs(); renderStack(); renderElev();
   plan.show(b, f);
-  const note = f === 0 ? t('finder.ground') : f === TOP_FLOOR ? t('finder.duplexNote') : '';
-  $('#planNote').textContent = note; $('#planNote').hidden = !note;
+  setPlanNote();
   renderCount();
   if (S.view === 'list') renderList();
   hero?.focusFloor(b, f);
+  revealChip(f);
   $('#announce').textContent = `${b} · ${floorText(f)}`;
-  if (scroll) $('#finder').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  // only when the finder is actually off screen (e.g. a floor picked on the hero 3D) — never fights the user's scroll
+  if (scroll) {
+    const r = $('#finder').getBoundingClientRect();
+    if (r.top > innerHeight * 0.6 || r.bottom < 80) $('#finder').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }
   if (focusPlan) setTimeout(() => $('#plan .pl-unit')?.focus({ preventScroll: true }), 400);
+}
+
+// The note line keeps its reserved height (CSS) whether or not it has text, so the legend below never shifts.
+function setPlanNote() {
+  const note = S.f === 0 ? t('finder.ground') : S.f === TOP_FLOOR ? t('finder.duplexNote') : '';
+  const n = $('#planNote'); n.textContent = note || '\u00a0'; n.classList.toggle('is-empty', !note); n.hidden = false;
 }
 
 function renderLegend() {
@@ -295,7 +320,10 @@ function renderList() {
 
 function bindFinder() {
   $('#bldTabs').addEventListener('click', e => { const b = e.target.closest('[data-b]')?.dataset.b; if (b && b !== S.b) setFloor(b, S.f); });
-  $('#floorStack').addEventListener('click', e => { const f = e.target.closest('[data-f]')?.dataset.f; if (f != null) setFloor(S.b, +f); });
+  $('#floorStack').addEventListener('click', e => { const f = e.target.closest('[data-f]')?.dataset.f; if (f != null && +f !== S.f) setFloor(S.b, +f); });
+  // desktop: hovering a floor chip previews that floor's band on the 3D view
+  $('#floorStack').addEventListener('pointerover', e => { if (e.pointerType !== 'mouse') return; const f = e.target.closest('[data-f]')?.dataset.f; if (f != null) hero?.previewFloor?.(S.b, +f); });
+  $('#floorStack').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hero?.previewFloor?.(S.b, null); });
   $('#floorStack').addEventListener('keydown', e => {
     if (!['ArrowUp', 'ArrowDown'].includes(e.key)) return; e.preventDefault();
     const f = Math.max(0, Math.min(TOP_FLOOR, S.f + (e.key === 'ArrowUp' ? 1 : -1))); setFloor(S.b, f);
@@ -681,6 +709,7 @@ window.VRC = window.VRC || {};
 window.VRC.openPhotoTour = (o = {}) => openPhoto({ unitId: o.unitId, styleId: o.styleId, room: o.room || o.roomKind, onBack: o.onBack });
 window.VRC.hasPhotoTour = unitId => hasPhoto(unitById(unitId));
 window.VRC.photoTourReady = tourReady;
+window.VRC.openBooking = id => { const u = unitById(id); if (u) reserve(u); else document.querySelector('.site-foot')?.scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------------------------------------------------------------- gallery (assets/gallery/manifest.json, filled by the lead)
 const GAL_TYPES = ['exterior', 'interior', 'lobby', 'amenity'];
@@ -787,8 +816,10 @@ function startHero() {
   if (save) return;
   hero = createHero3D({
     heroHost: $('#heroHost'), finderHost: $('#finderHost'), reducedMotion: reduced,
-    onFloor: (b, f) => setFloor(b, f, { scroll: true }),
-    onState: (s) => {
+    // a floor tapped on the finder's own 3D view must not move the page; one picked on the hero scrolls to the finder
+    onFloor: (b, f, where) => { if (b !== S.b || f !== S.f) setFloor(b, f, { scroll: where === 'hero' }); else if (where === 'hero') setFloor(b, f, { scroll: true }); },
+    onState: (s, a) => {
+      if (s === 'hover') { markHoverChip(a); return; }
       if (s === 'ready') {
         document.body.classList.add('has-3d');
         $('#modeCtl').hidden = false; $('#heroHint').hidden = false; markMode('dusk');
@@ -852,7 +883,7 @@ function bindLangMenu() {
 function rerenderAll() {
   markLang(); renderStatic(); renderFilters(); renderTabs(); renderStack(); renderElev(); renderLegend(); renderCount();
   plan.refresh();
-  const note = S.f === 0 ? t('finder.ground') : S.f === TOP_FLOOR ? t('finder.duplexNote') : ''; $('#planNote').textContent = note; $('#planNote').hidden = !note;
+  setPlanNote();
   if (S.view === 'list') renderList();
   if (dlgU().open) renderUnit();
   renderGallery();

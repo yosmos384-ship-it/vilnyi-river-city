@@ -736,6 +736,89 @@ const cache = new Map();
 const std = (o) => new THREE.MeshStandardMaterial(o);
 const phys = (o) => new THREE.MeshPhysicalMaterial(o);
 
+// ---------------------------------------------------------------- live TV picture
+// One shared 320×180 canvas: a looping "nature channel" (dusk over a lake: drifting hills, a sun on the water, gulls)
+// with the VILNYI channel bug. tickTv() redraws it at ≤ 15 fps and is called from the screens' onBeforeRender, so the
+// picture only costs anything while a switched-on screen is actually drawn.
+let TV = null;
+function tvTexture() {
+  if (TV) return TV.tex;
+  let c = null;
+  try { c = typeof document !== 'undefined' ? document.createElement('canvas') : new OffscreenCanvas(320, 180); } catch { c = null; }
+  if (!c) return null;
+  c.width = 320; c.height = 180;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+  TV = { c, ctx: c.getContext('2d'), tex: t, last: -1e9 };
+  try { drawTv(0); } catch { /* no 2d context */ }
+  return t;
+}
+const mixC = (a, b, k) => a.map((x, i) => Math.round(x + (b[i] - x) * k));
+const rgb = (a, al = 1) => `rgba(${a[0]},${a[1]},${a[2]},${al})`;
+function drawTv(T) {
+  const { ctx: x } = TV, W = 320, H = 180, hz = H * 0.56;
+  // 48 s day-to-dusk loop: golden hour → sunset → blue hour → back
+  const ph = (Math.sin(T * Math.PI * 2 / 48) + 1) / 2;
+  const top = mixC([62, 112, 170], [38, 44, 92], ph), hor = mixC([255, 206, 140], [244, 120, 92], ph), sunC = mixC([255, 236, 190], [255, 170, 110], ph);
+  let g = x.createLinearGradient(0, 0, 0, hz);
+  g.addColorStop(0, rgb(top)); g.addColorStop(0.75, rgb(mixC(top, hor, 0.65))); g.addColorStop(1, rgb(hor));
+  x.fillStyle = g; x.fillRect(0, 0, W, hz + 1);
+  // sun + halo
+  const sx = W * 0.62 + Math.sin(T * 0.05) * 6, sy = hz - 16 - ph * 10;
+  g = x.createRadialGradient(sx, sy, 2, sx, sy, 70); g.addColorStop(0, rgb(sunC, 0.95)); g.addColorStop(0.12, rgb(sunC, 0.6)); g.addColorStop(1, rgb(sunC, 0));
+  x.fillStyle = g; x.fillRect(0, 0, W, hz);
+  x.fillStyle = rgb(mixC(sunC, [255, 255, 255], 0.4)); x.beginPath(); x.arc(sx, sy, 7.5, 0, Math.PI * 2); x.fill();
+  // drifting cloud streaks
+  for (let i = 0; i < 4; i++) {
+    const cy = 18 + i * 17, cx = ((T * (4 + i * 1.5) + i * 97) % (W + 160)) - 80;
+    g = x.createLinearGradient(cx - 70, 0, cx + 70, 0); g.addColorStop(0, rgb(hor, 0)); g.addColorStop(0.5, rgb(mixC(hor, [255, 255, 255], 0.3), 0.22)); g.addColorStop(1, rgb(hor, 0));
+    x.fillStyle = g; x.fillRect(cx - 70, cy, 140, 3 + i);
+  }
+  // hills: three parallax layers (a slow camera pan)
+  const hills = [[0.55, 26, mixC([120, 110, 140], top, 0.35), 3], [0.75, 17, mixC([70, 72, 90], top, 0.25), 7], [1, 10, [34, 38, 46], 12]];
+  for (const [k, amp, col, sp] of hills) {
+    x.fillStyle = rgb(col); x.beginPath(); x.moveTo(0, hz);
+    for (let px = 0; px <= W; px += 8) {
+      const q = px + T * sp;
+      x.lineTo(px, hz - amp * k * (0.55 + 0.3 * Math.sin(q * 0.021 + k * 3) + 0.15 * Math.sin(q * 0.057 + k)));
+    }
+    x.lineTo(W, hz); x.closePath(); x.fill();
+  }
+  x.fillStyle = 'rgba(22,26,30,0.9)';                     // poplars on the near shore
+  for (let i = 0; i < 9; i++) { const tx = ((i * 41 - T * 12) % (W + 40) + W + 40) % (W + 40) - 20, th = 8 + (i * 7) % 9; x.beginPath(); x.moveTo(tx - 3, hz); x.lineTo(tx, hz - th); x.lineTo(tx + 3, hz); x.fill(); }
+  // lake: reflected sky + shimmering ripple bands (perspective-spaced) + the sun's glitter column
+  g = x.createLinearGradient(0, hz, 0, H); g.addColorStop(0, rgb(mixC(hor, top, 0.35))); g.addColorStop(1, rgb(mixC(top, [10, 18, 30], 0.55)));
+  x.fillStyle = g; x.fillRect(0, hz, W, H - hz);
+  for (let r = 0; r < 26; r++) {
+    const d = r / 26, y = hz + 2 + Math.pow(d, 1.7) * (H - hz), lw = 0.6 + d * 2.2, seg = 10 + d * 26;
+    for (let px = -((T * (8 + d * 30) + r * 13) % seg); px < W; px += seg) {
+      const a = 0.5 + 0.5 * Math.sin(px * 0.05 + T * 2.1 + r * 1.7), near = Math.exp(-Math.pow((px - sx) / (14 + d * 50), 2));
+      x.fillStyle = near > 0.05 ? rgb(sunC, (0.25 + 0.65 * a) * near) : `rgba(255,255,255,${0.05 + 0.08 * a})`;
+      x.fillRect(px, y, seg * (0.35 + 0.3 * a), lw);
+    }
+  }
+  x.strokeStyle = 'rgba(20,22,28,0.8)'; x.lineWidth = 1.1;     // gulls
+  for (let i = 0; i < 3; i++) {
+    const bx = ((T * (14 + i * 3) + i * 120) % (W + 60)) - 30, by = 34 + i * 11 + Math.sin(T * 0.7 + i) * 4, f = 2.5 + Math.sin(T * 6 + i * 2) * 1.6;
+    x.beginPath(); x.moveTo(bx - 5, by - f); x.quadraticCurveTo(bx - 2, by - 1, bx, by); x.quadraticCurveTo(bx + 2, by - 1, bx + 5, by - f); x.stroke();
+  }
+  // vignette + channel bug (gold origami bird + VILNYI) + "live"
+  g = x.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.62); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.35)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.save(); x.globalAlpha = 0.85; x.fillStyle = '#d8b46a';
+  x.beginPath(); x.moveTo(W - 84, 15); x.lineTo(W - 71, 8); x.lineTo(W - 75, 15); x.lineTo(W - 65, 14); x.lineTo(W - 77, 22); x.closePath(); x.fill();
+  x.font = '600 11px Georgia, "Times New Roman", serif'; x.textBaseline = 'middle';
+  x.fillText('V I L N Y I', W - 60, 15.5); x.restore();
+  x.fillStyle = 'rgba(214,58,48,0.9)'; x.beginPath(); x.arc(14, H - 13, 2.6, 0, Math.PI * 2); x.fill();
+  x.fillStyle = 'rgba(255,255,255,0.75)'; x.font = '600 8px Arial, sans-serif'; x.textBaseline = 'middle'; x.fillText('LIVE · LACUL MORII', 21, H - 12.5);
+}
+// Advance the TV picture (throttled to ~15 fps). Screens call it from onBeforeRender.
+export function tickTv(now = performance.now()) {
+  if (!TV || now - TV.last < 66) return;
+  TV.last = now;
+  try { drawTv(now / 1000); TV.tex.needsUpdate = true; } catch { /* canvas unavailable */ }
+}
+
 export function getMaterials(styleId = 'milano') {
   if (!STYLES.find(s => s.id === styleId)) styleId = 'milano';
   if (cache.has(styleId)) return cache.get(styleId);
@@ -887,6 +970,10 @@ export function getMaterials(styleId = 'milano') {
   m.curtain = std({ color: P.curtain, map: linen, normalMap: nLinen, roughness: 0.95, side: THREE.DoubleSide });
   // sheers are back-lit by the daylight behind them: a little emissive makes them glow like real voile
   m.sheer = std({ color: P.sheer, map: linen, roughness: 0.9, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, emissive: new THREE.Color('#fff4e4'), emissiveIntensity: 0.28 });
+  // motorised blackout layer: milano charcoal-taupe velvet drapes, nordic a pale linen roller blind, riviera sage linen drapes
+  m.blackout = styleId === 'milano'
+    ? std({ color: '#4d4641', map: velvet, normalMap: nVelvet, roughness: 0.9, side: THREE.DoubleSide, envMapIntensity: 0.4 })
+    : std({ color: styleId === 'nordic' ? '#b8b0a3' : '#a29a76', map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95, side: THREE.DoubleSide, envMapIntensity: 0.4 });
   m.towel = std({ color: P.towel, map: tex(fabricTex('boucle', 15), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.towel2 = std({ color: P.towel2, map: tex(fabricTex('boucle', 16), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.outdoorFabric = std({ color: P.outdoor, map: fab, normalMap: nWeave, roughness: 0.95 });
@@ -905,7 +992,7 @@ export function getMaterials(styleId = 'milano') {
     p.sheen = amt; p.sheenRoughness = sr; p.sheenColor = a.color.clone().lerp(new THREE.Color('#ffffff'), 0.3);
     m[k] = p; a.dispose();
   };
-  for (const k of ['fabric', 'fabricAccent', 'cushionA', 'cushionB', 'cushionC', 'throw', 'linen', 'duvet', 'headboard', 'curtain', 'accentFabric', 'outdoorFabric']) if (!(styleId === 'milano' && k === 'fabricAccent')) sheenify(k);
+  for (const k of ['fabric', 'fabricAccent', 'cushionA', 'cushionB', 'cushionC', 'throw', 'linen', 'duvet', 'headboard', 'curtain', 'blackout', 'accentFabric', 'outdoorFabric']) if (!(styleId === 'milano' && k === 'fabricAccent')) sheenify(k);
   for (const k of ['towel', 'towel2']) sheenify(k, 0.5, 0.8);
   sheenify('rattanShade', 0.3, 0.7);
 
@@ -984,6 +1071,9 @@ export function getMaterials(styleId = 'milano') {
   m.daylight = dec({ color: new THREE.Color('#fff3e2'), opacity: 0.15 * gk, blending: THREE.AdditiveBlending, fog: false });
   m.lampGlow = dec({ color: new THREE.Color(S.lightColor).lerp(new THREE.Color('#ffb870'), 0.25), opacity: 0.62 * gk, blending: THREE.AdditiveBlending, fog: false });
   m.coldGlow = dec({ color: new THREE.Color('#dcecff'), opacity: 0.28, blending: THREE.AdditiveBlending, fog: false });   // fridge light
+  // switched-on TV: the live picture as emission under a glossy black glass, and its cool spill on the wall around it
+  m.tvLive = phys({ color: '#020203', roughness: 0.32, clearcoat: 0.35, clearcoatRoughness: 0.3, emissive: new THREE.Color('#ffffff'), emissiveMap: tvTexture(), emissiveIntensity: 1.35, envMapIntensity: 0.5 });
+  m.tvGlow = dec({ color: new THREE.Color('#9fb8d8'), opacity: 0.3, blending: THREE.AdditiveBlending, fog: false, polygonOffset: false });
   // Camera-facing halos around bulbs / shades (one billboard mesh per apartment, built in apartment.js).
   // Each quad = 4 verts sharing the centre `position`; `corner` (±1,±1) and `bsize` expand it in view space.
   m.bloom = new THREE.ShaderMaterial({

@@ -287,31 +287,49 @@ export function createComplex(opts = {}) {
   }
   group.updateMatrixWorld(true);
 
-  // ---------------- floor highlight outline (gold lines + translucent ribbon at the balcony edge)
-  const outline = new THREE.Group(); outline.name = 'floor-outline'; outline.visible = false;
-  const outlines = {};
-  for (const oId of B_IDS) {
-    const poly = offsetPoly(footprintOf(oId), BD + 0.25).pts;
-    const lineMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd28a').multiplyScalar(1.6), toneMapped: false, fog: false });
-    const ribMat = new THREE.MeshBasicMaterial({ color: '#e0a84e', transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-    const mkLoop = () => {
-      const parts = [];
-      for (let i = 0; i < poly.length; i++) {
-        const [x0, z0] = poly[i], [x1, z1] = poly[(i + 1) % poly.length]; const L = Math.hypot(x1 - x0, z1 - z0);
-        const g = new THREE.BoxGeometry(L + 0.3, 0.3, 0.3); g.rotateY(-Math.atan2(z1 - z0, x1 - x0)); g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2); parts.push(g);
-      }
-      const g = mergeBoxes(parts); return new THREE.Mesh(g, lineMat);
+  // ---------------- floor highlight outlines (gold lines + glowing ribbon at the balcony edge).
+  // Two sets: the selected floor (strong gold) and a lighter "hover / finger-down" preview, so a preview never hides the
+  // current selection.
+  function makeOutline(name, lineHex, lineBoost, ribHex, ribOpacity) {
+    const root = new THREE.Group(); root.name = name; root.visible = false;
+    const per = {};
+    const lineMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(lineHex).multiplyScalar(lineBoost), toneMapped: false, fog: false });
+    const ribMat = new THREE.MeshBasicMaterial({ color: ribHex, transparent: true, opacity: ribOpacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false });
+    for (const oId of B_IDS) {
+      const poly = offsetPoly(footprintOf(oId), BD + 0.25).pts;
+      const mkLoop = () => {
+        const parts = [];
+        for (let i = 0; i < poly.length; i++) {
+          const [x0, z0] = poly[i], [x1, z1] = poly[(i + 1) % poly.length]; const L = Math.hypot(x1 - x0, z1 - z0);
+          const g = new THREE.BoxGeometry(L + 0.3, 0.3, 0.3); g.rotateY(-Math.atan2(z1 - z0, x1 - x0)); g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2); parts.push(g);
+        }
+        const g = mergeBoxes(parts); return new THREE.Mesh(g, lineMat);
+      };
+      const bot = mkLoop(), top = mkLoop();
+      const rp = [], ri = [];
+      poly.forEach(([x, z], i) => { rp.push(x, 0, z, x, 1, z); const k = i * 2, n = ((i + 1) % poly.length) * 2; ri.push(k, n, k + 1, k + 1, n, n + 1); });
+      const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.setIndex(ri);
+      const rib = new THREE.Mesh(rg, ribMat);
+      const og = new THREE.Group(); og.name = name + '-' + oId; og.add(bot, top, rib); og.userData = { bot, top, rib };
+      og.traverse(o => { o.renderOrder = 6; o.raycast = () => {}; });   // never intercept picking
+      root.add(og); per[oId] = og;
+    }
+    group.add(root);
+    // place on (bId, floor) or hide (floor == null)
+    root.userData.set = (bId, floor) => {
+      if (floor == null || !BUILDINGS[bId]) { root.visible = false; return; }
+      const [y0, y1] = bandY(floor);
+      const b = BUILDINGS[bId];
+      root.position.set(b.origin[0], 0, b.origin[1]); root.rotation.y = b.rotY;
+      for (const [oId, og] of Object.entries(per)) og.visible = oId === bId;
+      const { bot, top, rib } = per[bId].userData;
+      bot.position.y = y0 + 0.05; top.position.y = y1 - 0.05; rib.position.y = y0; rib.scale.y = y1 - y0;
+      root.visible = true;
     };
-    const bot = mkLoop(), top = mkLoop();
-    const rp = [], ri = [];
-    poly.forEach(([x, z], i) => { rp.push(x, 0, z, x, 1, z); const k = i * 2, n = ((i + 1) % poly.length) * 2; ri.push(k, n, k + 1, k + 1, n, n + 1); });
-    const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.setIndex(ri);
-    const rib = new THREE.Mesh(rg, ribMat);
-    const og = new THREE.Group(); og.name = 'floor-outline-' + oId; og.add(bot, top, rib); og.userData = { bot, top, rib };
-    og.traverse(o => { o.renderOrder = 6; });
-    outline.add(og); outlines[oId] = og;
+    return root;
   }
-  group.add(outline);
+  const outline = makeOutline('floor-outline', '#ffd28a', 1.6, '#e0a84e', 0.32);
+  const hoverOutline = makeOutline('floor-hover', '#fff1d0', 1.25, '#f3d9a4', 0.2);
 
   // ---------------- hide logic
   const hidden = {};                // bId -> [floors]
@@ -358,17 +376,13 @@ export function createComplex(opts = {}) {
   function setHiddenFloor(bId, floor) { setHiddenFloors(bId, floor == null ? [] : [floor]); }
 
   function highlightFloor(bId, floor) {
-    if (floor == null || !BUILDINGS[bId]) { EXT_U.uHi.value.set(-999, -999); outline.visible = false; return; }
+    if (floor == null || !BUILDINGS[bId]) { EXT_U.uHi.value.set(-999, -999); outline.userData.set(null); return; }
     const top = floor >= TOP_FLOOR;
     EXT_U.uHi.value.set(bandCode(bId, floor), top ? bandCode(bId, TOP_FLOOR + 1) : -999);
-    const [y0, y1] = bandY(floor);
-    const b = BUILDINGS[bId];
-    outline.position.set(b.origin[0], 0, b.origin[1]); outline.rotation.y = b.rotY;
-    for (const [oId, og] of Object.entries(outlines)) og.visible = oId === bId;
-    const { bot, top: tp, rib } = outlines[bId].userData;
-    bot.position.y = y0 + 0.05; tp.position.y = y1 - 0.05; rib.position.y = y0; rib.scale.y = y1 - y0;
-    outline.visible = true;
+    outline.userData.set(bId, floor);
   }
+  // Lighter preview band (mouse hover / finger down on the 3D view); null hides it.
+  function hoverFloor(bId, floor) { hoverOutline.userData.set(bId, floor); }
   function setUnitHighlight(ids) {
     unitTexData.fill(0);
     if (ids && ids.length) for (const id of ids) {
@@ -383,11 +397,11 @@ export function createComplex(opts = {}) {
     group.removeFromParent();
     group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     for (const m of Object.values(M)) { SHARED.mats.delete(m); m.dispose(); }
-    outline.traverse(o => o.material && o.material.dispose());
+    for (const o of [outline, hoverOutline]) o.traverse(x => x.material && x.material.dispose());
     unitTex.dispose();
   }
 
-  return { group, buildings, pickables, highlightFloor, setHiddenFloor, setHiddenFloors, setUnitHighlight, dispose };
+  return { group, buildings, pickables, highlightFloor, hoverFloor, setHiddenFloor, setHiddenFloors, setUnitHighlight, dispose };
 }
 
 const PICK_MAT = new THREE.MeshBasicMaterial({ visible: false });

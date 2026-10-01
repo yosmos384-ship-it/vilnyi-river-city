@@ -366,6 +366,12 @@ function M(key) {
     bulb: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 2.4, 1.6) }),
     wordmark: () => { const m = new THREE.MeshStandardMaterial({ map: texWordmark(), transparent: true, metalness: 0.85, roughness: 0.28, alphaTest: 0.02, emissive: 0x8a6528, emissiveMap: texWordmark(), emissiveIntensity: 0.8 }); return m; },
     signs: () => new THREE.MeshBasicMaterial({ map: texSigns(), color: new THREE.Color(1.15, 1.15, 1.15) }),
+    // reception desk: the brand mark glows from behind a dark onyx inset
+    wordmarkLit: () => new THREE.MeshBasicMaterial({ map: texWordmark(), color: new THREE.Color(1.9, 1.6, 1.15), transparent: true, alphaTest: 0.02, depthWrite: false }),
+    onyx: () => S({ color: 0x17130f, roughness: 0.18, metalness: 0.1, envMapIntensity: 1.1, emissive: 0x3a2610, emissiveIntensity: 0.55 }),
+    leather: () => S({ color: 0x6a4329, roughness: 0.45, envMapIntensity: 0.8 }),
+    // concierge figure: one vertex-coloured material for all her parts (skin, suit, blouse, hair) → 5 draw calls
+    figure: () => S({ vertexColors: true, roughness: 0.58, metalness: 0, envMapIntensity: 0.75 }),
     // backlit keys: the engraved glyph always glows softly (legible in any light), much brighter when pressed
     keyFace: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0x86827b, metalness: 0.6, roughness: 0.3, envMapIntensity: 1.0, emissive: 0xffb04e, emissiveMap: texKeysGlow(), emissiveIntensity: 1.25 }),
     keyFaceLit: () => new THREE.MeshStandardMaterial({ map: texKeys(), color: 0xa09a90, metalness: 0.45, roughness: 0.3, emissive: 0xffc46a, emissiveMap: texKeysGlow(), emissiveIntensity: 4 }),
@@ -443,7 +449,7 @@ function flipWinding(g) {   // non-indexed: swap the 2nd/3rd vertex of every tri
 // ---- reflection of a mirrored block (see the header). MZ = mirror plane z of the build in progress (null: none).
 let MZ = null;
 const BAKED = new WeakSet(), NOMIRROR = new WeakSet();
-const TEXT_MATS = new Set(['wordmark', 'mailbox', 'signs']);
+const TEXT_MATS = new Set(['wordmark', 'wordmarkLit', 'mailbox', 'signs']);
 const _flipX = new THREE.Matrix4().makeScale(-1, 1, 1);
 function mirrorMatrix(z0) { return new THREE.Matrix4().makeTranslation(0, 0, z0).multiply(new THREE.Matrix4().makeScale(1, 1, -1)).multiply(new THREE.Matrix4().makeTranslation(0, 0, -z0)); }
 function mirrorGeo(g, z0) { g.applyMatrix4(mirrorMatrix(z0)); flipWinding(g); return g; }
@@ -1054,6 +1060,152 @@ function armchair(B, x, z, yaw, mat = 'velvet') {   // tub lounge chair: rounded
   B.add('velvetSand', rbox(-0.26, 0.26, 0.5, 0.78, -0.25, -0.13, 0.06), m);
   for (const sx of [-1, 1]) { B.add('bronze', boxGeo(sx * 0.33 - 0.012, sx * 0.33 + 0.012, 0.0, 0.14, -0.34, 0.34), m); B.add('bronze', boxGeo(sx * 0.33 - 0.012, sx * 0.33 + 0.012, 0.0, 0.02, -0.36, 0.36), m); }
 }
+function receptionChair(B, x, z, yaw) {   // counter-height swivel chair: bronze star base, foot ring, cognac leather
+  const m = mat4(x, 0, z, yaw);
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * TAU + 0.3, g = boxGeo(-0.018, 0.018, 0.03, 0.06, 0, 0.3); g.rotateY(a); B.add('bronzeDark', g, m);
+    const w = new THREE.SphereGeometry(0.028, 10, 8); w.translate(Math.sin(a) * 0.29, 0.028, Math.cos(a) * 0.29); B.add('pot', w, m);
+  }
+  B.add('brass', new THREE.CylinderGeometry(0.024, 0.03, 0.52, 16).translate(0, 0.32, 0), m);
+  const ring = new THREE.TorusGeometry(0.21, 0.011, 8, 40); ring.rotateX(Math.PI / 2); ring.translate(0, 0.37, 0.02); B.add('brass', ring, m);
+  B.add('leather', rbox(-0.24, 0.24, 0.57, 0.66, -0.22, 0.24, 0.04), m);
+  B.add('leather', rbox(-0.22, 0.22, 0.76, 1.1, -0.3, -0.23, 0.035), m);
+  B.add('bronzeDark', boxGeo(-0.02, 0.02, 0.58, 0.8, -0.27, -0.24), m);
+}
+
+// ---- the concierge: a seated, stylised-realistic woman (dark suit, white blouse, hair in a bun) built from smooth
+// primitives with vertex colours. Parts that animate are separate meshes (5 draw calls, one shared material):
+// lower body (static), torso (breathing, slight turn), head (follows the visitor, nods), right upper arm + forearm (wave).
+const FIG = { skin: 0xe7bfa2, legs: 0xd9ab8d, suit: 0x1c1f28, satin: 0x2c303c, blouse: 0xf5f2ec, hair: 0x3b2618,
+  eye: 0x2a1c14, lip: 0xb5676b, gold: 0xd8b26c, shoe: 0x121212 };
+const _fc = new THREE.Color(), _V = (x, y, z) => new THREE.Vector3(x, y, z), _UP = new THREE.Vector3(0, 1, 0);
+function tinted(g, hex) {
+  const n = g.index ? g.toNonIndexed() : g; if (n !== g) g.dispose();
+  for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal') n.deleteAttribute(k);
+  _fc.set(hex); const cnt = n.attributes.position.count, col = new Float32Array(cnt * 3);
+  for (let i = 0; i < cnt; i++) { col[i * 3] = _fc.r; col[i * 3 + 1] = _fc.g; col[i * 3 + 2] = _fc.b; }
+  n.setAttribute('color', new THREE.BufferAttribute(col, 3)); return n;
+}
+function ell(rx, ry, rz, x, y, z, ws = 22, hs = 14) { const g = new THREE.SphereGeometry(1, ws, hs); g.scale(rx, ry, rz); g.translate(x, y, z); return g; }
+function limb(a, b, ra, rb = ra, seg = 14) {   // tapered capsule from a to b
+  const d = new THREE.Vector3().subVectors(b, a), L = d.length(), q = new THREE.Quaternion().setFromUnitVectors(_UP, d.clone().normalize());
+  const parts = [new THREE.CylinderGeometry(rb, ra, L, seg, 1, true).translate(0, L / 2, 0), new THREE.SphereGeometry(ra, seg, 8), new THREE.SphereGeometry(rb, seg, 8).translate(0, L, 0)];
+  const g = mergeGeometries(parts.map(p => { const n = p.toNonIndexed(); p.dispose(); n.deleteAttribute('uv'); return n; }), false);
+  g.applyQuaternion(q); g.translate(a.x, a.y, a.z); return g;
+}
+function figMesh(list, pivot) {
+  const g = mergeGeometries(list.map(([geo, c]) => tinted(geo, c)), false);
+  g.translate(-pivot.x, -pivot.y, -pivot.z); g.computeBoundingSphere(); g.computeBoundingBox();
+  const m = new THREE.Mesh(g, M('figure')); m.position.copy(pivot); return m;
+}
+function headShape(sx, sy, sz, cx, cy, cz) {   // one smooth skull: jaw tapers to a soft chin, no overlapping shells
+  const g = new THREE.SphereGeometry(1, 36, 28), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    if (y < 0) { const t = y * y; x *= 1 - 0.34 * t; z *= 1 - 0.1 * t; if (z > 0 && y < -0.3) z += 0.09 * (-y - 0.3); }
+    if (y > 0.2 && z < 0) z *= 1 + 0.06 * (y - 0.2);   // a little more crown at the back
+    p.setXYZ(i, x * sx + cx, y * sy + cy, z * sz + cz);
+  }
+  g.computeVertexNormals(); return g;
+}
+function makeConcierge(x, z, yaw, bId, stair, ws = 1) {   // ws: which arm waves (+1: +x side, −1: −x side)
+  const S = 0.66, F = FIG, hc = S + 0.712;   // seat top, centre of the skull
+  const root = new THREE.Group(); root.name = 'vrc-concierge';
+  root.position.set(x, 0, z); root.rotation.y = yaw;
+  root.userData.action = { type: 'concierge', building: bId, stair };
+  root.userData.dynamic = true;
+  // lower body: pencil skirt to the knee, legs, heels resting on the chair's foot ring
+  const lower = [[ell(0.162, 0.1, 0.152, 0, S + 0.08, -0.03), F.suit]];
+  for (const sx of [-1, 1]) {
+    lower.push([limb(_V(sx * 0.078, S + 0.08, -0.02), _V(sx * 0.066, S + 0.075, 0.355), 0.074, 0.058), F.suit]);
+    lower.push([ell(0.047, 0.05, 0.05, sx * 0.064, S + 0.066, 0.378), F.legs]);
+    lower.push([limb(_V(sx * 0.064, S + 0.055, 0.392), _V(sx * 0.056, 0.375, 0.29), 0.041, 0.029), F.legs]);
+    lower.push([ell(0.032, 0.027, 0.092, sx * 0.056, 0.358, 0.34), F.shoe]);
+    lower.push([limb(_V(sx * 0.056, 0.352, 0.265), _V(sx * 0.056, 0.29, 0.26), 0.008, 0.006, 6), F.shoe]);
+  }
+  const legs = figMesh(lower, _V(0, 0, 0)); legs.userData.solid = true; root.add(legs);
+  // torso (pivot at the waist): jacket, blouse V with collar, lapel edges, gold pin, neck, resting left arm
+  const PT = _V(0, S + 0.12, -0.04);
+  const torsoG = new THREE.Group(); torsoG.position.copy(PT); root.add(torsoG);
+  const vee = new THREE.ConeGeometry(0.058, 0.2, 24); vee.rotateZ(Math.PI); vee.scale(1, 1, 0.28); vee.translate(0, S + 0.455, 0.057);
+  const collar = new THREE.TorusGeometry(0.045, 0.011, 8, 28); collar.rotateX(Math.PI / 2); collar.translate(0, S + 0.548, -0.012);
+  const arm = sx => [
+    [limb(_V(sx * 0.17, S + 0.5, -0.04), _V(sx * 0.19, S + 0.27, 0.03), 0.042, 0.036), F.suit],
+    [limb(_V(sx * 0.19, S + 0.27, 0.03), _V(sx * 0.11, S + 0.3, 0.3), 0.034, 0.028), F.suit],
+    [limb(_V(sx * 0.111, S + 0.299, 0.296), _V(sx * 0.108, S + 0.3, 0.306), 0.031), F.blouse],
+    [ell(0.03, 0.014, 0.054, sx * 0.095, S + 0.289, 0.362), F.skin],
+  ];
+  const tl = [
+    [ell(0.112, 0.14, 0.09, 0, S + 0.2, -0.035), F.suit], [ell(0.138, 0.175, 0.098, 0, S + 0.385, -0.03), F.suit],
+    [limb(_V(-0.145, S + 0.515, -0.04), _V(0.145, S + 0.515, -0.04), 0.05), F.suit],
+    [vee, F.blouse], [collar, F.blouse],
+    [ell(0.008, 0.008, 0.006, 0, S + 0.31, 0.06, 10, 8), F.satin], [ell(0.01, 0.01, 0.006, 0.07, S + 0.455, 0.064, 10, 8), F.gold],
+    [limb(_V(0, S + 0.5, -0.016), _V(0, hc - 0.075, -0.01), 0.042, 0.036), F.skin],
+    ...arm(-ws),
+  ];
+  const torso = figMesh(tl, PT); torso.position.set(0, 0, 0); torso.userData.solid = true; torsoG.add(torso);
+  // head (pivot at the top of the neck): one skull, hair cap tipped forward to a soft hairline, a low bun
+  const PH = _V(0, hc - 0.095, -0.006);
+  const head = new THREE.Group(); head.position.copy(PH).sub(PT); torsoG.add(head);
+  const hairM = new THREE.Matrix4().makeTranslation(0, hc + 0.008, -0.008).multiply(new THREE.Matrix4().makeScale(0.085, 0.108, 0.099));
+  const cap = new THREE.SphereGeometry(1, 32, 18, 0, TAU, 0, 1.18); cap.rotateX(0.24); cap.applyMatrix4(hairM);
+  const back = new THREE.SphereGeometry(1, 32, 18, Math.PI - 0.32, Math.PI + 0.64, 0, 1.95); back.applyMatrix4(hairM);
+  const brow = sx => [[limb(_V(sx * 0.015, hc + 0.03, 0.086), _V(sx * 0.032, hc + 0.036, 0.08), 0.0028, 0.0026, 6), F.hair], [limb(_V(sx * 0.032, hc + 0.036, 0.08), _V(sx * 0.049, hc + 0.029, 0.069), 0.0026, 0.0016, 6), F.hair]];
+  const eye = sx => [[ell(0.0115, 0.0068, 0.0045, sx * 0.03, hc + 0.007, 0.083, 14, 8), F.eye], [limb(_V(sx * 0.017, hc + 0.0125, 0.084), _V(sx * 0.044, hc + 0.0115, 0.077), 0.0019, 0.0015, 6), F.eye]];
+  const hl = [
+    [headShape(0.078, 0.105, 0.092, 0, hc, 0), F.skin],
+    [cap, F.hair], [back, F.hair],
+    [ell(0.046, 0.043, 0.038, 0, hc + 0.03, -0.11), F.hair], [ell(0.028, 0.028, 0.026, 0, hc + 0.03, -0.14, 12, 8), F.hair],
+    ...eye(-1), ...eye(1), ...brow(-1), ...brow(1),
+    [limb(_V(0, hc + 0.008, 0.087), _V(0, hc - 0.022, 0.095), 0.0055, 0.0085, 8), F.skin], [ell(0.011, 0.0085, 0.009, 0, hc - 0.026, 0.094, 12, 8), F.skin],
+    [ell(0.0155, 0.0045, 0.006, 0, hc - 0.047, 0.081, 14, 8), F.lip], [ell(0.0135, 0.0055, 0.0065, 0, hc - 0.0555, 0.08, 14, 8), F.lip],
+    [ell(0.004, 0.0035, 0.004, -0.0185, hc - 0.0455, 0.076, 8, 6), F.lip], [ell(0.004, 0.0035, 0.004, 0.0185, hc - 0.0455, 0.076, 8, 6), F.lip],
+    [ell(0.011, 0.02, 0.014, -0.076, hc - 0.002, -0.004), F.skin], [ell(0.011, 0.02, 0.014, 0.076, hc - 0.002, -0.004), F.skin],
+    [ell(0.0075, 0.0075, 0.0075, -0.079, hc - 0.027, 0.002, 10, 8), F.gold], [ell(0.0075, 0.0075, 0.0075, 0.079, hc - 0.027, 0.002, 10, 8), F.gold],
+  ];
+  const headM = figMesh(hl, PH); headM.position.set(0, 0, 0); head.add(headM);
+  // waving arm: shoulder → elbow (upper), elbow → hand (fore); rests on the work top, lifts for a small wave
+  const [aU, aF, aC, aH] = arm(ws);
+  const PS = _V(ws * 0.17, S + 0.5, -0.04), PE = _V(ws * 0.19, S + 0.27, 0.03);
+  const upper = new THREE.Group(); upper.position.copy(PS).sub(PT); torsoG.add(upper);
+  const upM = figMesh([aU], PS); upM.position.set(0, 0, 0); upper.add(upM);
+  const fore = new THREE.Group(); fore.position.copy(PE).sub(PS); fore.rotation.order = 'ZXY'; upper.add(fore);
+  const foM = figMesh([aF, aC, aH], PE); foM.position.set(0, 0, 0); fore.add(foM);
+
+  const st = { t: Math.random() * 10, hy: 0, hp: 0, wave: 0, nod: 0 };
+  const v = new THREE.Vector3(), headY = head.position.y;
+  return {
+    group: root, bId, stair, height: hc,
+    greet() { if (st.wave <= 0) st.wave = 2.4; st.nod = 0.9; },
+    // viewer: world-space eye position (or null). Returns the horizontal distance to her (m).
+    update(dt, viewer) {
+      st.t += dt; const t = st.t;
+      let ty = Math.sin(t * 0.21) * 0.32 + Math.sin(t * 0.57 + 1) * 0.1 - 0.15, tp = 0.1, d = Infinity;   // idle: calm glances, now and then at her screen
+      if (viewer) {
+        root.worldToLocal(v.copy(viewer)); d = Math.hypot(v.x, v.z);
+        if (d < 6 && v.z > -0.4) { ty = Math.atan2(v.x, v.z); tp = -Math.atan2(v.y - hc, Math.max(0.6, d)) * 0.7; }
+      }
+      ty = clamp(ty, -1.25, 1.25);
+      const k = 1 - Math.exp(-dt * 3.2);
+      st.hy += (ty - st.hy) * k; st.hp += (tp - st.hp) * k;
+      const tw = clamp(st.hy * 0.3, -0.32, 0.32);
+      torsoG.rotation.y = tw;
+      head.rotation.y = clamp(st.hy - tw, -0.95, 0.95);
+      let nod = 0;
+      if (st.nod > 0) { st.nod = Math.max(0, st.nod - dt); nod = 0.17 * Math.sin(Math.PI * (1 - st.nod / 0.9)); }
+      head.rotation.x = clamp(st.hp, -0.3, 0.35) + nod;
+      head.rotation.z = Math.sin(t * 0.37) * 0.025;
+      const b = Math.sin(t * 1.65);   // breathing
+      torso.scale.set(1 + 0.005 * b, 1 + 0.007 * b, 1 + 0.012 * b);
+      head.position.y = headY + 0.0035 * b;
+      let e = 0;
+      if (st.wave > 0) { st.wave = Math.max(0, st.wave - dt); const p = 1 - st.wave / 2.4; e = sstep(0, 0.2, p) * (1 - sstep(0.75, 1, p)); }
+      upper.rotation.set(-0.3 * e, 0, ws * 0.5 * e);
+      fore.rotation.set(-1.7 * e, 0, ws * e * (-0.85 + 0.28 * Math.sin(t * 9.5)));
+      return d;
+    },
+  };
+}
 function roundTable(B, x, z, r = 0.42, h = 0.42) {
   const top = new THREE.CylinderGeometry(r, r, 0.04, 40); top.translate(x, h, z); B.add('nero', top);
   const base = new THREE.CylinderGeometry(0.05, r * 0.6, h - 0.02, 24); base.translate(x, (h - 0.02) / 2, z); B.add('bronze', base);
@@ -1263,7 +1415,7 @@ function finish(ctx, spawn) {
   const { group, lifts, doors } = ctx;
   let disposed = false;
   return {
-    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
+    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [], concierges: ctx.concierges || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
     dispose() {
       if (disposed) return; disposed = true;
       if (RIG.group && RIG.group.parent === ctx.root) { ctx.root.remove(RIG.group); }
@@ -1590,30 +1742,51 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   B.add('decal', new THREE.PlaneGeometry(1.2, 2.2).translate(0, 0, 0), mat4(x0 + FACE + SKIN + 0.006, H - 1.12, zc + 1.9, Math.PI / 2));
   B.box('led', x0 + FACE + SKIN, x0 + FACE + SKIN + 0.01, H - 0.02, H - 0.012, zc - 1.6, zc + 1.6);
   if (c.stair === 2) {
-    // concierge desk in front of the feature wall (desk front faces +x)
-    const dx = x0 + 1.55, z0 = zc - 1.25, z1 = zc + 1.25;
-    B.box('marble', dx - 0.3, dx + 0.05, 0.08, 1.05, z0, z1);          // front panel
-    B.box('walnut', dx - 0.75, dx - 0.3, 0.08, 0.74, z0, z1);          // back cabinet
-    B.box('nero', dx - 0.8, dx + 0.1, 1.05, 1.1, z0 - 0.05, z1 + 0.05); // counter
-    B.box('walnut', dx - 0.85, dx - 0.25, 0.74, 0.77, z0, z1);          // work top
-    B.box('bronze', dx - 0.3, dx + 0.02, 0, 0.08, z0 + 0.02, z1 - 0.02);
-    B.box('led', dx + 0.052, dx + 0.056, 0.1, 0.12, z0 + 0.05, z1 - 0.05);
-    for (let k = 0; k < 5; k++) B.box('brass', dx + 0.05, dx + 0.058, 0.2, 0.98, z0 + 0.25 + k * 0.5, z0 + 0.27 + k * 0.5);
-    C.box(dx - 0.85, dx + 0.1, 0, 1.1, z0 - 0.05, z1 + 0.05);
-    // desk lamp + flowers
-    B.add('brass', new THREE.CylinderGeometry(0.06, 0.08, 0.02, 24).translate(dx - 0.45, 1.11, z1 - 0.3));
-    B.add('brass', new THREE.CylinderGeometry(0.008, 0.008, 0.36, 8).translate(dx - 0.45, 1.29, z1 - 0.3));
-    B.add('velvetSand', new THREE.CylinderGeometry(0.07, 0.12, 0.14, 24, 1, true).translate(dx - 0.45, 1.5, z1 - 0.3));
-    B.add('bulb', new THREE.CircleGeometry(0.06, 16).rotateX(Math.PI / 2).translate(dx - 0.45, 1.44, z1 - 0.3));
-    const vase = new THREE.CylinderGeometry(0.06, 0.05, 0.28, 20); vase.translate(dx - 0.5, 1.24, z0 + 0.35); B.add('glass', vase);
+    // concierge desk in front of the feature wall (desk front faces +x): calacatta front with a backlit onyx
+    // inset carrying the VILNYI RIVER CITY mark, walnut returns, nero transaction ledge, walnut work top behind.
+    const dx = x0 + 1.85, z0 = zc - 1.2, z1 = zc + 1.2, TOP = 1.0, WT = 0.9;
+    B.add('marble', rbox(dx - 0.07, dx, 0.08, TOP, z0, z1, 0.012));                        // front slab
+    B.add('walnut', rbox(dx - 0.62, dx - 0.05, 0.08, TOP, z0 - 0.05, z0, 0.01));           // returns
+    B.add('walnut', rbox(dx - 0.62, dx - 0.05, 0.08, TOP, z1, z1 + 0.05, 0.01));
+    B.add('walnut', rbox(dx - 0.62, dx - 0.5, 0.08, WT - 0.02, z0, z1, 0.01));             // modesty panel (her knees stay free)
+    B.add('nero', rbox(dx - 0.36, dx + 0.07, TOP, TOP + 0.045, z0 - 0.06, z1 + 0.06, 0.015)); // ledge
+    B.add('walnut', rbox(dx - 0.84, dx - 0.3, WT, WT + 0.03, z0 + 0.02, z1 - 0.02, 0.01));   // work top
+    B.box('bronze', dx - 0.58, dx - 0.04, 0, 0.08, z0 + 0.02, z1 - 0.02);                    // recessed plinth
+    B.box('led', dx - 0.035, dx - 0.03, 0.075, 0.082, z0 + 0.04, z1 - 0.04);                 // plinth glow on the floor
+    B.box('led', dx - 0.33, dx + 0.05, TOP - 0.006, TOP - 0.002, z0 - 0.04, z1 + 0.04);      // under-ledge glow line
+    // backlit inset: bronze reveal, onyx field, glowing mark, a soft halo line top + bottom
+    const iz = 0.92, iy0 = 0.28, iy1 = 0.82;
+    B.box('bronze', dx, dx + 0.012, iy0 - 0.03, iy1 + 0.03, zc - iz - 0.03, zc + iz + 0.03);
+    B.box('onyx', dx + 0.012, dx + 0.018, iy0, iy1, zc - iz, zc + iz);
+    B.add('wordmarkLit', new THREE.PlaneGeometry(1.7, 0.425), mat4(dx + 0.0195, (iy0 + iy1) / 2, zc, Math.PI / 2));
+    for (const y of [iy0 + 0.012, iy1 - 0.016]) B.box('ledSoft', dx + 0.0185, dx + 0.019, y, y + 0.004, zc - iz + 0.06, zc + iz - 0.06);
+    C.box(dx - 0.84, dx + 0.08, 0, TOP + 0.05, z0 - 0.06, z1 + 0.06);
+    // her things: slim screen, brass task lamp, orchid on the ledge, a leather folio
+    const sm = mat4(dx - 0.62, 0, z1 - 0.62, -Math.PI / 2 - 0.35);   // screen on her left, lamp + orchid on the wave side
+    B.add('blackGlass', boxGeo(-0.27, 0.27, WT + 0.13, WT + 0.46, -0.012, 0.012), sm);
+    B.add('bronzeDark', boxGeo(-0.27, 0.27, WT + 0.13, WT + 0.46, -0.022, -0.012), sm);
+    B.add('brass', boxGeo(-0.02, 0.02, WT + 0.03, WT + 0.2, -0.05, -0.03), sm);
+    B.add('brass', boxGeo(-0.09, 0.09, WT + 0.03, WT + 0.04, -0.12, 0.03), sm);
+    B.add('brass', new THREE.CylinderGeometry(0.055, 0.07, 0.02, 24).translate(dx - 0.5, WT + 0.04, z0 + 0.28));
+    B.add('brass', new THREE.CylinderGeometry(0.007, 0.007, 0.34, 8).translate(dx - 0.5, WT + 0.21, z0 + 0.28));
+    B.add('velvetSand', new THREE.CylinderGeometry(0.065, 0.11, 0.13, 24, 1, true).translate(dx - 0.5, WT + 0.41, z0 + 0.28));
+    B.add('bulb', new THREE.CircleGeometry(0.055, 16).rotateX(Math.PI / 2).translate(dx - 0.5, WT + 0.355, z0 + 0.28));
+    B.add('leather', rbox(dx - 0.5, dx - 0.36, WT + 0.03, WT + 0.045, zc - 0.52, zc - 0.3, 0.004));
+    const vx = dx - 0.14, vz = z0 + 0.32, vy = TOP + 0.045;
+    const vase = new THREE.CylinderGeometry(0.055, 0.045, 0.2, 20); vase.translate(vx, vy + 0.1, vz); B.add('glass', vase);
     // orchid spray: two arching stems with white blooms
     for (const [ox, dir] of [[0, 1], [0.03, -1]]) {
-      const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector3(dx - 0.5 + ox + dir * t * t * 0.18, 1.2 + Math.sin(t * 1.7) * 0.34, z0 + 0.35 + t * 0.04)); }
+      const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector3(vx + ox + dir * t * t * 0.12, vy + 0.06 + Math.sin(t * 1.7) * 0.3, vz + t * 0.12)); }
       const curve = new THREE.CatmullRomCurve3(pts); B.add('leaf', new THREE.TubeGeometry(curve, 16, 0.0035, 5, false));
-      for (let k = 3; k <= 8; k++) { const p = curve.getPoint(k / 8); const f = new THREE.SphereGeometry(0.03 - k * 0.0022, 10, 6); f.scale(1, 0.4, 1); f.rotateZ(dir * 0.9); f.translate(p.x + dir * 0.01, p.y - 0.01, p.z + 0.012); B.add('white', f); }
+      for (let k = 3; k <= 8; k++) { const p = curve.getPoint(k / 8); const f = new THREE.SphereGeometry(0.03 - k * 0.0022, 10, 6); f.scale(1, 0.4, 1); f.rotateX(0.9); f.translate(p.x, p.y - 0.01, p.z + 0.012); B.add('white', f); }
     }
-    // concierge chair
-    armchair(B, dx - 1.05, zc, Math.PI / 2, 'velvet');
+    // the concierge on a counter-height swivel chair, facing the visitors (+x)
+    const cxp = dx - 1.04;
+    receptionChair(B, cxp, zc, Math.PI / 2);
+    C.box(cxp - 0.32, cxp + 0.36, 0, 1.0, zc - 0.34, zc + 0.34);
+    // she is placed unmirrored (finish() only moves her), so in a reflected block she waves with the other hand
+    const cg = makeConcierge(cxp, zc, Math.PI / 2, ctx.bId, c.stair, ctx.mz != null ? -1 : 1);
+    ctx.root.add(cg.group); (ctx.concierges ||= []).push(cg);
     // seating by the facade (east side)
     armchair(B, x1 - 1.0, zF + 1.25, -Math.PI / 2 - 0.5); armchair(B, x1 - 2.25, zF + 1.0, -0.2);
     roundTable(B, x1 - 1.55, zF + 1.95, 0.32, 0.45);

@@ -823,10 +823,21 @@ function tvUnit(m, o = {}) {
   g.userData.solidBox = { w: L, d: D, h: 0.5 };
   return g;
 }
+// Wall TV, bottom edge at y = 0, back on the wall side (-z). o.live: the screen is a separate (unbaked) mesh flagged
+// userData.tvScreen that apartment.js switches on (animated picture + a cool spill on the wall) and off on tap.
 function tv(m, o = {}) {
-  const W = o.w || 1.45, g = new THREE.Group();
-  box(g, W, W * 0.565, 0.025, m.darkPlastic, 0, 0, 0);
-  box(g, W - 0.01, W * 0.565 - 0.01, 0.004, m.screen, 0, 0.005, 0.0135);
+  const W = o.w || 1.45, H = W * 0.565, g = new THREE.Group();
+  box(g, W, H, 0.025, m.darkPlastic, 0, 0, 0);
+  box(g, W * 0.4, H * 0.4, 0.06, m.darkPlastic, 0, H * 0.3, -0.04);            // wall bracket
+  if (!o.live) { box(g, W - 0.01, H - 0.01, 0.004, m.screen, 0, 0.005, 0.0135); g.userData.noSolid = true; return g; }
+  const scr = new THREE.Mesh(cg('tvScreen', () => new THREE.PlaneGeometry(1, 1)), m.tvLive);
+  scr.scale.set(W - 0.012, H - 0.012, 1); scr.position.set(0, H / 2, 0.0131);
+  scr.userData.keep = true; scr.userData.tvScreen = { w: W, h: H }; scr.name = 'tv-screen';
+  g.add(scr);
+  // light the picture throws on the wall around the set (a child: it stays with the screen, out of the bake)
+  const gl = new THREE.Mesh(fxGeo('disc'), m.tvGlow);
+  gl.position.set(0, 0, o.glowZ ?? -0.043); gl.scale.set(2.3, 2.5, 1); gl.raycast = () => {}; gl.name = 'tv-glow'; gl.renderOrder = 3;
+  scr.add(gl);
   g.userData.noSolid = true;
   return g;
 }
@@ -1281,36 +1292,45 @@ function hood(m, o = {}) {
 }
 function dishwasher(m, o = {}) {       // panel-integrated: only a slim steel control strip visible
   const g = new THREE.Group();
-  box(g, 0.594, 0.02, 0.01, m.steel, 0, 0.72, 0.012);
+  box(g, (o.w || 0.6) - 0.006, 0.02, 0.01, m.steel, 0, 0.72, 0.012);
   box(g, 0.04, 0.006, 0.004, m.led, 0.24, 0.727, 0.018);
   g.userData.noSolid = true;
   return g;
 }
-// Dishwasher racks (lazy): plates standing in the lower basket, glasses and mugs upside down on the top one,
-// a cutlery basket. Local frame: module centre x = 0, tub floor y = 0, front of the tub at z = zf.
-function dishRacks(c, m, w, h, zb, zf) {
+// Dishwasher racks: two wire baskets that slide out on their runners once the door has dropped (movers of the
+// dishwasher's group). The wirework is part of the mover; the load (plates on edge, cutlery basket, glasses and mugs
+// upside down) is a compartment carried by the basket, built on the first opening.
+// Local frame: module centre x = 0, tub floor y = 0, front of the tub at z = zf.
+function dishRacks(g, m, x, y, w, h, zb, zf, group) {
   const rw = w - 0.06, rd = zf - zb - 0.06, zc = (zb + zf) / 2, wire = m.steel;
-  const rack = (y, rh) => {
-    for (const sx of [-1, 1]) { rod(c, 0.003, rd, wire, sx * rw / 2, y, zc, [HALF, 0, 0], 5); rod(c, 0.003, rd, wire, sx * rw / 2, y + rh, zc, [HALF, 0, 0], 5); }
-    for (const sz of [-1, 1]) { rod(c, 0.003, rw, wire, 0, y, zc + sz * rd / 2, [0, 0, HALF], 5); rod(c, 0.003, rw, wire, 0, y + rh, zc + sz * rd / 2, [0, 0, HALF], 5); }
-    for (let i = 1; i < 9; i++) rod(c, 0.0022, rw, wire, 0, y, zc - rd / 2 + i * rd / 9, [0, 0, HALF], 4);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) rod(c, 0.003, rh, wire, sx * rw / 2, y + rh / 2, zc + sz * rd / 2, null, 5);
-    box(c, 0.03, 0.01, 0.02, m.darkPlastic, 0, y + rh, zc + rd / 2 + 0.01);
-  };
   const y1 = 0.06, y2 = Math.min(h * 0.55, 0.42);
-  rack(y1, 0.1); rack(y2, 0.08);
-  // lower: two rows of plates on edge (facing x), cutlery basket at the front right
-  for (const [zz, r0] of [[zc - rd * 0.22, 0.125], [zc + rd * 0.08, 0.105]]) for (let x = -rw / 2 + 0.05; x < rw / 2 - 0.2; x += 0.045) { const pg = grp(c, x, y1 + r0 + 0.012, zz); pg.rotation.z = HALF; plate(pg, m, 0, 0, 0, r0, m.porcelain); }
-  const bx = rw / 2 - 0.09, bz = zf - 0.1;
-  box(c, 0.12, 0.012, 0.12, m.darkPlastic, bx, y1 + 0.01, bz); for (const sx of [-1, 1]) { box(c, 0.004, 0.11, 0.12, m.darkPlastic, bx + sx * 0.06, y1 + 0.01, bz); box(c, 0.12, 0.11, 0.004, m.darkPlastic, bx, y1 + 0.01, bz + sx * 0.06); }
-  for (let i = 0; i < 12; i++) rod(c, 0.0045, 0.19, m.cutlery, bx - 0.045 + (i % 4) * 0.03, y1 + 0.1, bz - 0.04 + (i >> 2) * 0.04, [(i % 3 - 1) * 0.08, 0, (i % 2 - 0.5) * 0.1], 5);
-  // upper: tumblers and wine glasses upside down, two mugs
-  for (let x = -rw / 2 + 0.06, i = 0; x < rw / 2 - 0.05; x += 0.085, i++) {
-    tumbler(c, m, x, y2 + 0.005, zc - rd * 0.25, true);
-    if (i % 2) { const wg = grp(c, x, y2 + 0.215, zc + rd * 0.1); wg.rotation.x = Math.PI; wineGlass(wg, m, 0, 0, 0); }
-    else { const mg = grp(c, x, y2 + 0.095, zc + rd * 0.1); mg.rotation.x = Math.PI; mug(mg, m, 0, 0, 0, i % 4 ? m.ceramic : m.ceramic2, 0.5); }
-  }
-  fxFlat(c, m.glowFaint, 'grad', 0, 0.01, zc, w - 0.02, zf - zb);
+  const rack = (p, yy, rh) => {
+    for (const sx of [-1, 1]) { rod(p, 0.003, rd, wire, sx * rw / 2, yy, zc, [HALF, 0, 0], 5); rod(p, 0.003, rd, wire, sx * rw / 2, yy + rh, zc, [HALF, 0, 0], 5); }
+    for (const sz of [-1, 1]) { rod(p, 0.003, rw, wire, 0, yy, zc + sz * rd / 2, [0, 0, HALF], 5); rod(p, 0.003, rw, wire, 0, yy + rh, zc + sz * rd / 2, [0, 0, HALF], 5); }
+    for (let i = 1; i < 9; i++) rod(p, 0.0022, rw, wire, 0, yy, zc - rd / 2 + i * rd / 9, [0, 0, HALF], 4);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) rod(p, 0.003, rh, wire, sx * rw / 2, yy + rh / 2, zc + sz * rd / 2, null, 5);
+    for (const sx of [-1, 1]) box(p, 0.012, 0.012, rd, m.darkPlastic, sx * (rw / 2 + 0.008), yy - 0.006, zc);      // runner wheels / rails
+    box(p, 0.05, 0.012, 0.02, m.darkPlastic, 0, yy + rh, zc + rd / 2 + 0.01);                                      // grip
+  };
+  // lower basket (slides out further), then the upper one
+  const lo = mover(g, x, y, 0, { type: 'slide', dir: [0, 0, 1], dist: Math.min(0.42, rd * 0.8), dur: 650, group, proxy: false, dOpen: 420, dClose: 0, tag: 'dishwasher' });
+  rack(lo, y1, 0.1);
+  lo.userData.mover.comp = compartment(lo, (c) => {
+    for (const [zz, r0] of [[zc - rd * 0.22, 0.125], [zc + rd * 0.08, 0.105]]) for (let xx = -rw / 2 + 0.05; xx < rw / 2 - 0.2; xx += 0.045) { const pg = grp(c, xx, y1 + r0 + 0.012, zz); pg.rotation.z = HALF; plate(pg, m, 0, 0, 0, r0, m.porcelain); }
+    const bx = rw / 2 - 0.09, bz = zf - 0.1;
+    box(c, 0.12, 0.012, 0.12, m.darkPlastic, bx, y1 + 0.01, bz); for (const sx of [-1, 1]) { box(c, 0.004, 0.11, 0.12, m.darkPlastic, bx + sx * 0.06, y1 + 0.01, bz); box(c, 0.12, 0.11, 0.004, m.darkPlastic, bx, y1 + 0.01, bz + sx * 0.06); }
+    for (let i = 0; i < 12; i++) rod(c, 0.0045, 0.19, m.cutlery, bx - 0.045 + (i % 4) * 0.03, y1 + 0.1, bz - 0.04 + (i >> 2) * 0.04, [(i % 3 - 1) * 0.08, 0, (i % 2 - 0.5) * 0.1], 5);
+    pot(c, m, -rw / 2 + 0.12, y1 + 0.012, zf - 0.13, 0.09, 0.1, false);
+  });
+  const up = mover(g, x, y, 0, { type: 'slide', dir: [0, 0, 1], dist: Math.min(0.3, rd * 0.6), dur: 600, group, proxy: false, dOpen: 620, dClose: 0, tag: 'dishwasher' });
+  rack(up, y2, 0.08);
+  up.userData.mover.comp = compartment(up, (c) => {
+    for (let xx = -rw / 2 + 0.06, i = 0; xx < rw / 2 - 0.05; xx += 0.085, i++) {
+      tumbler(c, m, xx, y2 + 0.005, zc - rd * 0.25, true);
+      if (i % 2) { const wg = grp(c, xx, y2 + 0.215, zc + rd * 0.1); wg.rotation.x = Math.PI; wineGlass(wg, m, 0, 0, 0); }
+      else { const mg = grp(c, xx, y2 + 0.095, zc + rd * 0.1); mg.rotation.x = Math.PI; mug(mg, m, 0, 0, 0, i % 4 ? m.ceramic : m.ceramic2, 0.5); }
+    }
+  });
 }
 // Under-sink cupboard (lazy): waste bins, cleaning bottles, sponges
 function underSink(c, m, w, y, zb, zf) {
@@ -1331,6 +1351,40 @@ const DFILL = {
   },
   pots: (c, m, w, d) => { pot(c, m, -w / 4 + 0.02, 0, -0.14, 0.11, 0.13); pot(c, m, w / 4 - 0.01, 0, -0.13, 0.09, 0.1); if (d > 0.4) pan(c, m, -w / 4 + 0.02, 0, -d + 0.15, 0.12, 0.5); if (w > 0.45) pot(c, m, w / 4, 0, -d + 0.13, 0.1, 0.16); },
   pans: (c, m, w, d) => { pan(c, m, -0.06, 0, -d / 2, 0.14, -0.3); pan(c, m, -0.02, 0.05, -d / 2 - 0.02, 0.12, 0.2); if (w > 0.45) pot(c, m, w / 2 - 0.12, 0, -0.14, 0.09, 0.09, false); },
+  // pantry seen from above: cereal / pasta boxes standing in rows, flour bag, jars, tins
+  pantry: (c, m, w, d, h, seed) => {
+    const r = rngM(seed + 3), packs = ['#b8322a', '#1f4e79', '#e6c35a', '#2f5d3a', '#efe6d4', '#c46a2c', '#6b3b24'], fills = ['#d9a441', '#b0452a', '#ece6d6', '#c2862f'];
+    const ph = Math.min(0.26, h - 0.02);
+    let x = -w / 2 + 0.02;
+    while (x < w / 2 - 0.09) {
+      const k = (r() * 3) | 0;
+      if (k === 0) { const bw = 0.07 + r() * 0.03; for (let z = -0.04; z > -d + 0.12; z -= 0.2) pack(c, m, x + bw / 2, 0, z - 0.09, bw, ph * (0.75 + r() * 0.25), 0.18, packs[(r() * packs.length) | 0]); x += bw + 0.012; }
+      else if (k === 1) { for (let z = -0.06; z > -d + 0.06; z -= 0.11) jar(c, m, x + 0.045, 0, z, fills[(r() * fills.length) | 0], Math.min(0.16, ph), 0.042); x += 0.1; }
+      else { for (let z = -0.05; z > -d + 0.06; z -= 0.08) can(c, m, x + 0.036, 0, z, packs[(r() * packs.length) | 0], Math.min(0.11, ph)); x += 0.08; }
+    }
+  },
+  // spice drawer: angled insert with rows of labelled jars lying on their side, lids to the front
+  spices: (c, m, w, d) => {
+    const cols = ['#b0452a', '#d9a441', '#5f7a2e', '#7a2f2a', '#c2862f', '#3b2418', '#e8c93a', '#8a5a2b'];
+    box(c, w - 0.01, 0.012, d - 0.02, m.styleId === 'milano' ? m.woodDark : m.woodLight, 0, 0, -d / 2);
+    const n = Math.max(3, Math.floor((w - 0.02) / 0.05));
+    for (let row = 0; row < Math.floor((d - 0.04) / 0.13); row++) for (let i = 0; i < n; i++) {
+      const x = -w / 2 + 0.035 + i * (w - 0.04) / n, z = -0.03 - row * 0.13, jg = grp(c, x, 0.033, z - 0.05);
+      jg.rotation.x = -HALF + 0.25;
+      lathe(jg, [[0, 0], [0.019, 0], [0.019, 0.075], [0.016, 0.08], [0, 0.08]], m.glass, 0, -0.04, 0, 12);
+      tint(cyl(jg, 0.016, 0.016, 0.06, m.food, 0, -0.035, 0, 10), cols[(i + row * 3) % cols.length]);
+      cyl(jg, 0.0175, 0.0175, 0.018, m.styleId === 'nordic' ? m.blackMetal : m.brass, 0, 0.04, 0, 12);
+    }
+  },
+  // utensils: wooden spoons, whisk, ladle, tongs, peeler on a liner
+  utensils: (c, m, w, d) => {
+    const wd = m.styleId === 'milano' ? m.woodDark : m.woodLight;
+    for (let i = 0; i < 3; i++) { rod(c, 0.008, 0.26, wd, -w / 2 + 0.06 + i * 0.05, 0.012, -d / 2, [HALF, 0, 0], 8); sph(c, 0.026, wd, -w / 2 + 0.06 + i * 0.05, 0.012, -d / 2 - 0.15, [0.8, 0.35, 1.1], 10); }
+    rod(c, 0.006, 0.3, m.steel, w * 0.05, 0.012, -d / 2 + 0.02, [HALF, 0, 0], 8); sph(c, 0.04, m.steel, w * 0.05, 0.02, -d / 2 - 0.17, [1, 0.5, 1], 12);   // ladle
+    for (let k = 0; k < 6; k++) torus(c, 0.025, 0.0015, m.steel, w * 0.22, 0.03, -d / 2 - 0.12, [HALF, k * 0.5, 0], Math.PI * 2, 12);                      // whisk
+    rod(c, 0.007, 0.13, m.steel, w * 0.22, 0.012, -d / 2 + 0.03, [HALF, 0, 0], 8);
+    for (const sx of [-1, 1]) box(c, 0.012, 0.006, 0.26, m.steel, w * 0.38 + sx * 0.012, 0.006, -d / 2, [0, sx * 0.05, 0]);                                     // tongs
+  },
   trays: (c, m, w, d) => { for (let i = 0; i < 3; i++) box(c, w - 0.06, 0.012, d - 0.06, i === 1 ? m.steel : m.enamel, 0, i * 0.018, -d / 2); box(c, w * 0.6, 0.02, d * 0.5, m.styleId === 'milano' ? m.woodDark : m.woodLight, -w * 0.15, 0.054, -d * 0.3); },
 };
 // Front-loading washer (o.h: 0.85 freestanding / lower when integrated): real porthole — the front panel is cut
@@ -1352,12 +1406,21 @@ function washer(m, o = {}) {
   box(g, W - 0.02, 0.1, 0.004, m.darkPlastic, 0, H - 0.12, zf + 0.001);
   cyl(g, 0.022, 0.022, 0.016, m.chrome, W / 2 - 0.1, H - 0.07, zf + 0.004, 16, [HALF, 0, 0]);
   box(g, 0.06, 0.012, 0.003, m.led, -0.12, H - 0.07, zf + 0.004);
+  if (o.dryer) { box(g, 0.08, 0.008, 0.003, m.coldLed, -0.12, H - 0.095, zf + 0.004); cbox(g, 0.12, 0.05, 0.004, '#9aa0a6', m.goods, -W / 2 + 0.1, H - 0.115, zf + 0.002); }   // display, condensate drawer
+  else cbox(g, 0.14, 0.06, 0.004, '#c8ccd0', m.goods, -W / 2 + 0.1, H - 0.12, zf + 0.002);                                                                        // detergent drawer
   // drum: open lathe along z (double-sided steel), perforated look from the back plate
   add(g, cg(`drum${r3(R)}`, () => new THREE.LatheGeometry([new THREE.Vector2(R + 0.02, 0), new THREE.Vector2(R, -0.025), new THREE.Vector2(R, -D + 0.1), new THREE.Vector2(0.001, -D + 0.08)], 32)), m.drum, 0, cy, zf - 0.02, [HALF, 0, 0]);
   const comp = compartment(g, (c) => {
-    tint(soft(c, R * 1.5, R * 0.7, D * 0.5, m.clothes, -0.02, cy - R + 0.01, zf - D * 0.45, [0.1, 0.3, 0.2], { e: [0.5, 0.6, 0.5], seg: 14 }), WEAR[m.styleId].shirts[0]);
-    tint(soft(c, R * 1.1, R * 0.55, D * 0.4, m.clothes, 0.05, cy - R * 0.55, zf - D * 0.5, [-0.2, 0.9, 0.1], { e: [0.5, 0.6, 0.5], seg: 14 }), WEAR[m.styleId].warm[1]);
+    // a load of laundry slumped in the drum: shirts, a towel, a sock pair; the dryer holds fluffy towels
+    const W2 = WEAR[m.styleId], r = rngM(o.dryer ? 41 : 17), base = cy - R + 0.012;
+    const cols = o.dryer ? ['#f4f1ea', m.styleId === 'milano' ? '#2d2b2a' : '#c9b89c', '#e9e3d6'] : [W2.shirts[0], W2.warm[1], W2.dark[1], W2.shirts[2]];
+    for (let i = 0; i < (o.dryer ? 4 : 5); i++) {
+      const sx = R * (0.7 + r() * 0.5), sy = R * (0.32 + r() * 0.25);
+      tint(soft(c, sx, sy, D * (0.3 + r() * 0.2), o.dryer ? m.towel : m.clothes, (r() - 0.5) * R * 0.7, base + i * R * 0.08, zf - D * (0.3 + r() * 0.25), [(r() - 0.5) * 0.6, r() * 3, (r() - 0.5) * 0.5], { e: [0.5, 0.6, 0.5], seg: 12 }), cols[i % cols.length]);
+    }
+    if (!o.dryer) for (const k of [-1, 1]) tint(soft(c, 0.05, 0.03, 0.16, m.clothes, R * 0.35 + k * 0.03, base + R * 0.45, zf - 0.12, [0.2, 0.6 * k, 0], { e: [0.5, 0.6, 0.5], seg: 8 }), W2.dark[0]);
     fxQuad(c, m.glowFaint, 'disc', [0, cy, zf - D + 0.1], [R * 2.4, 0, 0], [0, R * 2.4, 0]);
+    fxFlat(c, m.glowFaint, 'disc', 0, base + 0.01, zf - D * 0.45, R * 1.6, D * 0.7);
   });
   // porthole door: hinge block on the left of the ring
   const dr = mover(g, -R - 0.045, cy, zf, { type: 'hinge', axis: 'y', angle: -1.65, comp, dur: 650 });
@@ -1367,6 +1430,37 @@ function washer(m, o = {}) {
   box(dr, 0.03, 0.09, 0.03, m.chrome, 0.012, -0.045, 0.012);
   box(dr, 0.02, 0.07, 0.03, m.darkPlastic, 2 * R + 0.07, -0.035, 0.018);
   g.userData.solidBox = { w: 0.6, d: 0.6, h: H };
+  return g;
+}
+// Laundry column: a washer with the dryer stacked on top. o.cabinet: built into a tall cupboard (hall / utility niche)
+// with a door pair and a detergent shelf above; otherwise freestanding (utility room) on a stacking kit.
+function laundryTower(m, o = {}) {
+  const g = new THREE.Group(), H = o.h || 2.6, cab = !!o.cabinet, W = cab ? 0.66 : 0.6, D = cab ? 0.64 : 0.6;
+  g.userData.piece = 'laundry';
+  const zo = cab ? -0.02 : 0;
+  const wm = washer(m, { h: 0.85, d: 0.58 }); wm.position.set(0, cab ? 0.06 : 0, zo); g.add(wm);
+  const dr = washer(m, { h: 0.85, d: 0.58, dryer: true }); dr.userData.piece = 'dryer'; dr.position.set(0, (cab ? 0.06 : 0) + 0.87, zo); g.add(dr);
+  box(g, 0.6, 0.02, 0.58, m.steel, 0, (cab ? 0.06 : 0) + 0.85, zo);                                        // stacking kit
+  if (cab) {
+    const inM = m.cabinetIn, zF = D / 2, top = 1.85;
+    box(g, W, H, 0.016, inM, 0, 0, -D / 2 + 0.008);
+    for (const sx of [-1, 1]) box(g, 0.018, H, D - 0.02, m.lacquer, sx * (W / 2 - 0.009), 0, -0.01);
+    box(g, W, 0.018, D - 0.02, inM, 0, H - 0.018, -0.01); box(g, W - 0.036, 0.06, D - 0.06, m.darkPlastic, 0, 0, -0.03);
+    box(g, W - 0.036, 0.018, D - 0.04, inM, 0, top, -0.02);
+    const comp = compartment(g, (c) => {
+      const cols = ['#2f6db0', '#f4f2ee', '#6aa84f', '#e8a33c'];
+      for (let i = 0; i < 4; i++) bottle(c, m, -W / 2 + 0.1 + i * 0.12, top + 0.018, -0.05 + (i % 2) * 0.06, m.goods, 0.26 + (i % 2) * 0.04, 0.04, cols[i]);
+      for (let i = 0; i < 3; i++) towelRoll(c, m, 0, top + 0.03 + 0.105 * 0 + (i > 1 ? 0.1 : 0), -0.12 + (i % 2) * 0.12, i % 2 ? m.towel2 : m.towel, 0.4);
+      ledWash(c, m, 0, W - 0.04, top + 0.018, H - 0.018, -D / 2 + 0.016, zF);
+    });
+    for (const side of [-1, 1]) {
+      const x0 = side < 0 ? -W / 2 + 0.002 : 0.001, x1 = side < 0 ? -0.001 : W / 2 - 0.002;
+      const mv = hinged(g, x0, x1, 0.065, zF, side, comp), cx = mv.userData.cx, w = x1 - x0;
+      box(mv, w, H - 0.07, 0.02, m.lacquer, cx, 0, 0.01);
+      handle(mv, m, cx - side * (w / 2 - 0.035), 1.05, 0.02, 0.3, true);
+    }
+  }
+  g.userData.solidBox = { w: W, d: D, h: Math.min(H, 1.9) };
   return g;
 }
 function sink(m, o = {}) {            // undermount sink + tap, top of counter at y=0
@@ -1406,6 +1500,33 @@ function kettle(p, m, x, y, z) {
   return g;
 }
 
+// Base-run plan between x0..x1 (tall column side `side`): [drawers][sink][dishwasher][drawers][hob][drawers][washer]
+// (mirrored when the tall columns stand on the right). Returns null if even slimline appliances do not fit.
+function packBase(x0, x1, side, washer, hobW) {
+  const bl = x1 - x0;
+  const tries = [[0.8, 0.6, hobW, washer], [0.8, 0.6, hobW, false], [0.6, 0.6, 0.6, false], [0.6, 0.45, 0.6, false]];
+  for (let ti = 0; ti < tries.length; ti++) {
+    const [sw, dw, hw, wm] = tries[ti], free = bl - sw - dw - hw - (wm ? 0.6 : 0);
+    if (free < (ti === tries.length - 1 ? 0 : 0.4)) continue;
+    let d1 = free * 0.3, d2 = free * 0.4, d3 = free * 0.3;
+    if (d1 < 0.3) { d2 += d1; d1 = 0; }
+    if (d3 < 0.3) { d2 += d3; d3 = 0; }
+    const seq = [['D', d1], ['sink', sw], ['dw', dw], ['D', d2], ['hob', hw], ['D', d3]];
+    if (wm) seq.push(['wm', 0.6]);
+    if (side === 'right') seq.reverse();
+    const mods = []; let cx = x0, hobX = 0, sinkX = 0;
+    for (const [k, w] of seq) {
+      if (w < 1e-3) continue;
+      if (k === 'D') {
+        if (w < 0.25) mods.push([cx, cx + w, 'filler']);
+        else { const n = Math.ceil(w / 0.62 - 1e-6), mw = w / n; for (let i = 0; i < n; i++) mods.push([cx + i * mw, cx + (i + 1) * mw, 'drawers']); }
+      } else { mods.push([cx, cx + w, k]); if (k === 'hob') hobX = cx + w / 2; if (k === 'sink') sinkX = cx + w / 2; }
+      cx += w;
+    }
+    return { mods, hobX, hobW: hw, sinkX };
+  }
+  return null;
+}
 // Kitchen run along +x, back against z = -D/2 (the wall), fronts facing +z. opts:
 //   len, tall: 'left'|'right'|'none', withOvenColumn, uppers: true, washer:false, hobAt (0..1), sinkAt (0..1), H (ceiling)
 // Every front opens: drawers slide out 40 cm (cutlery trays, crockery, pots & pans), doors swing ~100°, oven and
@@ -1427,9 +1548,13 @@ function kitchenRun(m, len = 3, o = {}) {
   // base modules between x0..x1
   const bl = x1 - x0;
   const baseOven = !tallMods.includes('ovencol');
-  const hobW = Math.min(0.8, bl > 2.2 ? 0.8 : 0.6);
-  const hobX = x0 + bl * (o.hobAt ?? (tallSide === 'left' ? 0.72 : 0.3));
-  const sinkX = x0 + bl * (o.sinkAt ?? (tallSide === 'left' ? 0.28 : 0.72));
+  let hobW = Math.min(0.8, bl > 2.2 ? 0.8 : 0.6);
+  let hobX = x0 + bl * (o.hobAt ?? (tallSide === 'left' ? 0.72 : 0.3));
+  let sinkX = x0 + bl * (o.sinkAt ?? (tallSide === 'left' ? 0.28 : 0.72));
+  // packed plan: sink with the dishwasher beside it, the hob, drawer stacks in between and (if asked) the washer at
+  // the far end; appliances shrink (slimline 45 cm dishwasher, 60 cm sink / hob) before a run loses its drawers
+  const packed = packBase(x0, x1, tallSide, !!o.washer, hobW);
+  if (packed) { hobW = packed.hobW; hobX = packed.hobX; sinkX = packed.sinkX; }
   // hollow carcass (back, bottom, top rail in interior veneer) + counter
   const zF = D / 2 - 0.02, zBk = -D / 2 + 0.016, dI = zF - zBk, zc = (zF + zBk) / 2, xc = (x0 + x1) / 2;
   box(g, bl, plinth, D - 0.06, carcass, xc, 0, -0.06);
@@ -1441,14 +1566,22 @@ function kitchenRun(m, len = 3, o = {}) {
   if (tallSide !== 'left' || !tallMods.length) box(g, 0.02, BH - T, D, front, x0 + 0.01, 0, 0);
   if (tallSide !== 'right' || !tallMods.length) box(g, 0.02, BH - T, D, front, x1 - 0.01, 0, 0);
   // base fronts: split into modules of ~0.6, with appliances at hob/sink positions
-  const mods = [];
+  let mods = [];
   const hobL = hobX - hobW / 2, hobR = hobX + hobW / 2;
-  let cx = x0;
-  const pushUntil = (lim) => { while (lim - cx > 0.15) { const w = Math.min(0.6, lim - cx); mods.push([cx, cx + w, 'drawers']); cx += w; } cx = lim; };
-  const sinkL = sinkX - 0.4, sinkR = sinkX + 0.4;
-  const order = [[sinkL, sinkR, 'sink'], [hobL, hobR, 'hob']].sort((a, b) => a[0] - b[0]);
-  for (const [a, b, k] of order) { if (a < cx) continue; pushUntil(a); mods.push([a, b, k]); cx = b; }
-  pushUntil(x1);
+  if (packed) mods = packed.mods;
+  else {
+    // (legacy fallback for very short runs) fixed sink / hob positions, 60 cm modules in between
+    let cx = x0;
+    const pushUntil = (lim) => { while (lim - cx > 0.15) { const w = Math.min(0.6, lim - cx); mods.push([cx, cx + w, 'drawers']); cx += w; } cx = lim; };
+    const sinkL = sinkX - 0.4, sinkR = sinkX + 0.4;
+    const order = [[sinkL, sinkR, 'sink'], [hobL, hobR, 'hob']].sort((a, b) => a[0] - b[0]);
+    for (const [a, b, k] of order) { if (a < cx) continue; pushUntil(a); mods.push([a, b, k]); cx = b; }
+    pushUntil(x1);
+    let dw = false, wm = !o.washer;
+    for (const md of mods) if (md[2] === 'drawers' && md[1] - md[0] > 0.44) { if (!dw) { md[2] = 'dw'; dw = true; } else if (!wm && md[1] - md[0] > 0.55) { md[2] = 'wm'; wm = true; } }
+  }
+  g.userData.hasWasher = mods.some(md => md[2] === 'wm');
+  g.userData.hasDishwasher = mods.some(md => md[2] === 'dw');
   for (const [a] of mods) if (a > x0 + 0.05) box(g, 0.018, BH - plinth - T - 0.036, dI - 0.004, inM, a, plinth + 0.018, zc - 0.002);
   // --- openable fronts
   const drawer = (xm, y, w, hs, fill, seed = 1) => {
@@ -1468,7 +1601,7 @@ function kitchenRun(m, len = 3, o = {}) {
     handle(mv, m, mv.userData.cx, hy ?? h - 0.05, 0.02, Math.min(0.3, w * 0.5));
     return mv;
   };
-  let dwDone = false, wDone = !o.washer, di = 0;
+  let di = 0, dwN = 0;
   const fy = plinth + 0.003, fh = BH - plinth - T - 0.006, yIn = plinth + 0.018;
   for (const [a, b, k] of mods) {
     const w = b - a, xm = (a + b) / 2;
@@ -1486,22 +1619,28 @@ function kitchenRun(m, len = 3, o = {}) {
       const comp = compartment(g, (c) => underSink(c, m, w - 0.06, yIn, zBk, zF), xm, 0, 0);
       if (w > 0.65) { door(a, xm, fy, fh, -1, comp); door(xm, b, fy, fh, 1, comp); } else door(a, b, fy, fh, -1, comp);
       const sk = sink(m, { w }); sk.position.set(xm, BH, 0); g.add(sk);
-    } else if (!dwDone && w > 0.55) {
+    } else if (k === 'dw') {
+      // integrated dishwasher: the furniture door drops down (steel inner door), then both baskets glide out
       shell(g, m.steel, w - 0.04, fh - 0.03, dI - 0.03, xm, yIn, zF - 0.015 - (dI - 0.03) / 2, 0.008, { top: true });
-      const comp = compartment(g, (c) => dishRacks(c, m, w - 0.06, fh - 0.05, zBk + 0.02, zF - 0.02), xm, yIn + 0.01, 0);
-      const fl = flap(g, xm, fy, zF, comp, 1.45); fl.userData.mover.tag = 'dishwasher';
-      box(fl, w - 0.006, fh, 0.02, front, 0, 0, 0.01); handle(fl, m, 0, fh - 0.05, 0.02, 0.3);
+      const gid = 'dw' + g.id + '-' + (dwN++);
+      const comp = compartment(g, (c) => { fxFlat(c, m.glowFaint, 'grad', 0, 0.01, (zBk + zF) / 2, w - 0.08, dI - 0.06); box(c, w - 0.12, 0.006, 0.01, m.coldLed, 0, fh - 0.08, zBk + 0.06); }, xm, yIn + 0.01, 0);
+      const fl = flap(g, xm, fy, zF, comp, 1.45); Object.assign(fl.userData.mover, { tag: 'dishwasher', group: gid, dOpen: 0, dClose: 520 });
+      box(fl, w - 0.006, fh, 0.02, front, 0, 0, 0.01); handle(fl, m, 0, fh - 0.05, 0.02, Math.min(0.3, w * 0.5));
       box(fl, w - 0.06, fh - 0.06, 0.012, m.steel, 0, 0.03, -0.006);
-      const dwm = dishwasher(m); dwm.position.set(0, fh - 0.74, 0.01); fl.add(dwm);
-      dwDone = true;
-    } else if (!wDone && w > 0.55) {
+      cyl(fl, 0.025, 0.025, 0.012, m.darkPlastic, -w / 4, 0.25, -0.012, 14, [HALF, 0, 0]); box(fl, 0.09, 0.07, 0.012, m.darkPlastic, w / 8, 0.22, -0.018);   // detergent dispenser
+      const dwm = dishwasher(m, { w }); dwm.position.set(0, fh - 0.74, 0.01); fl.add(dwm);
+      dishRacks(g, m, xm, yIn + 0.01, w - 0.06, fh - 0.05, zBk + 0.02, zF - 0.02, gid);
+    } else if (k === 'filler') {
+      box(g, w - 0.006, fh, 0.02, front, xm, fy, zF + 0.01);
+    } else if (k === 'wm') {
       // integrated washing machine behind a furniture door (status LED on the door; the machine's own porthole opens too)
       const wm = washer(m, { h: fh - 0.02, d: 0.55, integrated: true }); wm.position.set(xm, fy + 0.005, zF - 0.012 - 0.275); g.add(wm);
       const dm = door(a, b, fy, fh, -1, null);
       box(dm, 0.05, 0.006, 0.004, m.led, dm.userData.cx + (w - 0.006) / 2 - 0.07, fh - 0.02, 0.021);
-      wDone = true;
     } else {
-      const hs = [fh * 0.25, fh * 0.35, fh * 0.4], fills = [di % 2 ? 'trays' : 'pans', di % 2 ? 'pots' : 'crockery', di % 3 === 2 ? 'crockery' : 'cutlery'];   // bottom → top
+      // bottom → top: deep pan / pot / pantry drawers, then crockery, a shallow drawer on top (cutlery first, then spices)
+      const hs = [fh * 0.4, fh * 0.35, fh * 0.25];
+      const fills = [['pans', 'pantry', 'pots'][di % 3], di % 2 ? 'trays' : 'crockery', ['cutlery', 'spices', 'utensils', 'cutlery'][di % 4]];
       let yy = fy;
       for (let i = 0; i < 3; i++) { drawer(xm, yy, w, hs[i], fills[i], di * 3 + i); yy += hs[i]; }
       di++;
@@ -2018,6 +2157,77 @@ function curtains(m, o = {}) {
   g.userData.noSolid = true;
   return g;
 }
+// ---- motorised curtains (movers of type 'scale' in one group: see apartment.js buildMovers)
+// Closed state is authored: each layer is a pair of panels meeting in the middle. Opening scales a panel towards its
+// outer end (the folds bunch up and deepen into a stack), a roller blind scales up into its cassette.
+// Local frame: track at y = 0, cloth hanging to -h, x across the window, front (+z) into the room, window at -z.
+function drapeGeo(w, h, folds, depth, seed = 1) {
+  return cg(`drape${r3(w)}|${r3(h)}|${folds}|${r3(depth)}|${seed}`, () => {
+    const g = new THREE.PlaneGeometry(w, h, Math.max(6, folds * 6), 8), p = g.attributes.position, r = rngF(seed * 13 + folds);
+    const amp = [], ph = []; for (let i = 0; i <= folds; i++) { amp.push(0.8 + r() * 0.4); ph.push((r() - 0.5) * 0.4); }
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), k = (x / w + 0.5) * folds, fi = Math.max(0, Math.min(folds, Math.floor(k))), f = k - fi;
+      const drop = 0.5 - y / h, ph2 = f + ph[fi] * drop;
+      p.setXYZ(i, x, y - h / 2, Math.sin(ph2 * Math.PI * 2) * depth * amp[fi] * (0.75 + 0.35 * drop));
+    }
+    g.computeVertexNormals(); return g;
+  });
+}
+function motorCurtains(m, o = {}) {
+  const w = o.w || 2.4, h = o.h || 2.5, s = m.styleId, g = new THREE.Group(), id = o.id || 'cur';
+  const blind = s === 'nordic';                          // nordic: blackout roller blind + sheer drapes
+  // ceiling track (motor head at one end)
+  box(g, w + 0.08, 0.028, 0.11, s === 'milano' ? m.brass : m.frame, 0, -0.028, 0.005);
+  box(g, 0.09, 0.05, 0.08, s === 'milano' ? m.brass : m.frame, w / 2 - 0.02, -0.07, 0.01);
+  const layer = (mat, z, depth, stack, seed, dOpen, dClose, part) => {
+    for (const sx of [-1, 1]) {
+      const pw = w / 2 + 0.03, folds = Math.max(5, Math.round(pw / 0.11));
+      const mv = mover(g, sx * w / 2, -0.03, z, { type: 'scale', s: [Math.min(1, stack / pw), 1, 2.1], dur: 1900 + pw * 520, group: id, curtain: true, part, dOpen, dClose, tag: 'curtain' });
+      add(mv, drapeGeo(pw, h - 0.06, folds, depth, seed + sx), mat, -sx * pw / 2, 0, 0);
+      // weighted hem: a slim bar along the bottom of the blackout layer
+      if (mat === m.blackout) box(mv, pw - 0.02, 0.012, 0.012, mat, -sx * pw / 2, -h + 0.05, 0);
+    }
+  };
+  const sheerStack = Math.min(0.32, 0.12 + w * 0.04), drapeStack = Math.min(0.42, 0.16 + w * 0.05);
+  if (blind) {
+    layer(m.sheer, 0.03, 0.032, sheerStack, 3, 650, 0, 'curtain');
+    // roller blind closest to the glass: cassette (static), fabric (scale up), bottom bar (slides up)
+    const bz = -0.1, bh = h - 0.02;
+    box(g, w + 0.02, 0.085, 0.085, m.frame, 0, -0.09, bz);
+    const fb = mover(g, 0, -0.09, bz, { type: 'scale', s: [1, 0.02, 1], dur: 2600, group: id, curtain: true, part: 'curtain', dOpen: 0, dClose: 500, tag: 'blind' });
+    box(fb, w - 0.01, bh - 0.09, 0.003, m.blackout, 0, -(bh - 0.09), 0);
+    const bar = mover(g, 0, -bh, bz, { type: 'slide', dir: [0, 1, 0], dist: bh - 0.11, dur: 2600, group: id, curtain: true, proxy: false, dOpen: 0, dClose: 500 });
+    box(bar, w - 0.008, 0.026, 0.018, m.frame, 0, 0, 0);
+  } else {
+    layer(m.sheer, -0.035, 0.034, sheerStack, 3, 700, 0, 'curtain');
+    layer(m.blackout, 0.045, 0.052, drapeStack, 6, 0, 700, 'curtain');
+  }
+  g.userData.noSolid = true; g.userData.curtainId = id;
+  return g;
+}
+// Wall switch for the motorised curtains, back at z = 0 (on the wall), centre at y = 0. The rocker / touch key tilts and
+// the status LED slides between the "closed" (bottom) and "open" (top) marks — both are movers of the curtain group.
+function curtainSwitch(m, o = {}) {
+  const s = m.styleId, g = new THREE.Group(), id = o.id || 'cur', S = 0.086;
+  const plateM = s === 'milano' ? m.brass : s === 'nordic' ? m.plastic : m.ceramic;
+  box(g, S, S, 0.009, plateM, 0, -S / 2, 0.0045);
+  if (s === 'riviera') box(g, S - 0.012, S - 0.012, 0.002, m.brass, 0, -S / 2 + 0.006, 0.009);       // brass inlay frame
+  const face = s === 'milano' ? m.applianceGlass : s === 'nordic' ? m.plastic : m.ceramic;
+  // rocker / glass key: pivots about its horizontal middle axis
+  const rk = mover(g, 0, 0, 0.011, { type: 'hinge', axis: 'x', angle: 0.12, dur: 160, group: id, curtain: true, part: 'curtainSwitch', tag: 'curtainSwitch' });
+  const kh = S - 0.022, kw = S - 0.022;
+  const key = grp(rk, 0, 0, 0); key.rotation.x = -0.06;
+  box(key, kw, kh, 0.008, face, 0, -kh / 2, 0);
+  if (s === 'nordic') box(key, kw - 0.01, 0.0015, 0.001, m.darkPlastic, 0, -0.0008, 0.0085);      // rocker split line
+  // printed marks ▲ / ▼ (tiny dim bars) and the sliding status LED
+  const mk = s === 'milano' ? m.steel : m.darkPlastic;
+  box(key, 0.014, 0.0025, 0.001, mk, 0.012, kh * 0.18, 0.0085); box(key, 0.014, 0.0025, 0.001, mk, 0.012, -kh * 0.18 - 0.0025, 0.0085);
+  // (a sibling of the rocker: a mover nested in another mover would just ride along with it)
+  const led = mover(g, -0.016, -kh * 0.18 - 0.0035, 0.0205, { type: 'slide', dir: [0, 1, 0], dist: kh * 0.36 + 0.0025, dur: 220, group: id, curtain: true, proxy: false });
+  box(led, 0.006, 0.004, 0.0015, s === 'milano' ? m.led : m.coldLed, 0, 0, 0);
+  g.userData.noSolid = true; g.userData.ao = null;
+  return g;
+}
 function throwBlanket(m, o = {}) { const g = new THREE.Group(); box(g, o.w || 0.5, 0.03, o.d || 0.4, m.throw, 0, 0, 0); g.userData.noSolid = true; return g; }
 
 // ================================================================== OUTDOOR
@@ -2076,7 +2286,7 @@ const F0 = {
   bed, nightstand, wardrobe, desk,
   kitchenRun, island, fridge, oven, hob, hood, dishwasher, microwave, washer, sink, coffeeMachine,
   bathtub, shower, toilet, vanity, mirror, towelRail,
-  plant, floorLamp, pendant, rug, artFrame, curtains, throwBlanket,
+  plant, floorLamp, pendant, rug, artFrame, curtains, motorCurtains, curtainSwitch, throwBlanket, laundryTower,
   outdoorLounge, outdoorTable, outdoorChair, planter,
 };
 // every piece knows its name (openable fronts report which piece they belong to: 'wardrobe', 'fridge', …)

@@ -206,18 +206,20 @@ export const PLOT = [[-123,-162], [-69,-140], [-33,-112], [39,-79], [111,-52], [
 // after the permit's phase key plan (FAZA I C1, C2 · FAZA II C3, C4 · FAZA III C5, C6) and the developer renders.
 // Faza I "Aqua City" (delivered, east): a closed courtyard ring — C2 the long bar facing SSW onto Intrarea Guliver, C1 the
 //   north bar + east arm + a west arm facing C3 (the ring is open at its north-west corner), P+12, beige.
-// Faza III (west, towards Str. Murelor): C5 and C6, two bars joined by a spine at the north end (C5's arm runs on towards
-//   C4, like our wings: 30.6 m between the two arm ends), P+11, dark grey/brown. The developer render draws C6 ≈ 40 m further
-//   west, which would put it on Str. Murelor as traced from the satellite view, so C6 is kept inside the plot here.
+// Faza III (west, towards Str. Murelor): a comb like ours — C5 and C6, two parallel bars joined by a spine along the north
+//   street, open courtyard towards Intrarea Guliver, P+11, dark grey/brown (developer renders). C5 runs the full length to the
+//   front street, ≈ 26 m from C4's wing stub (the permit's site plan gives 25–30.6 m); C6 starts ≈ 40 m further back
+//   because Str. Murelor cuts the plot's west corner on the diagonal (the render too shows the outer bar shorter at the front).
+//   Bars 16 m deep, courtyard 20 m. The render's C6 sits further west still, which would put it on Str. Murelor as traced.
 // P: two-level parking deck along Intrarea Guliver in front of C4/C3, with the round spiral car ramp on its street side.
 export const CONTEXT_BLOCKS = [
   { id: 'F1-C2', x0: -13, x1: 4, z0: 37.8, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
   { id: 'F1-W', x0: 4, x1: 70, z0: 37.8, z1: 54.8, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
   { id: 'F1-E', x0: 4, x1: 98, z0: 115, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
   { id: 'F1-C1', x0: 98, x1: 115, z0: 37.8, z1: 132, floors: 13, delivered: true, phase: 'I', tone: 'beige' },
-  { id: 'F3-C5', x0: -13, x1: 99, z0: -137.4, z1: -121.4, floors: 12, phase: 'III', tone: 'dark' },
-  { id: 'F3-C6', x0: 30, x1: 99, z0: -162, z1: -148, floors: 12, phase: 'III', tone: 'dark' },
-  { id: 'F3-N', x0: 99, x1: 115, z0: -162, z1: -112.8, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'F3-C5', x0: -13, x1: 98, z0: -124, z1: -108, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'F3-C6', x0: 26, x1: 98, z0: -160, z1: -144, floors: 12, phase: 'III', tone: 'dark' },
+  { id: 'F3-N', x0: 98, x1: 115, z0: -160, z1: -108, floors: 12, phase: 'III', tone: 'dark' },
   { id: 'P', x0: -33, x1: -21, z0: -62, z1: 30, floors: 1, parking: true },
 ];
 // Site features shared by the site plan, the context, the car park and the outdoor colliders (world coords):

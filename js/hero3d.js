@@ -29,7 +29,13 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
   const box = complexBox();
   const center = { x: (box.x0 + box.x1) / 2, z: (box.z0 + box.z1) / 2 };
   const orbit = { az: -2.35, dist: 190, h: 88, target: null, drag: null, idleT: 0, speed: TAU / 260 };
-  const finderCam = { az: -2.5, swing: 0 };
+  // Finder view: a stable framing of the whole selected building (all floors P..10D in view). Choosing a floor only
+  // moves the gold band — the camera never jumps; switching building orbits smoothly to the other block.
+  // Each block is seen across the shared courtyard from the SSW end, so its long courtyard facade and the wing face the
+  // viewer unobstructed (the outer sides are hidden behind Faza I / Faza III from any useful angle).
+  const FINDER_AZ = { C3: -2.62, C4: 2.68 };
+  const finderCam = { cur: null };
+  const fitCache = new Map();
   let camGoalPos = null, camGoalTgt = null, curTgt = null;
 
   // The hero 3D is one slide of the hero slideshow (js/hero-slides.js). It only counts as "on screen" while that slide
@@ -92,6 +98,7 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
       placeHeroCamera(0, true);
       bindPointer(renderer.domElement);
       ready = true;
+      if (/[?&]debug3d\b/.test(location.search)) window.__vrcHeroDbg = { THREE, scene, camera, complex, renderer, pick: (x, y, t) => pick(x, y, t), FINDER_AZ, fitCache, finderCam };
       if (heroActive) ioSync();
       pickHost();
       renderOnce();
@@ -125,15 +132,47 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
     const [wx, wz] = localToWorld(b, 60, 0);
     return new THREE.Vector3(wx, floorY(f) + 1.5, wz);
   }
+  // Distance at which the selected building's box (ground → roof) fits the view at this aspect, with a margin
+  function finderFit(b, aspect) {
+    const key = b + ':' + aspect.toFixed(3) + ':' + camera.fov;
+    if (fitCache.has(key)) return fitCache.get(key);
+    const lo = floorCenter(b, 0), box0 = exteriorMod?.floorBandBox?.(b, 0), boxT = exteriorMod?.floorBandBox?.(b, TOP_FLOOR);
+    const mn = box0 ? v3(THREE, box0.min) : lo.clone().add(new THREE.Vector3(-64, -2, -24));
+    const mx = boxT ? v3(THREE, boxT.max) : lo.clone().add(new THREE.Vector3(64, 38, 24));
+    const tgt = mn.clone().add(mx).multiplyScalar(0.5); tgt.y = (mn.y + mx.y) * 0.46;
+    const corners = [];
+    for (const x of [mn.x, mx.x]) for (const y of [mn.y, mx.y]) for (const z of [mn.z, mx.z]) corners.push(new THREE.Vector3(x, y, z));
+    const cam = new THREE.PerspectiveCamera(camera.fov, aspect, 1, 5000);
+    const fits = d => {
+      {
+        const az = FINDER_AZ[b];
+        cam.position.set(tgt.x + Math.cos(az) * d, tgt.y + d * 0.36, tgt.z + Math.sin(az) * d); cam.lookAt(tgt); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+        for (const c of corners) { const p = c.clone().project(cam); if (Math.abs(p.x) > 0.94 || Math.abs(p.y) > 0.86 || p.z > 1) return false; }
+      }
+      return true;
+    };
+    let d = 90; while (d < 900 && !fits(d)) d *= 1.04;
+    const out = { tgt, d, h: d * 0.36 };
+    fitCache.set(key, out); return out;
+  }
   function placeFinderCamera(dt, snap) {
-    const { b, f } = state.sel;
-    const tgt = floorCenter(b, f);
+    const { b } = state.sel;
     const aspect = camera.aspect || 1.3;
-    const d = aspect < 1 ? 185 : 150;
-    const az = finderCam.az + Math.sin(finderCam.swing) * 0.32;
-    const pos = new THREE.Vector3(tgt.x + Math.cos(az) * d, tgt.y + 34 + Math.max(0, 9 - f) * 1.2, tgt.z + Math.sin(az) * d);
-    camGoalPos = pos; camGoalTgt = tgt;
-    if (snap) { camera.position.copy(pos); curTgt.copy(tgt); camera.lookAt(curTgt); }
+    const fit = finderFit(b, aspect);
+    const goal = { az: FINDER_AZ[b] ?? -2.2, tgt: fit.tgt, d: fit.d, h: fit.h };
+    const c = finderCam.cur;
+    if (snap || !c) finderCam.cur = { az: goal.az, tgt: goal.tgt.clone(), d: goal.d, h: goal.h };
+    else {
+      // orbit (angle, distance, target) instead of a straight-line fly, so a building switch glides around the blocks
+      const k = 1 - Math.pow(0.02, dt);
+      let da = goal.az - c.az; da = Math.atan2(Math.sin(da), Math.cos(da));
+      c.az += da * k; c.d += (goal.d - c.d) * k; c.h += (goal.h - c.h) * k; c.tgt.lerp(goal.tgt, k);
+    }
+    const cur = finderCam.cur;
+    const az = cur.az;   // no idle swing: a still image is easier to tap and never "moves under the finger"
+    const pos = new THREE.Vector3(cur.tgt.x + Math.cos(az) * cur.d, cur.tgt.y + cur.h, cur.tgt.z + Math.sin(az) * cur.d);
+    camGoalPos = pos; camGoalTgt = cur.tgt;
+    if (snap) { camera.position.copy(pos); curTgt.copy(cur.tgt); camera.lookAt(curTgt); }
   }
 
   // ---------- loop ----------
@@ -145,17 +184,16 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
       if (!orbit.drag) { orbit.idleT += dt; if (!reducedMotion && orbit.idleT > 2.5) orbit.az += orbit.speed * dt; }
       placeHeroCamera(dt);
     } else {
-      if (!reducedMotion) finderCam.swing += dt * 0.18;
       placeFinderCamera(dt);
     }
-    const k = 1 - Math.pow(0.001, dt * (state.where === 'hero' ? 1.4 : 0.9));
+    const k = state.where === 'hero' ? 1 - Math.pow(0.001, dt * 1.4) : 1;   // finder: placeFinderCamera already eases
     camera.position.lerp(camGoalPos, k); curTgt.lerp(camGoalTgt, k); camera.lookAt(curTgt);
     try { env?.update?.(dt, camera); } catch (e) { /* keep rendering */ }
     renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   }
   function kick() { if (!raf && ready && !state.paused && state.host) { last = 0; raf = requestAnimationFrame(frame); } }
-  function renderOnce() { if (!ready || !state.host) return; resize(); try { env?.update?.(0.016, camera); } catch (e) {} renderer.render(scene, camera); state.host.classList.add('is-live'); }
+  function renderOnce() { if (!ready || !state.host) return; resize(true); try { env?.update?.(0.016, camera); } catch (e) {} renderer.render(scene, camera); state.host.classList.add('is-live'); }
 
   // ---------- host management (which container owns the canvas) ----------
   const io = new IntersectionObserver(entries => {
@@ -165,6 +203,7 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
   if (heroHost) io.observe(heroHost);
   if (finderHost) io.observe(finderHost);
   const ro = new ResizeObserver(() => resize());
+  let lastSize = [0, 0];
 
   function pickHost() {
     if (!ready) return;
@@ -177,17 +216,21 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
       state.host = host; state.where = where; offKey = '';
       (host.querySelector('.hero3d-slot') || host).appendChild(renderer.domElement);
       ro.observe(host);
-      resize();
-      if (where === 'hero') { complex.highlightFloor?.(state.sel.b, null); placeHeroCamera(0, true); }
+      resize(true);
+      if (where === 'hero') { complex.highlightFloor?.(state.sel.b, null); complex.hoverFloor?.(null); placeHeroCamera(0, true); }
       else { highlight(state.sel.b, state.sel.f); placeFinderCamera(0, true); }
       requestAnimationFrame(() => host.classList.add('is-live'));
     }
     kick();
   }
-  function resize() {
+  function resize(force = false) {
     if (!ready || !state.host) return;
     const r = state.host.getBoundingClientRect();
     const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+    // iOS shows/hides its address bar while scrolling: a height-only change under 120 px is ignored (the canvas is
+    // CSS-stretched for that moment) instead of reallocating the drawing buffer and re-framing the camera.
+    if (!force && w === lastSize[0] && h !== lastSize[1] && Math.abs(h - lastSize[1]) < 120) return;
+    lastSize = [w, h];
     const c = renderer.domElement;
     if (c.width !== Math.round(w * renderer.getPixelRatio()) || c.height !== Math.round(h * renderer.getPixelRatio())) {
       renderer.setSize(w, h, false); camera.aspect = w / h;
@@ -212,53 +255,92 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
   document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
 
   // ---------- picking ----------
-  let ray, ndc;
-  function pick(clientX, clientY) {
-    if (!complex?.pickables?.length) return null;
+  // A tap/click raycasts against the real facade meshes of both blocks and turns the hit height into a floor
+  // (so what you touch is what you get, at any angle, on every facade and wing). The invisible per-floor pick volumes
+  // (exterior.js) are the fallback, and touch also probes a few points around the finger.
+  let ray, ndc, facadeList = null, bandList = null;
+  const TOUCH_PROBE = [[0, 0], [0, -7], [0, 7], [-7, 0], [7, 0], [0, -14], [0, 14], [-14, 0], [14, 0]];
+  function floorFromY(y) {
+    for (let f = TOP_FLOOR; f >= 1; f--) if (y >= floorY(f) - 0.3) return f;   // the slab edge belongs to the floor it carries
+    return 0;
+  }
+  function buildingOf(o) { for (let p = o; p; p = p.parent) { const m = /^bldg-(\w+)$/.exec(p.name || ''); if (m) return m[1]; } return null; }
+  function pickAt(clientX, clientY) {
     ray = ray || new THREE.Raycaster(); ndc = ndc || new THREE.Vector2();
     const r = renderer.domElement.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
     ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    camera.updateMatrixWorld();
     ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(complex.pickables, false)[0];
-    const a = hit?.object?.userData?.action;
+    const hit = ray.intersectObjects(facadeList, false)[0];
+    if (hit) { const b = buildingOf(hit.object); if (b) return { type: 'floor', building: b, floor: floorFromY(hit.point.y) }; }
+    const a = ray.intersectObjects(bandList, false)[0]?.object?.userData?.action;
     return a && a.type === 'floor' ? a : null;
   }
-  function highlight(b, f) { try { complex.highlightFloor?.(b, f); } catch (e) { /* optional */ } }
+  function pick(clientX, clientY, touch = false) {
+    if (!complex?.pickables?.length) return null;
+    if (!facadeList) {
+      facadeList = [];
+      for (const g of Object.values(complex.buildings || {})) g.traverse(o => { if (o.isMesh && !o.name.startsWith('pick-') && o.visible && !/-(frame|hedge|led)$/.test(o.name)) facadeList.push(o); });   // thin mullions are skipped: the glass behind them is hit instead (5× cheaper)
+      // underground band (-1) is not a selectable floor here
+      bandList = complex.pickables.filter(m => (m.userData?.action?.floor ?? -1) >= 0 && m.userData.action.floor <= TOP_FLOOR);
+    }
+    for (const [dx, dy] of (touch ? TOUCH_PROBE : [[0, 0]])) { const a = pickAt(clientX + dx, clientY + dy); if (a) return a; }
+    return null;
+  }
+  function highlight(b, f) { try { complex.highlightFloor?.(b, f); } catch (e) { /* optional */ } kick(); }
+  function preview(a) {
+    const key = a ? a.building + ':' + a.floor : null;
+    if (key === state.hoverFloor) return;
+    state.hoverFloor = key;
+    const same = a && a.building === state.sel.b && a.floor === state.sel.f && state.where === 'finder';
+    try { complex.hoverFloor ? complex.hoverFloor(a && !same ? a.building : null, a && !same ? a.floor : null) : (a ? highlight(a.building, a.floor) : restore()); } catch (e) { /* optional */ }
+    onState('hover', a);
+    kick();
+  }
+  function restore() { highlight(state.sel.b, state.where === 'finder' ? state.sel.f : null); }
   function bindPointer(c) {
+    const SLOP = 10;
     let down = null; let lastMove = 0;
     c.addEventListener('pointerdown', e => {
-      down = { x: e.clientX, y: e.clientY, az: orbit.az, t: performance.now(), moved: 0 };
+      if (e.button > 0) return;
+      const touch = e.pointerType !== 'mouse';
+      down = { x: e.clientX, y: e.clientY, az: orbit.az, t: performance.now(), moved: 0, id: e.pointerId, touch };
+      state.pointerDown = true;
       if (state.where === 'hero') orbit.drag = down;
+      if (touch) preview(pick(e.clientX, e.clientY, true));   // finger down: show which floor a tap would choose
     });
     c.addEventListener('pointermove', e => {
-      if (down) {
-        const dx = e.clientX - down.x; down.moved = Math.max(down.moved, Math.abs(dx) + Math.abs(e.clientY - down.y));
+      if (down && e.pointerId === down.id) {
+        const dx = e.clientX - down.x; down.moved = Math.max(down.moved, Math.hypot(dx, e.clientY - down.y));
+        if (down.touch && down.moved > SLOP) preview(null);         // it became a scroll / drag, not a tap
         if (state.where === 'hero' && orbit.drag) { orbit.az = down.az - dx * 0.006; orbit.idleT = 0; kick(); }
         return;
       }
       if (e.pointerType !== 'mouse') return;
-      const now = performance.now(); if (now - lastMove < 60) return; lastMove = now;
+      const now = performance.now(); if (now - lastMove < 50) return; lastMove = now;
       const a = pick(e.clientX, e.clientY);
-      const key = a ? a.building + ':' + a.floor : null;
-      if (key !== state.hoverFloor) {
-        state.hoverFloor = key; c.style.cursor = a ? 'pointer' : 'grab';
-        if (a) highlight(a.building, a.floor);
-        else if (state.where === 'finder') highlight(state.sel.b, state.sel.f); else highlight(state.sel.b, null);
-        onState('hover', a);
-      }
+      c.style.cursor = a ? 'pointer' : (state.where === 'hero' ? 'grab' : 'default');
+      preview(a);
     });
-    const up = e => {
-      if (!down) return;
-      const wasClick = down.moved < 7 && performance.now() - down.t < 600;
-      down = null; orbit.drag = null; orbit.idleT = 0;
-      if (wasClick) {
-        const a = pick(e.clientX, e.clientY);
-        if (a && a.floor >= 0 && a.floor <= TOP_FLOOR) { state.sel = { b: a.building, f: a.floor }; onFloor(a.building, a.floor); }
+    const end = (e, cancelled) => {
+      if (!down || (e && e.pointerId !== down.id)) return;
+      const d = down; down = null; state.pointerDown = false; orbit.drag = null; orbit.idleT = 0;
+      const wasTap = !cancelled && d.moved <= SLOP && performance.now() - d.t < 800;
+      let a = null;
+      if (wasTap) a = pick(e.clientX, e.clientY, d.touch) || (d.touch && state.hoverFloor ? parseKey(state.hoverFloor) : null);
+      if (d.touch) preview(null);
+      if (a && a.floor >= 0 && a.floor <= TOP_FLOOR) {
+        state.sel = { b: a.building, f: a.floor };
+        if (state.where === 'finder') highlight(a.building, a.floor);
+        onFloor(a.building, a.floor, state.where);
       }
     };
-    c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', () => { down = null; orbit.drag = null; });
-    c.addEventListener('pointerleave', () => { if (state.hoverFloor) { state.hoverFloor = null; highlight(state.sel.b, state.where === 'finder' ? state.sel.f : null); onState('hover', null); } });
+    const parseKey = k => { const [building, f] = k.split(':'); return { type: 'floor', building, floor: +f }; };
+    c.addEventListener('pointerup', e => end(e, false));
+    c.addEventListener('pointercancel', e => end(e, true));
+    c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !down) preview(null); });
+    c.addEventListener('contextmenu', e => { if (down?.touch) e.preventDefault(); });
   }
 
   function disposeGL() {
@@ -269,16 +351,17 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
     init,
     get ready() { return ready; },
     get failed() { return failed; },
-    relayout() { offKey = ''; resize(); kick(); },  // call after a language (direction) change
+    relayout() { offKey = ''; resize(true); kick(); },  // call after a language (direction) change
     setMode(m) { state.mode = m; try { env?.setMode?.(m); } catch (e) {} kick(); },
     // Finder selection: frame this building/floor and outline it
     focusFloor(b, f) {
       state.sel = { b, f };
       if (!ready) return;
       if (state.where === 'finder') highlight(b, f);
-      finderCam.az = b === 'C4' ? -2.2 : 2.3; // C4 is seen from its north side, C3 from its south side
       kick();
     },
+    // chip hover (desktop) → lighter preview band on the 3D
+    previewFloor(b, f) { if (!ready || state.where !== 'finder') return; try { complex.hoverFloor?.(f == null || (b === state.sel.b && f === state.sel.f) ? null : b, f); } catch (e) {} kick(); },
     highlightUnits(ids) { try { complex?.setUnitHighlight?.(ids && ids.length ? ids : null); } catch (e) {} kick(); },
     pause() { state.paused = true; cancelAnimationFrame(raf); raf = 0; },
     resume() { state.paused = false; kick(); },

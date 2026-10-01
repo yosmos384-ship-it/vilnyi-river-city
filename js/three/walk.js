@@ -8,6 +8,7 @@ import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
 } from '../data.js';
+import { I18N } from '../i18n.js';
 import { createFleet, buildOutdoorColliders, CarController, carGeometryXForward, pickCar, carRng, inLake, RAMP } from './cars.js';
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
@@ -477,6 +478,32 @@ const CSS = `
 .vw.pano .vw-hud>*:not(.vw-fade):not(.vw-modes){display:none!important}
 .vw.pano .vw-modes{opacity:1!important}
 .vw.pano canvas.vw-gl{visibility:hidden}
+.vw-cg{box-sizing:border-box;position:absolute;left:50%;bottom:calc(14px + var(--sb));width:min(380px,calc(100% - 24px));padding:12px 12px 10px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(22,19,14,.9),rgba(8,8,8,.9));opacity:0;transform:translate(-50%,10px) scale(.98);transition:opacity .28s ease,transform .28s ease;pointer-events:none;
+  box-shadow:0 14px 40px rgba(0,0,0,.5);z-index:3}
+.vw-cg.show{opacity:1;transform:translate(-50%,0) scale(1);pointer-events:auto}
+.vw-cg:before{content:"";position:absolute;top:-6px;left:50%;width:11px;height:11px;margin-left:-6px;background:#16130e;border-left:1px solid var(--ln);border-top:1px solid var(--ln);transform:rotate(45deg)}
+.vw-cg .hd{display:flex;align-items:center;gap:9px}
+.vw-cg .av{flex:0 0 34px;height:34px;border-radius:50%;border:1px solid var(--ln);display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 35%,#2a241a,#0b0a08)}
+.vw-cg .who{flex:1;min-width:0;text-align:start;line-height:1.2}
+.vw-cg .who b{display:block;font-family:"Cormorant Garamond","Bodoni Moda",Georgia,serif;font-weight:600;font-size:16px;color:var(--g2);letter-spacing:.02em}
+.vw-cg .who span{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--g);opacity:.9}
+.vw-cg .ib{flex:0 0 32px;height:32px;border-radius:50%;border:1px solid var(--ln);display:flex;align-items:center;justify-content:center;color:var(--g2);font-size:13px}
+.vw-cg .ib.on{background:rgba(201,164,92,.18);border-color:var(--g2)}
+.vw-cg .msg{margin:9px 2px 10px;font-size:13.5px;line-height:1.5;color:#f3ead7;text-align:start;unicode-bidi:plaintext}
+.vw-cg .acts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.vw-cg .acts button{min-height:40px;padding:6px 10px;border-radius:11px;border:1px solid var(--ln);background:rgba(255,255,255,.03);color:#efe5cf;font-size:12.5px;line-height:1.25;text-align:start;display:flex;align-items:center;gap:7px}
+.vw-cg .acts button i{font-style:normal;color:var(--g);flex:0 0 auto;font-size:13px;width:16px;text-align:center}
+.vw-cg .acts button small{display:block;font-size:10.5px;opacity:.7}
+.vw-cg .acts button.pri{background:linear-gradient(180deg,#e6c987,#b88a3c);color:#16110a;border-color:transparent;font-weight:600}
+.vw-cg .acts button.pri i{color:#16110a}
+.vw-cg .acts button.wide{grid-column:1/-1;justify-content:center;min-height:34px;background:none;border-color:transparent;color:var(--g2);font-size:12px;letter-spacing:.06em}
+.vw-cg .acts.fl{grid-template-columns:repeat(4,1fr)}
+.vw-cg .acts.fl button{justify-content:center;font-size:14px;min-height:40px;padding:0;text-align:center}
+.vw-cg .acts.fl button.here{border-color:var(--g2);color:var(--g2);opacity:.6;cursor:default}
+.vw-cg .acts.fl button.mine{background:rgba(201,164,92,.2);border-color:var(--g2)}
+.vw.phone .vw-cg{bottom:calc(10px + var(--sb))}
+.vw.riding .vw-cg,.vw.m360 .vw-cg{display:none}
 `;
 
 export class Walkthrough {
@@ -545,7 +572,7 @@ export class Walkthrough {
   t(key, fb) {
     let s;
     try { s = this.i18n && typeof this.i18n.t === 'function' ? this.i18n.t(key) : undefined; } catch { s = undefined; }
-    if (typeof s !== 'string' || !s || s === key) { const l2 = String(this.lang).slice(0, 2), loc = LOCAL[l2], lc = LOCAL_CAR[l2]; s = (loc && loc[key]) ?? (lc && lc[key]) ?? fb ?? EN[key] ?? LOCAL.en[key] ?? key.split('.').pop(); }
+    if (typeof s !== 'string' || !s || s === key) { const l2 = String(this.lang).slice(0, 2), loc = LOCAL[l2], lc = LOCAL_CAR[l2]; s = (loc && loc[key]) ?? (lc && lc[key]) ?? (I18N[l2] && I18N[l2][key]) ?? fb ?? EN[key] ?? LOCAL.en[key] ?? key.split('.').pop(); }
     return s;
   }
   get dir() { const d = this.i18n && this.i18n.dir; const v = typeof d === 'function' ? d() : d; return v === 'rtl' ? 'rtl' : v === 'ltr' ? 'ltr' : (document.documentElement.dir || 'ltr'); }
@@ -770,6 +797,7 @@ export class Walkthrough {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    try { if (this._cgSpoke && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
     cancelAnimationFrame(this._raf);
     if (this._pano) {
       const p = this._pano; this._pano = null;
@@ -1639,6 +1667,7 @@ export class Walkthrough {
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
     if (act.type === 'liftDoor') return this._liftDoorKey(act);
     if (act.type === 'liftAlarm') return this._liftAlarm(act);
+    if (act.type === 'concierge') { const cg = ((this.commons && this.commons.concierges) || []).find(c => c.group === a.obj); if (cg) { this._click(0.35); return this._cgShow(cg, { auto: false }); } return; }
     if (typeof act.onClick === 'function') return act.onClick();
   }
 
@@ -2051,6 +2080,159 @@ export class Walkthrough {
     this._glideTo(P.pos.x - Math.sin(P.yaw) * 2.5, P.pos.z - Math.cos(P.yaw) * 2.5);
   }
 
+  // ======================= concierge (ground-floor reception, commons.concierges) =======================
+  // She follows the visitor with her head inside 6 m, waves/nods at ~4.5 m and offers help at ~3 m (or on tap).
+  _conciergeTick(dt) {
+    const list = this.commons && this.commons.concierges;
+    if (!list || !list.length) { if (this._cgOpen) this._cgClose(); return; }
+    const eye = this.camera.getWorldPosition(this._cgEye || (this._cgEye = new THREE.Vector3()));
+    const away = this.riding || this.drive || this.mode === '360';
+    for (const cg of list) {
+      let d;
+      try { d = cg.update(dt, away ? null : eye); } catch (e) { if (!this._cgErr) { this._cgErr = true; console.warn('[walk] concierge', e); } continue; }
+      if (away || this.busy) continue;
+      if (d < 4.5 && !cg._greeted) { cg._greeted = true; cg.greet(); }
+      else if (d > 6.5) cg._greeted = false;
+      if (d < 3 && !cg._near) { cg._near = true; if (!this._cgOpen) this._cgShow(cg, { auto: true }); }
+      else if (d > 4.2 && cg._near) { cg._near = false; if (this._cgOpen && this._cgCur === cg) this._cgClose(); }
+    }
+  }
+  _cgShow(cg, { auto = false } = {}) {
+    if (!this.el) return;
+    if (!this.el.cg) {
+      const d = document.createElement('div'); d.className = 'vw-cg vw-panel'; d.setAttribute('role', 'dialog');
+      d.innerHTML = `<div class="hd"><span class="av" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e6c987" stroke-width="1.3" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M15.2 5.6c1.3.2 2.2 1.2 2 2.4"/><path d="M5 20c.6-4 3.4-6.2 7-6.2s6.4 2.2 7 6.2"/><path d="M10 14.2 12 17l2-2.8"/></svg></span>
+        <div class="who"><b></b><span></span></div><button class="ib vo" data-cg="voice" aria-pressed="false"></button><button class="ib" data-cg="close">✕</button></div>
+        <p class="msg" aria-live="polite"></p><div class="acts"></div>`;
+      this.el.hud.appendChild(d); this.el.cg = d;
+      this._cgVoice = lsGet('vrc.walk.voice') === '1';
+    }
+    this._cgCur = cg; this._cgAuto = auto; this._cgOpen = true;
+    this._cgRender('main');
+    this.el.cg.classList.add('show');
+    if (!auto) cg.greet();
+    const ua = typeof navigator !== 'undefined' && navigator.userActivation;
+    if (this._cgVoice && (!auto || !ua || ua.hasBeenActive)) this._cgSpeak(this.t('walk.cg.hello'));
+  }
+  _cgClose() {
+    this._cgOpen = false;
+    if (this.el && this.el.cg) this.el.cg.classList.remove('show');
+    try { if (this._cgSpoke && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
+  }
+  _cgRender(view = 'main') {
+    const d = this.el && this.el.cg; if (!d) return;
+    this._cgView = view;
+    const t = k => this.t('walk.cg.' + k), esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    d.dir = this.dir; d.lang = this.lang;
+    d.setAttribute('aria-label', t('role'));
+    d.querySelector('.who b').textContent = t('name');
+    d.querySelector('.who span').textContent = t('role');
+    const vo = d.querySelector('.vo');
+    vo.innerHTML = this._cgVoice
+      ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>'
+      : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
+    vo.classList.toggle('on', !!this._cgVoice); vo.setAttribute('aria-pressed', String(!!this._cgVoice));
+    vo.title = t('voice'); vo.setAttribute('aria-label', t('voice'));
+    const x = d.querySelector('[data-cg=close]'); x.title = t('close'); x.setAttribute('aria-label', t('close'));
+    const msg = d.querySelector('.msg'), acts = d.querySelector('.acts');
+    const u = this.unit;
+    if (view === 'floors') {
+      msg.textContent = t('pickFloor');
+      acts.className = 'acts fl';
+      const fl = [-1, 0, ...Array.from({ length: TOP_FLOOR }, (_, i) => i + 1)];
+      acts.innerHTML = fl.map(f => `<button data-cg="f" data-f="${f}" class="${f === this.floor ? 'here' : ''}${u && f === u.floor ? ' mine' : ''}"${f === this.floor ? ' aria-current="true"' : ''}>${f === -1 ? '−1' : f === 0 ? 'P' : f}</button>`).join('')
+        + `<button class="wide" data-cg="back">${esc(t('back'))}</button>`;
+      return;
+    }
+    msg.textContent = t('hello');
+    acts.className = 'acts';
+    const fName = u ? (u.floor === 0 ? this.t('walk.ground') : `${this.t('walk.floor')} ${u.floor}`) : '';
+    acts.innerHTML = `
+      <button class="pri" data-cg="apt"><i>⌂</i><span>${esc(t('myApt'))}${u ? `<small>${esc(fName)} · ${esc(u.apNo ?? '')}</small>` : ''}</span></button>
+      <button data-cg="floors"><i>⇅</i><span>${esc(t('floors'))}</span></button>
+      <button data-cg="park"><i>P</i><span>${esc(t('parking'))}</span></button>
+      <button data-cg="model"><i>◇</i><span>${esc(t('model'))}</span></button>
+      <button data-cg="book" style="grid-column:1/-1"><i>✦</i><span>${esc(t('book'))}</span></button>
+      <button class="wide" data-cg="close">${esc(t('close'))}</button>`;
+  }
+  async _cgAction(k, b) {
+    this._click && this._click(0.3);
+    if (k === 'close') return this._cgClose();
+    if (k === 'back') return this._cgRender('main');
+    if (k === 'floors') return this._cgRender('floors');
+    if (k === 'voice') {
+      this._cgVoice = !this._cgVoice; lsSet('vrc.walk.voice', this._cgVoice ? '1' : '0');
+      this._cgRender(this._cgView);
+      if (this._cgVoice) this._cgSpeak(this.el.cg.querySelector('.msg').textContent);
+      else try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
+      return;
+    }
+    if (k === 'f') { const f = +b.dataset.f; if (f === this.floor) return; this._cgClose(); return this._cgRide(f); }
+    this._cgClose();
+    if (k === 'apt') return this._cgGoApt();
+    if (k === 'park') return this._cgRide(-1);
+    if (k === 'model') return this._goto('apartment');
+    if (k === 'book') return this._cgBook();
+  }
+  // Take the lift by the reception to another floor: call it, step in, press the key, ride.
+  async _cgRide(floor) {
+    if (this.riding || this.busy || !this.unit) return false;
+    if (floor === this.floor) return true;
+    this._toast(this.t('walk.cg.going'), 2200);
+    const stair = this._cgCur ? this._cgCur.stair : null;
+    await this._callLift(stair, this.bId);
+    const inf = this._carOf(this.player.pos);
+    if (!inf) return false;
+    await this._pressKey(inf, floor);
+    return this.floor === floor;
+  }
+  async _cgGoApt() {
+    const u = this.unit; if (!u) return;
+    if (u.building === this.bId && u.floor !== this.floor && !(await this._cgRide(u.floor))) return;
+    await this._goto('corridor');   // the walk from the lift to the door, then stand before it
+  }
+  _cgBook() {
+    const id = this.unit && this.unit.id, V = typeof window !== 'undefined' ? window.VRC : null;
+    if (V && typeof V.openBooking === 'function') { try { V.openBooking(id); return; } catch (e) { console.warn('[walk] openBooking', e); } }
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'vrc:navigate', hash: '#contact', unitId: id }, '*');
+        try { window.parent.location.hash = 'contact'; } catch { /* cross-origin parent: the message does it */ }
+        return;
+      }
+    } catch { /* no parent access */ }
+    this.opts.onExit && this.opts.onExit();
+    setTimeout(() => {
+      const el = document.getElementById('contact') || document.querySelector('.foot-contact');
+      try { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); else location.hash = 'contact'; } catch { /* optional */ }
+    }, 60);
+  }
+  _cgSpeak(text) {
+    if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined' || !text) return;
+    try {
+      const l2 = String(this.lang).slice(0, 2).toLowerCase();
+      const LC = { he: 'he-IL', en: 'en-GB', ro: 'ro-RO', ru: 'ru-RU', uk: 'uk-UA', fr: 'fr-FR', it: 'it-IT', de: 'de-DE' };
+      speechSynthesis.cancel();
+      const ut = new SpeechSynthesisUtterance(text);
+      ut.lang = LC[l2] || 'en-GB'; ut.rate = 0.97; ut.pitch = 1.05;
+      const vs = (speechSynthesis.getVoices && speechSynthesis.getVoices()) || [];
+      const cand = vs.filter(v => String(v.lang || '').toLowerCase().replace('_', '-').startsWith(l2));
+      const v = cand.find(v => /female|woman|samantha|victoria|karen|moira|tessa|serena|carmit|zira|hedda|katja|anna|alice|amelie|aurelie|milena|ioana|lesya|paulina/i.test(v.name)) || cand[0];
+      if (v) ut.voice = v;
+      speechSynthesis.speak(ut); this._cgSpoke = true;
+    } catch (e) { console.warn('[walk] speech', e); }
+  }
+  // The walker crossed into an apartment (past its entrance door line): tell the page and draw the curtains open.
+  _aptEnterWatch() {
+    if (this.riding || !this.loaded.size) return;
+    const e = this._aptAt(this.player.pos), id = e ? e.unit.id : null;
+    if (id === this._inAptId) return;
+    this._inAptId = id;
+    if (!e) return;
+    try { if (e.apt && typeof e.apt.openCurtains === 'function') e.apt.openCurtains(); } catch (err) { console.warn('[walk] openCurtains', err); }
+    try { window.dispatchEvent(new CustomEvent('vrc:apt-enter', { detail: { unitId: id } })); } catch (err) { console.warn('[walk] vrc:apt-enter', err); }
+  }
+
   // ======================= frame loop =======================
   _loop() {
     if (this.disposed) return;
@@ -2122,6 +2304,8 @@ export class Walkthrough {
     }
     this._autoDoors(dt);
     this._syncCamera();
+    this._conciergeTick(dt);
+    this._aptEnterWatch();
     this._cullWorld();
     if (this.fleet) this.fleet.update(this.camera);
     if (this._expT) { const r = this.renderer; r.toneMappingExposure += (this._expT - r.toneMappingExposure) * damp(2.5, dt); }
@@ -2308,6 +2492,7 @@ export class Walkthrough {
     this.root.dir = this.dir;
     this.root.lang = this.lang;
     e.reserve.querySelector('.lbl').textContent = this.t('walk.reserve');
+    if (this._cgOpen) this._cgRender(this._cgView);
     e.exit.querySelector('.lbl').textContent = this.t('walk.exit');
     e.exit.setAttribute('aria-label', this.t('walk.exit'));
     e.helpBtn.title = this.t('walk.help');
@@ -3177,6 +3362,7 @@ export class Walkthrough {
   _onHudClick(ev) {
     if (this._phone && ev.target.closest('.vw-map')) return this._setMapOpen(false);
     const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.cg) return this._cgAction(b.dataset.cg, b);
     const k = b.dataset.k;
     if (k === 'gear') return this._setPopover(!this._popOpen);
     if (k === 'map') return this._setMapOpen(true);
