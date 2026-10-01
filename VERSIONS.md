@@ -17,3 +17,4 @@ Every published version has a commit id (below). To go back to one: ask Claude "
 | v2.0 | 56f75f6 | Tap a floor on the 3D building picker (C3/C4, all facades), no page jump when choosing; motorised curtains with wall switches that open on entry; dishwasher + washer/dryer open; live TVs; full kitchen drawers; lobby concierge with multilingual help dialog; Faza III reshaped as a comb |
 | v2.1 | 367e0c3 | Neighbouring Faza III rebuilt as in the developer render: dark comb right beside Faza II (no more pale separate towers); street and landscaping adjusted |
 | v2.2 | 9189850 | Two new luxury apartment designs (Monaco Art-Deco, Kyoto Japandi) for all types; two new building finishes for lobbies/corridors/lifts (Grand Marble, Stone & Oak) with a toggle; plans checked — no spa in the permit |
+| v2.3 | 0f659a8 | Contact email sales@vilnyirivercity.com shown on site and in reservation confirmations |
