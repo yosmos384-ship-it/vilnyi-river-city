@@ -406,7 +406,8 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
     for (const [y0, y1] of [[0, 3.0], [3.3, DECK_H - 0.35]]) { const s = new THREE.BoxGeometry(0.3, y1 - y0, z1 - z0 - 1); s.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); glowGeos.push(s); }
     for (let z = z0 + 12; z < z1 - 8; z += 22) deckPoles.push([(x0 + x1) / 2, z, DECK_H]);
     // cars inside (both levels) and on the roof
-    for (const [y, pr] of [[0, 0.55], [3.3, 0.6], [DECK_H, 0.62]]) for (const xc of [x0 + 2.9, x1 - 2.9]) for (let z = z0 + 6; z < z1 - 5; z += 2.5) if (rnd() < pr) carSpots.push([xc, y, z, rnd() < 0.5 ? 0 : Math.PI]);
+    // (none where the spiral ramp's drum and helix cut into the deck)
+    for (const [y, pr] of [[0, 0.55], [3.3, 0.6], [DECK_H, 0.62]]) for (const xc of [x0 + 2.9, x1 - 2.9]) for (let z = z0 + 6; z < z1 - 5; z += 2.5) if (rnd() < pr) { const yaw = rnd() < 0.5 ? 0 : Math.PI; if (Math.hypot(xc - SPIRAL.x, z - SPIRAL.z) > SPIRAL.r1 + 3.2) carSpots.push([xc, y, z, yaw]); }
 
     // spiral: helical ramp slab + outer parapet ribbon + inner curb, from the ground up to the deck roof, ending towards the deck
     const S = SPIRAL, n = Math.round((low ? 60 : 110) * S.turns), th0 = S.x < x0 ? -Math.PI / 2 : Math.PI / 2, th1 = th0 + S.turns * TAU;   // the helix tops out facing the deck

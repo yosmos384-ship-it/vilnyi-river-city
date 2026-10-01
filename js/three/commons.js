@@ -2185,7 +2185,9 @@ function buildParking(bId) {
   C.geoFloor(rf);
   for (let k = 0; k < 14; k++) { const t = (k + 0.5) / 14, z = rz1 - t * rlen, y = t * rise; B.box('paintYellow', rx0 + 0.5, rx1 - 0.5, y + 0.01, y + 0.02, z - 0.08, z + 0.08); }
   const yAt = z => (rz1 - z) * slope;
-  for (const [a, b2] of [[rx0 - 0.3, rx0], [rx1, rx1 + 0.3]]) { B.box('concreteLight', a, b2, 0, rise + 0.02, rz0, rz1); C.box(a, b2, 0, rise + H, rz0, rz1 - 1.2); }
+  // side-wall colliders: full height in the tunnel, only up to grade where the ramp is open, so a car leaving the ramp
+  // top can swing its nose over the trench edge into the courtyard lane (and back in)
+  for (const [a, b2] of [[rx0 - 0.3, rx0], [rx1, rx1 + 0.3]]) { B.box('concreteLight', a, b2, 0, rise + 0.02, rz0, rz1); C.box(a, b2, 0, rise + 0.05, rz0, RAMP_OPEN); C.box(a, b2, 0, rise + H, RAMP_OPEN, rz1 - 1.2); }
   // sloped tunnel roof from the parking ceiling line up to the opening
   const tl = RAMP_OPEN, tlen = rz1 - tl, tr = new THREE.BoxGeometry(rx1 - rx0 + 0.6, 0.3, Math.hypot(tlen, yAt(tl))); tr.rotateX(Math.atan2(yAt(tl), tlen));
   tr.translate((rx0 + rx1) / 2, H + yAt(tl) / 2 + 0.15, (rz1 + tl) / 2); B.add('ceilingP', tr);
