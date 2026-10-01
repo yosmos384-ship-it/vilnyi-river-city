@@ -26,7 +26,9 @@ const S = {
   unit: null, calcPlan: 'standard', timeMode: 'dusk',
 };
 const statusOf = u => (reserved.has(u.id) ? 'reserved' : u.status);
-const STYLES = ['milano', 'nordic', 'riviera'];
+const STYLES = ['milano', 'nordic', 'riviera', 'monaco', 'kyoto'];
+// designs without their own photoreal renders borrow the nearest rendered design's stills (veil / gallery fallback)
+const STILL_STYLE = { monaco: 'milano', kyoto: 'nordic' };
 
 // ---------------------------------------------------------------- static-ish sections
 const ICON = {
@@ -381,7 +383,7 @@ function renderUnit() {
   const tbl = T.duplex
     ? `<tbody><tr class="lvl"><th colspan="2">${esc(t('unit.main'))}</th></tr>${rowsFor(lv(0))}<tr class="lvl"><th colspan="2">${esc(t('unit.upper'))}</th></tr>${rowsFor(lv(1))}</tbody>`
     : `<tbody>${rowsFor(T.list)}</tbody>`;
-  const sw = { milano: ['#3b2a1f', '#121212', '#b08a4e', '#3a3a3f'], nordic: ['#d9c6a4', '#f3f1ec', '#d8d2c4', '#1c1c1c'], riviera: ['#d8c4a6', '#e9dcc6', '#7c8455', '#b5654a'] };
+  const sw = { milano: ['#3b2a1f', '#121212', '#b08a4e', '#3a3a3f'], nordic: ['#d9c6a4', '#f3f1ec', '#d8d2c4', '#1c1c1c'], riviera: ['#d8c4a6', '#e9dcc6', '#7c8455', '#b5654a'], monaco: ['#121212', '#cfa75e', '#1f4a3a', '#1c2947'], kyoto: ['#e6dccb', '#d4bf9c', '#efe6d4', '#3e322a'] };
   dlgU().innerHTML = `<div class="sheet-card">
     <header class="sh-head">
       <div><p class="eyebrow">${esc(unitLabelL(u))}</p>
@@ -528,20 +530,21 @@ function stillFor(u, start, room) {
   const kind = ['lobby', 'corridor', 'parking'].includes(start) ? start : start === 'balcony' ? 'balcony' : (room && room.kind) || 'living';
   const want = { living: 'living', kitchen: 'kitchen', bedroom: 'bedroom', bath: 'bath', hall: 'living', dressing: 'bedroom', storage: 'living', balcony: 'balcony', loggia: 'balcony', terrace: 'balcony' }[kind] || kind;
   const name = it => (it.src || '').split('/').pop().replace(/\.\w+$/, '');
+  const sid = STILL_STYLE[S.styleId] || S.styleId;
   const score = it => {
     const n = name(it); let s = 0;
     if (!n.includes(want)) return -1;
-    if (it.style && it.style !== S.styleId) return -1;
+    if (it.style && it.style !== sid) return -1;
     if (u && it.unitType === u.type) s += 3;
     if (it.src.startsWith('assets/gallery/')) s += 2;              // path-traced renders of the real plans
-    if (n === `${S.styleId}-${want}` || n === want) s += 1;
+    if (n === `${sid}-${want}` || n === want) s += 1;
     if (/penthouse|duplex|dollhouse/.test(n) && !(u && it.unitType === u.type)) s -= 3;
     return s;
   };
   const best = G.items.map(it => [score(it), it]).filter(x => x[0] >= 0).sort((a, b) => b[0] - a[0])[0];
   if (best) return best[1].url;
-  if (['living', 'kitchen', 'bedroom', 'bath'].includes(want)) return `assets/gallery/${S.styleId}-${want}.jpg`;
-  return { lobby: 'assets/gallery/lobby.jpg', corridor: 'assets/gallery/corridor.jpg', parking: 'assets/gallery/parking.jpg', balcony: 'assets/gallery/view-lake-floor8.jpg' }[want] || `assets/gallery/${S.styleId}-living.jpg`;
+  if (['living', 'kitchen', 'bedroom', 'bath'].includes(want)) return `assets/gallery/${sid}-${want}.jpg`;
+  return { lobby: 'assets/gallery/lobby.jpg', corridor: 'assets/gallery/corridor.jpg', parking: 'assets/gallery/parking.jpg', balcony: 'assets/gallery/view-lake-floor8.jpg' }[want] || `assets/gallery/${sid}-living.jpg`;
 }
 const stillCache = new Map();
 function preloadStill(url) {

@@ -165,6 +165,69 @@ const texBrushed = () => cached('brushed', () => texOf(pixelCanvas(64, 512, (u, 
   const y = (v * 512) | 0, s = hash2(3, y, 91) * 0.55 + hash2((u * 4) | 0, y, 93) * 0.25 + fbm(u, v, 1, 16, 95, 3) * 0.2;
   const b = 236 + (s - 0.5) * 18; c[0] = b; c[1] = b; c[2] = b;
 })));
+// ---- finish textures: 'grand' (Calacatta Oro, ivory silk, navy carpet) and 'stone' (travertine, oak slats, limewash)
+const texCalacatta = () => cached('calacatta', () => texOf(pixelCanvas(1024, 1024, (u, v, c) => {
+  const w = fbm(u, v, 2, 2, 131, 5), w2 = fbm(u, v, 5, 5, 133, 4), cloud = fbm(u, v, 3, 3, 137, 4) - 0.5;
+  const a = 1 - Math.abs(Math.sin(TAU * (0.7 * u + v) + w * 8.5 + w2 * 1.4));
+  const core = sstep(0.965, 1, a), halo = sstep(0.72, 1, a);
+  const a2 = 1 - Math.abs(Math.sin(TAU * (2 * u - 1 * v) + w * 5 + w2 * 3));
+  const thin = sstep(0.985, 1, a2) * (0.25 + w2 * 0.9);
+  let r = 247 + cloud * 6, g = 245 + cloud * 6, b = 240 + cloud * 7;
+  const gh = halo * 0.38; r = mix(r, 214, gh); g = mix(g, 186, gh); b = mix(b, 132, gh);            // golden halo (Oro)
+  const k = clamp(core * 0.8 + thin * 0.55); r = mix(r, 112, k); g = mix(g, 106, k); b = mix(b, 98, k);
+  c[0] = r; c[1] = g; c[2] = b;
+})));
+const texTravertine = (floor = false) => cached(floor ? 'travF' : 'trav', () => {   // vein-cut travertine: horizontal bands + pores, 1.2 m slabs
+  const c = pixelCanvas(512, 512, (u, v, c) => {
+    const band = fbm(u * 0.15, v, 1, 9, floor ? 151 : 141, 4), fine = fbm(u, v, 3, 24, 143, 3) - 0.5;
+    const s = 0.5 + 0.5 * Math.sin(TAU * v * 7 + band * 6);
+    const pore = hash2((u * 160) | 0, (v * 512) | 0, 147) > 0.987 ? 1 : 0;
+    let r = 224 + (s - 0.5) * 18 + fine * 10, g = 207 + (s - 0.5) * 17 + fine * 9, b = 178 + (s - 0.5) * 16 + fine * 8;
+    if (pore) { r -= 46; g -= 44; b -= 40; }
+    c[0] = r; c[1] = g; c[2] = b;
+  });
+  const g = c.getContext('2d'); g.fillStyle = 'rgba(150,128,98,0.85)';
+  for (const p of [0, 256]) { g.fillRect(p, 0, 1.2, 512); g.fillRect(0, p, 512, 1.2); }
+  return texOf(c);
+});
+const texOakSlat = () => cached('oakSlat', () => texOf(pixelCanvas(512, 512, (u, v, c) => {   // 1 m: 20 vertical oak slats with dark gaps
+  const n = 20, x = u * n, i = Math.floor(x), f = x - i;
+  const tone = hash2(i, 3, 161) - 0.5;
+  const grain = 0.5 + 0.5 * Math.sin(TAU * (u * 160 + fbm(u * 4, v, 2, 3, 163 + i, 3) * 3));
+  const fl = fbm(u * 8, v * 2, 4, 2, 167, 3) - 0.5;
+  let r = 200 + tone * 26 + (grain - 0.5) * 16 + fl * 18, g = 162 + tone * 22 + (grain - 0.5) * 13 + fl * 15, b = 116 + tone * 18 + (grain - 0.5) * 10 + fl * 11;
+  const edge = Math.min(f, 1 - f);
+  if (edge < 0.11) { r = 46; g = 36; b = 28; } else if (edge < 0.16) { const k = 0.82; r *= k; g *= k; b *= k; }
+  c[0] = r; c[1] = g; c[2] = b;
+})));
+const texOakFlat = () => cached('oakFlat', () => texOf(pixelCanvas(512, 512, (u, v, c) => {
+  const w = fbm(u, v, 4, 1, 171, 4), r0 = 0.5 + 0.5 * Math.sin(TAU * 38 * u + w * 5);
+  const k = clamp(Math.pow(r0, 1.5) * 0.45 + w * 0.4);
+  c[0] = mix(178, 214, k); c[1] = mix(140, 176, k); c[2] = mix(98, 128, k);
+})));
+const texLimewash = () => cached('limewash', () => texOf(pixelCanvas(512, 512, (u, v, c) => {
+  const n = fbm(u, v, 3, 3, 181, 5) - 0.5, m = fbm(u, v, 9, 9, 183, 3) - 0.5;
+  const b = 222 + n * 34 + m * 9; c[0] = b + 5; c[1] = b - 3; c[2] = b - 16;
+})));
+const texSilk = () => cached('silk', () => texOf(pixelCanvas(256, 256, (u, v, c) => {   // ivory silk wallcovering (horizontal slub)
+  const y = (v * 256) | 0, slub = hash2(0, y, 191) - 0.5, s2 = fbm(u, v, 2, 32, 193, 3) - 0.5, p = hash2((u * 256) | 0, y, 197) - 0.5;
+  const b = 232 + slub * 7 + s2 * 10 + p * 3; c[0] = b + 2; c[1] = b - 3; c[2] = b - 14;
+})));
+const texBasalt = () => cached('basalt', () => texOf(pixelCanvas(512, 512, (u, v, c) => {
+  const n = fbm(u, v, 6, 6, 201, 5) - 0.5, s = hash2((u * 512) | 0, (v * 512) | 0, 203);
+  const b = 44 + n * 12 + (s > 0.97 ? 14 : 0); c[0] = b; c[1] = b - 1; c[2] = b - 2;
+})));
+const texCarpetV = (key, base, border, accent, lattice) => cached('carpet-' + key, () => {
+  const c = pixelCanvas(512, 256, (u, v, c) => {
+    const x = (u * 512) | 0, y = (v * 256) | 0, p = hash2(x, y, 211) - 0.5, n = fbm(u, v, 8, 4, 213, 3) - 0.5;
+    const du = Math.abs(((u * 8 + v * 4) % 1) - 0.5), dv = Math.abs(((u * 8 - v * 4 + 10) % 1) - 0.5);
+    const lat = (Math.min(du, dv) < 0.03) ? lattice : 0;
+    c[0] = base[0] + p * 10 + n * 9 + lat; c[1] = base[1] + p * 10 + n * 9 + lat; c[2] = base[2] + p * 10 + n * 9 + lat;
+  });
+  const g = c.getContext('2d');
+  for (const [y, h, col] of [[10, 6, border], [21, 2, accent], [240, 6, border], [233, 2, accent]]) { g.fillStyle = col; g.fillRect(0, y, 512, h); }
+  return texOf(c);
+});
 function gold(g, x0, y0, x1, y1) {
   const gr = g.createLinearGradient(x0, y0, x1, y1);
   gr.addColorStop(0, '#8a6a33'); gr.addColorStop(0.3, '#e9cf8e'); gr.addColorStop(0.5, '#b8924f'); gr.addColorStop(0.75, '#f3dca0'); gr.addColorStop(1, '#8f6d34');
@@ -327,11 +390,72 @@ function plateAtlas(entries) {   // brass number plates; returns {tex, uv(i)} wi
 }
 
 // ============================================================ materials (shared)
+// Building finishes: every common area (lobbies, corridors, lift cars, parking lift lobbies) is built from the same
+// material keys; a finish swaps the factories behind those keys (and a few signature pieces, see chandelier/wallRun).
+export const COMMON_FINISHES = [
+  { id: 'classic', name: { en: 'Signature', he: 'סיגנצ׳ר' } },      // Calacatta + walnut + brushed bronze (original)
+  { id: 'grand', name: { en: 'Grand Marble', he: 'שיש מלכותי' } },  // Calacatta Oro + polished brass + crystal + dark walnut
+  { id: 'stone', name: { en: 'Stone & Oak', he: 'אבן ואלון' } },    // travertine + oak slats + linear LED + dark bronze
+];
+const FINISH_IDS = COMMON_FINISHES.map(f => f.id);
+/** The building finish that suits an apartment style by default (the walk HUD can override it). */
+export function finishForStyle(styleId) { return styleId === 'monaco' ? 'grand' : styleId === 'kyoto' ? 'stone' : 'classic'; }
+let FIN = 'classic';
+const Sm = (o, uv) => { const m = new THREE.MeshStandardMaterial(o); if (uv) m.userData.uv = uv; return m; };
+const FIN_MATS = {
+  grand: {
+    marble: () => Sm({ map: texCalacatta(), roughness: 0.06, envMapIntensity: 1.15 }, 3.0),
+    marbleFloor: () => Sm({ map: texCalacatta(), roughness: 0.08, envMapIntensity: 1.1 }, 2.4),
+    stone: () => Sm({ map: texCalacatta(), roughness: 0.1, envMapIntensity: 1.0 }, 1.6),
+    nero: () => Sm({ map: texMarble(true), roughness: 0.06, envMapIntensity: 1.2 }, 1.8),
+    walnut: () => Sm({ map: texWalnut(), color: 0x9c8478, roughness: 0.16, envMapIntensity: 1.1 }, 1.0),     // lacquered dark walnut
+    walnutDoor: () => Sm({ map: texWalnut(), color: 0x8a7268, roughness: 0.14, envMapIntensity: 1.2 }),
+    fabric: () => Sm({ map: texSilk(), roughness: 0.62, envMapIntensity: 0.8 }, 0.7),
+    plaster: () => Sm({ color: 0xf3ede2, roughness: 0.9, envMapIntensity: 0.8 }),
+    bronze: () => Sm({ color: 0xd9b46c, metalness: 1, roughness: 0.14, envMapIntensity: 1.2 }),              // polished brass
+    bronzeDark: () => Sm({ color: 0x8a6a3a, metalness: 1, roughness: 0.24 }),
+    brass: () => Sm({ color: 0xe2bd72, metalness: 1, roughness: 0.12 }),
+    carpet: () => Sm({ map: texCarpetV('navy', [24, 31, 52], '#c9a35a', '#8f7240', 8), roughness: 1, envMapIntensity: 0.5 }),
+    velvet: () => Sm({ color: 0x1d3a35, roughness: 0.8, envMapIntensity: 0.6 }),                                // emerald velvet
+    velvetSand: () => Sm({ color: 0xe6dccb, roughness: 0.88, envMapIntensity: 0.6 }),
+    rug: () => Sm({ color: 0x2a3550, roughness: 1, envMapIntensity: 0.5 }),
+    tray: () => Sm({ color: 0xf0e8da, roughness: 0.95, emissive: 0xffd08a, emissiveIntensity: 1.05, emissiveMap: texGlow() }),
+    bronzeCar: () => Sm({ color: 0xd2ae70, metalness: 1, roughness: 0.1, envMapIntensity: 1.5, emissive: 0x5a3e1c, emissiveIntensity: 0.5 }),
+    carFrame: () => Sm({ color: 0x2a1d16, metalness: 0.3, roughness: 0.2, envMapIntensity: 1.2, emissive: 0x160d07, emissiveIntensity: 0.6 }),
+    moulding: () => Sm({ color: 0xf6f0e4, roughness: 0.35, envMapIntensity: 0.9 }),
+  },
+  stone: {
+    marble: () => Sm({ map: texTravertine(), roughness: 0.42, envMapIntensity: 0.85 }, 2.4),
+    marbleFloor: () => Sm({ map: texTravertine(true), roughness: 0.3, envMapIntensity: 0.8 }, 2.4),
+    stone: () => Sm({ map: texTravertine(true), color: 0xe9e4dc, roughness: 0.34, envMapIntensity: 0.8 }, 2.4),
+    nero: () => Sm({ map: texBasalt(), roughness: 0.4, envMapIntensity: 0.8 }, 1.6),
+    walnut: () => Sm({ map: texOakSlat(), roughness: 0.6, envMapIntensity: 0.7 }, 1.0),                         // oak slat cladding
+    walnutDoor: () => Sm({ map: texOakFlat(), roughness: 0.5, envMapIntensity: 0.8 }),
+    fabric: () => Sm({ map: texLimewash(), roughness: 0.95, envMapIntensity: 0.7 }, 1.6),
+    plaster: () => Sm({ color: 0xefeae2, roughness: 0.95, envMapIntensity: 0.8 }),
+    bronze: () => Sm({ color: 0x5c4634, metalness: 1, roughness: 0.38, map: texBrushed() }, 0.9),                 // dark bronze satin
+    bronzeDark: () => Sm({ color: 0x2c231c, metalness: 0.85, roughness: 0.45 }),
+    brass: () => Sm({ color: 0x7a5d42, metalness: 1, roughness: 0.32 }),
+    carpet: () => Sm({ map: texCarpetV('oat', [168, 156, 136], '#3a3430', '#6c625a', -6), roughness: 1, envMapIntensity: 0.5 }),
+    velvet: () => Sm({ color: 0x6d6f52, roughness: 0.95, envMapIntensity: 0.6 }),                                // olive bouclé
+    velvetSand: () => Sm({ color: 0xe8e0d0, roughness: 0.97, envMapIntensity: 0.6 }),
+    rug: () => Sm({ color: 0xb7aa94, roughness: 1, envMapIntensity: 0.5 }),
+    leather: () => Sm({ color: 0x8a5a36, roughness: 0.5, envMapIntensity: 0.8 }),
+    tray: () => Sm({ color: 0xece6dc, roughness: 0.95, emissive: 0xffe2bc, emissiveIntensity: 0.9, emissiveMap: texGlow() }),
+    bronzeCar: () => Sm({ map: texOakSlat(), roughness: 0.55, envMapIntensity: 1.0, emissive: 0x3a2814, emissiveIntensity: 0.35 }, 1.0),
+    carFrame: () => Sm({ color: 0x2c231c, metalness: 0.8, roughness: 0.4, envMapIntensity: 1.1, emissive: 0x140e09, emissiveIntensity: 0.6 }),
+    moulding: () => Sm({ color: 0x2c231c, metalness: 0.85, roughness: 0.45 }),
+  },
+};
 const MAT = {};
 function M(key) {
-  if (MAT[key]) return MAT[key];
-  const S = (o, uv) => { const m = new THREE.MeshStandardMaterial(o); if (uv) m.userData.uv = uv; return m; };
+  const ov = FIN_MATS[FIN] && FIN_MATS[FIN][key], mkey = ov ? FIN + ':' + key : key;
+  if (MAT[mkey]) return MAT[mkey];
+  if (ov) { const m = ov(); m.name = 'vrc-' + key; MAT[mkey] = m; return m; }
+  const S = Sm;
   const mk = {
+    moulding: () => S({ color: 0xece6dc, roughness: 0.6 }),
+    crystal: () => S({ color: 0xffffff, metalness: 0.1, roughness: 0.02, envMapIntensity: 2.6, emissive: 0xfff0d6, emissiveIntensity: 0.55, transparent: true, opacity: 0.88 }),
     stone: () => S({ map: texStone(), roughness: 0.2, metalness: 0, envMapIntensity: 0.9 }, 2.4),
     marble: () => S({ map: texMarble(), roughness: 0.1, envMapIntensity: 1.0 }, 2.8),
     marbleFloor: () => S({ map: texMarble(), roughness: 0.14, envMapIntensity: 0.9 }, 2.4),
@@ -612,7 +736,21 @@ function wallRun(ctx, s) {
     const y0 = op ? op.h : (skirt ? 0.1 : 0);
     if (y0 < H) box(zone.mat, p0, p1, y0, H - 0.005, FACE, FACE + SKIN);
     if (!op && skirt) box('bronzeDark', p0, p1, 0, 0.1, FACE, FACE + 0.026);
-    if (!op && zone.mat === 'fabric') box('bronze', p0, p1, 0.93, 0.945, FACE, FACE + SKIN + 0.004);
+    if (!op && zone.mat === 'fabric') {
+      if (FIN === 'grand') {   // boiserie: chair rail + picture-frame mouldings with a hairline of brass
+        const D0 = FACE + SKIN, D1 = D0 + 0.012, t = 0.028;
+        box('moulding', p0, p1, 0.9, 0.95, D0, D0 + 0.02); box('brass', p0, p1, 0.947, 0.952, D0, D0 + 0.021);
+        const n = Math.max(1, Math.round((p1 - p0) / 1.25)), pw = (p1 - p0) / n;
+        if (pw > 0.42) for (let k = 0; k < n; k++) {
+          const a0 = p0 + k * pw + 0.14, a1 = p0 + (k + 1) * pw - 0.14;
+          for (const [y0, y1] of [[0.26, 0.74], [1.12, H - 0.32]]) {
+            if (y1 - y0 < 0.3) continue;
+            box('moulding', a0, a1, y0, y0 + t, D0, D1); box('moulding', a0, a1, y1 - t, y1, D0, D1);
+            box('moulding', a0, a0 + t, y0, y1, D0, D1); box('moulding', a1 - t, a1, y0, y1, D0, D1);
+          }
+        }
+      } else if (FIN !== 'stone') box('bronze', p0, p1, 0.93, 0.945, FACE, FACE + SKIN + 0.004);
+    }
   }
   // opening trims
   for (const o of ops) {
@@ -1210,7 +1348,52 @@ function roundTable(B, x, z, r = 0.42, h = 0.42) {
   const top = new THREE.CylinderGeometry(r, r, 0.04, 40); top.translate(x, h, z); B.add('nero', top);
   const base = new THREE.CylinderGeometry(0.05, r * 0.6, h - 0.02, 24); base.translate(x, (h - 0.02) / 2, z); B.add('bronze', base);
 }
-function chandelier(ctx, x, y, z, R = 0.9) {   // three bronze rings with glowing glass drops (instanced)
+function chandelier(ctx, x, y, z, R = 0.9, span = 3) {
+  if (FIN === 'grand') return crystalChandelier(ctx, x, y, z, R * 1.15);
+  if (FIN === 'stone') return linearPendant(ctx, x, y, z, span);
+  return ringChandelier(ctx, x, y, z, R);
+}
+// Grand Marble: tiered crystal chandelier — brass hoops hung with faceted prisms, candle bulbs, a cascading centre.
+function crystalChandelier(ctx, x, y, z, R) {
+  const b = new Batch(), drops = [], prisms = [], candles = [];
+  const tiers = [[R, y + 0.12], [R * 0.78, y - 0.12], [R * 0.52, y - 0.34], [R * 0.26, y - 0.52]];
+  tiers.forEach(([r, yy], i) => {
+    const t = new THREE.TorusGeometry(r, 0.014, 8, 80); t.rotateX(Math.PI / 2); t.translate(x, yy, z); b.add('brass', t);
+    const n = Math.round(r * 46);
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU + i * 0.21, cx = x + Math.cos(a) * r, cz = z + Math.sin(a) * r, L = 2 + (k % 3);
+      for (let j = 0; j < L; j++) drops.push(mat4(cx, yy - 0.05 - j * 0.055, cz, a, 1, 1, 1));
+      prisms.push(mat4(cx, yy - 0.06 - L * 0.055, cz, a, 1, 1, 1));
+    }
+    if (i < 2) { const nc = i ? 8 : 12; for (let k = 0; k < nc; k++) { const a = (k / nc) * TAU + i * 0.26; candles.push([x + Math.cos(a) * r, yy, z + Math.sin(a) * r]); } }
+    for (let k = 0; k < 4; k++) { const a = (k / 4) * TAU + 0.4; b.add('brass', boxGeo(-0.004, 0.004, yy, y + 0.6, -0.004, 0.004).translate(x + Math.cos(a) * r * 0.98, 0, z + Math.sin(a) * r * 0.98)); }
+  });
+  for (let j = 0; j < 14; j++) drops.push(mat4(x, y + 0.08 - j * 0.06, z, j * 0.7, 1.3, 1, 1.3));   // centre cascade
+  for (const [cx, cy, cz] of candles) {
+    b.add('moulding', new THREE.CylinderGeometry(0.014, 0.016, 0.1, 10).translate(cx, cy + 0.05, cz));
+    b.add('bulb', new THREE.SphereGeometry(0.02, 10, 8).scale(1, 1.6, 1).translate(cx, cy + 0.125, cz));
+  }
+  b.add('brass', new THREE.CylinderGeometry(0.02, 0.02, ctx.H - y, 10).translate(x, (ctx.H + y) / 2, z));
+  b.add('brass', new THREE.CylinderGeometry(0.16, 0.12, 0.06, 32).translate(x, ctx.H - 0.03, z));
+  b.flush(ctx.root);
+  instanced(ctx.root, ctx.geo('crystalDrop', () => new THREE.OctahedronGeometry(0.019, 0).scale(1, 1.5, 1)), 'crystal', drops);
+  instanced(ctx.root, ctx.geo('crystalPrism', () => new THREE.ConeGeometry(0.022, 0.09, 6).rotateX(Math.PI)), 'crystal', prisms);
+  instanced(ctx.root, ctx.geo('dropGlow', () => new THREE.SphereGeometry(0.008, 6, 4)), 'bulb', drops.filter((_, i) => i % 4 === 0));
+}
+// Stone & Oak: three suspended linear LED bars in dark bronze (light line underneath, soft uplight on top).
+function linearPendant(ctx, x, y, z, span) {
+  const b = new Batch(), L = Math.max(1.4, Math.min(2.6, span - 1.2));
+  for (const dz of [-0.5, 0, 0.5]) {
+    const yy = y + 0.1 - Math.abs(dz) * 0.0, zz = z + dz;
+    b.add('bronze', rbox(x - L / 2, x + L / 2, yy, yy + 0.06, zz - 0.035, zz + 0.035, 0.012));
+    b.box('ledCar', x - L / 2 + 0.03, x + L / 2 - 0.03, yy - 0.003, yy, zz - 0.022, zz + 0.022);
+    b.box('ledDim', x - L / 2 + 0.05, x + L / 2 - 0.05, yy + 0.06, yy + 0.062, zz - 0.012, zz + 0.012);
+    for (const s of [-1, 1]) b.box('bronzeDark', x + s * (L / 2 - 0.15) - 0.002, x + s * (L / 2 - 0.15) + 0.002, yy + 0.06, ctx.H, zz - 0.002, zz + 0.002);
+  }
+  for (const dz of [-0.5, 0, 0.5]) b.add('bronze', boxGeo(x - L / 2 + 0.1, x + L / 2 - 0.1, ctx.H - 0.015, ctx.H, z + dz - 0.03, z + dz + 0.03));
+  b.flush(ctx.root);
+}
+function ringChandelier(ctx, x, y, z, R = 0.9) {   // three bronze rings with glowing glass drops (instanced)
   const b = new Batch();
   const mats = [];
   [[R, y], [R * 0.72, y - 0.22], [R * 0.44, y - 0.42]].forEach(([r, yy], i) => {
@@ -1726,7 +1909,7 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   B.box('plaster', cx0 - 0.03, cx1 + 0.03, H, H + 0.28, cz0 - 0.03, cz0); B.box('plaster', cx0 - 0.03, cx1 + 0.03, H, H + 0.28, cz1, cz1 + 0.03);
   B.box('plaster', cx0 - 0.03, cx0, H, H + 0.28, cz0, cz1); B.box('plaster', cx1, cx1 + 0.03, H, H + 0.28, cz0, cz1);
   B.box('led', cx0, cx1, H + 0.005, H + 0.012, cz0 + 0.002, cz0 + 0.02); B.box('led', cx0, cx1, H + 0.005, H + 0.012, cz1 - 0.02, cz1 - 0.002);
-  chandelier({ ...ctx, H: H + 0.28 }, (x0 + x1) / 2, H - 0.22, (zF + zL) / 2, 0.62);
+  chandelier({ ...ctx, H: H + 0.28 }, (x0 + x1) / 2, H - 0.22, (zF + zL) / 2, 0.62, x1 - x0);
   floorPools(ctx, [[(x0 + x1) / 2, (zF + zL) / 2, 2.2]], 1.3);
   {
     const mx = (x0 + x1) / 2, mz = (zF + zL) / 2;
@@ -2057,16 +2240,19 @@ function parkingLobby(w, ctx, L, own) {   // glass lift lobby in front of a core
 }
 
 // ============================================================ public API
-export function buildFloorCommons(bId, floor, styleId = 'lobby') {
+// styleId: a building finish id from COMMON_FINISHES ('classic' | 'grand' | 'stone'); anything else → 'classic'.
+export function buildFloorCommons(bId, floor, styleId = 'classic') {
   if (!BUILDINGS[bId]) bId = 'C3';
   floor = Math.max(-1, Math.min(TOP_FLOOR, floor | 0));
+  const finishId = FINISH_IDS.includes(styleId) ? styleId : 'classic';
   let res;
+  FIN = finishId;
   try {
     if (floor === -1) res = buildParking(bId);
     else if (floor === 0) res = buildGround(bId);
     else res = buildTypical(bId, floor);
-  } finally { MZ = null; }
-  res.styleId = styleId;
+  } finally { MZ = null; FIN = 'classic'; }
+  res.styleId = finishId; res.finish = finishId;
   return res;
 }
 export { CAR_DEPTH };

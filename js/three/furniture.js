@@ -194,6 +194,8 @@ const BOOKCOL = {
   milano: ['#2b2b2e', '#6b3b24', '#b48c55', '#e3dccf', '#3f4a3c', '#1d1d1f', '#8a2e2a', '#d4c6ae'],
   nordic: ['#e9e5dc', '#1f1f1f', '#8fa3a8', '#c9b89a', '#b86b4b', '#d6d0c4', '#5f6f5c', '#f2efe9'],
   riviera: ['#efe4d0', '#b5623b', '#6b6f48', '#2f4f5f', '#d9b98a', '#c98d5f', '#f5efe4', '#8a6f4e'],
+  monaco: ['#1c2947', '#17463a', '#c49a4c', '#ece3d2', '#14171f', '#6b1f2a', '#d9cbb0', '#2b2b2e'],
+  kyoto: ['#e9e1d3', '#2f2b28', '#8b8f74', '#b07b5a', '#d6cbb8', '#4b4540', '#f2ede4', '#a69a88'],
 };
 function bookGeo(w, h, d, hex) {
   return cg(`bk${r3(w)}|${r3(h)}|${r3(d)}|${hex}`, () => {
@@ -209,7 +211,7 @@ function bookGeo(w, h, d, hex) {
 }
 // Row of upright books along +x starting at x0; returns end x. Spines face +z.
 function bookRow(p, m, x0, len, y, z, seed = 1, maxH = 0.3) {
-  const r = rngF(seed), pal = BOOKCOL[m.styleId];
+  const r = rngF(seed), pal = (BOOKCOL[m.styleId] || BOOKCOL[m.fam]);
   let x = x0;
   while (x < x0 + len - 0.03) {
     const w = 0.02 + r() * 0.035, h = maxH * (0.7 + r() * 0.3), d = 0.14 + r() * 0.08;
@@ -222,7 +224,7 @@ function bookRow(p, m, x0, len, y, z, seed = 1, maxH = 0.3) {
 }
 // Stack of lying books
 function bookStack(p, m, n, x, y, z, seed = 3, ry = 0) {
-  const r = rngF(seed), pal = BOOKCOL[m.styleId]; let yy = y;
+  const r = rngF(seed), pal = (BOOKCOL[m.styleId] || BOOKCOL[m.fam]); let yy = y;
   for (let i = 0; i < n; i++) {
     const w = 0.2 + r() * 0.1, d = 0.26 + r() * 0.08, h = 0.02 + r() * 0.025;
     const b = add(p, bookGeo(r3(w), r3(h), r3(d), pal[(r() * pal.length) | 0]), m.books, x + (r() - 0.5) * 0.02, yy + h / 2, z, [0, ry + (r() - 0.5) * 0.3, 0]);
@@ -241,12 +243,13 @@ const backC = (p, w, h, d, mat, x, y, z, rot) => soft(p, w, h, d, mat, x, y, z, 
 function vase(p, m, x, y, z, h = 0.3, mat, stems = true) {
   const s = h / 0.3;
   lathe(p, [[0, 0], [0.05 * s, 0], [0.075 * s, 0.08 * s], [0.07 * s, 0.2 * s], [0.035 * s, 0.28 * s], [0.04 * s, 0.3 * s], [0.032 * s, 0.3 * s], [0.028 * s, 0.26 * s]], mat || m.ceramic, x, y, z, 20);
+  if (stems && m.styleId === 'kyoto') { ikebana(p, m, x, y, z, h, (x * 100 + z * 10) | 0); return; }
   if (stems) {
     const r = rngF((x * 100 + z * 10) | 0 + 7);
     for (let i = 0; i < 5; i++) {
       const a = r() * 6.28, tl = 0.12 + r() * 0.25, lx = Math.cos(a) * 0.04, lz = Math.sin(a) * 0.04;
       rod(p, 0.003, tl, m.stem, x + lx * 0.5, y + h + tl / 2 - 0.02, z + lz * 0.5, [lz * 3, 0, -lx * 3], 4);
-      if (m.styleId === 'nordic') leaf(p, m, 'lance', 0.09, 0.05, x + lx, y + h + tl - 0.03, z + lz, 0.3, a, 0.4, m.leaf2);
+      if (m.fam === 'nordic') leaf(p, m, 'lance', 0.09, 0.05, x + lx, y + h + tl - 0.03, z + lz, 0.3, a, 0.4, m.leaf2);
       else sph(p, 0.028, m.flower, x + lx * 1.4, y + h + tl, z + lz * 1.4, [1, 0.7, 1], 8);
     }
   }
@@ -288,9 +291,9 @@ function cutlery(p, m, x, y, z, side) {
 }
 function placeSetting(p, m, x, y, z, ry = 0) {
   const g = grp(p, x, y, z, ry);
-  if (m.styleId !== 'nordic') plate(g, m, 0, 0, 0, 0.155, m.styleId === 'milano' ? m.ceramic2 : m.ceramic);
-  plate(g, m, 0, m.styleId !== 'nordic' ? 0.012 : 0, 0, 0.13, m.porcelain);
-  plate(g, m, 0, (m.styleId !== 'nordic' ? 0.024 : 0.012), 0, 0.1, m.styleId === 'riviera' ? m.ceramic2 : m.porcelain);
+  if (m.fam !== 'nordic') plate(g, m, 0, 0, 0, 0.155, m.fam === 'milano' ? m.ceramic2 : m.ceramic);
+  plate(g, m, 0, m.fam !== 'nordic' ? 0.012 : 0, 0, 0.13, m.porcelain);
+  plate(g, m, 0, (m.fam !== 'nordic' ? 0.024 : 0.012), 0, 0.1, m.fam === 'riviera' ? m.ceramic2 : m.porcelain);
   // napkin folded, fork left, knife + spoon right
   box(g, 0.1, 0.006, 0.16, m.napkin, -0.225, 0, 0.01, [0, 0.05, 0]);
   box(g, 0.012, 0.004, 0.13, m.cutlery, -0.225, 0.006, 0.03);
@@ -362,6 +365,8 @@ const WEAR = {
   milano: { shirts: ['#f1eee8', '#c9d6e3', '#e8e0d2', '#ffffff', '#9fb0c4'], dark: ['#2e2e33', '#1f2a3d', '#161616', '#6b6a6a', '#3b3a3d'], warm: ['#a8794e', '#7a4526', '#5e1f27', '#8a7d6d', '#c4a27a'], bags: ['#7a4526', '#161616', '#e3d8c6', '#5e1f27'], boxes: ['#e7782f', '#161616', '#efe9df', '#c49a5c'] },
   nordic: { shirts: ['#f3f1ec', '#dfe6ec', '#ece5d6', '#ffffff', '#a7b8c6'], dark: ['#1f1f1f', '#56708c', '#4a4a4a', '#6f7c86', '#2d3640'], warm: ['#d9cfbf', '#c4a27a', '#9aa792', '#b9b8b3', '#e2d6c2'], bags: ['#c4a27a', '#1f1f1f', '#e8e1d4', '#8a6f55'], boxes: ['#f2efe9', '#1f1f1f', '#d6d0c4', '#b9a58a'] },
   riviera: { shirts: ['#f6f1e7', '#ece2cf', '#9fbfd0', '#ffffff', '#e8d3bf'], dark: ['#2f4f5f', '#6b6f48', '#3d3a33', '#5a4a3a', '#1f2d36'], warm: ['#b5623b', '#d9c3a0', '#a0522d', '#d9a58f', '#c98d5f'], bags: ['#b98a5a', '#efe4d0', '#a0522d', '#2f4f5f'], boxes: ['#f5efe4', '#b5623b', '#d9c3a0', '#6b6f48'] },
+  monaco: { shirts: ['#f4efe6', '#d7deea', '#efe4d2', '#ffffff', '#b8c4d8'], dark: ['#1c2947', '#14171f', '#2b2b2e', '#17463a', '#3b3a3d'], warm: ['#6b1f2a', '#c49a4c', '#17463a', '#8a7d6d', '#e0c9a6'], bags: ['#6b1f2a', '#14171f', '#e8dcc6', '#c49a4c'], boxes: ['#14171f', '#c49a4c', '#f2ece0', '#1c2947'] },
+  kyoto: { shirts: ['#f4f0e8', '#e3e0d6', '#ebe3d4', '#ffffff', '#c9cdc2'], dark: ['#2f2b28', '#4b4540', '#5b6153', '#3e3a36', '#6b6358'], warm: ['#b07b5a', '#d6cbb8', '#8b8f74', '#a69a88', '#e2d7c4'], bags: ['#8a6a4e', '#2f2b28', '#e6ddcd', '#b07b5a'], boxes: ['#f2ede4', '#2f2b28', '#d6cbb8', '#a69a88'] },
 };
 // Garment hanging from a hanger: thin along x, width along z, shoulder line at y = 0, hem at -len.
 function garmentGeo(kind, len, wid, th) {
@@ -397,7 +402,7 @@ function hanger(p, m, x, y, z) {
 }
 // A rail of hanging clothes along x (x0..x1), rail at height y, rail centre z. mix: kinds to cycle.
 function hangRail(p, m, x0, x1, y, z, seed, mix = ['shirt', 'shirt', 'jacket', 'dress'], maxLen = 1.3) {
-  const r = rngM(seed), W = WEAR[m.styleId];
+  const r = rngM(seed), W = (WEAR[m.styleId] || WEAR[m.fam]);
   const L = { shirt: 0.72, jacket: 0.78, dress: 1.12, coat: 1.05, trousers: 0.52 };
   const T = { shirt: 0.05, jacket: 0.085, dress: 0.055, coat: 0.1, trousers: 0.04 };
   let x = x0 + 0.04, i = 0;
@@ -415,7 +420,7 @@ function hangRail(p, m, x0, x1, y, z, seed, mix = ['shirt', 'shirt', 'jacket', '
 }
 // folded knitwear / T-shirts: soft slabs with rounded folds
 function foldStack(p, m, x, y, z, n, seed, w = 0.3, d = 0.27, pal) {
-  const r = rngM(seed), W = WEAR[m.styleId], cols = pal || [...W.warm, ...W.shirts];
+  const r = rngM(seed), W = (WEAR[m.styleId] || WEAR[m.fam]), cols = pal || [...W.warm, ...W.shirts];
   let yy = y;
   for (let i = 0; i < n; i++) {
     const h = 0.035 + r() * 0.02;
@@ -466,7 +471,7 @@ function plateStack(p, m, x, y, z, n, r, mat) { for (let i = 0; i < n; i++) plat
 function jar(p, m, x, y, z, fill, h = 0.16, r = 0.045, lidM) {
   lathe(p, [[0, 0], [r, 0], [r, h * 0.85], [r * 0.82, h * 0.92], [r * 0.82, h], [0, h]], m.glass, x, y, z, 16);
   tint(cyl(p, r - 0.004, r - 0.004, h * (0.45 + ((x * 31 + z * 17) % 1 + 1) % 1 * 0.35), m.food, x, y + 0.004, z, 14), fill);
-  cyl(p, r * 0.86, r * 0.86, 0.022, lidM || (m.styleId === 'nordic' ? m.woodLight : m.brass), x, y + h, z, 16);
+  cyl(p, r * 0.86, r * 0.86, 0.022, lidM || (m.fam === 'nordic' ? m.woodLight : m.brass), x, y + h, z, 16);
 }
 function pack(p, m, x, y, z, w, h, d, hex, band = '#f4efe6', ry = 0) {
   const g = grp(p, x, y, z, ry);
@@ -505,7 +510,7 @@ function pan(p, m, x, y, z, r = 0.13, ry = 0) {
 }
 // Cutlery tray (along z = drawer depth), organised: forks, knives, spoons, teaspoons, utensils
 function cutleryTray(p, m, x, y, z, w, d) {
-  const g = grp(p, x, y, z), tm = m.styleId === 'milano' ? m.woodDark : m.woodLight, c = m.cutlery;
+  const g = grp(p, x, y, z), tm = m.fam === 'milano' ? m.woodDark : m.woodLight, c = m.cutlery;
   box(g, w, 0.008, d, tm, 0, 0, 0);
   for (const s of [-1, 1]) { box(g, 0.008, 0.045, d, tm, s * (w / 2 - 0.004), 0, 0); box(g, w, 0.045, 0.008, tm, 0, 0, s * (d / 2 - 0.004)); }
   const cols = Math.max(4, Math.floor(w / 0.085)), cw = (w - 0.02) / cols;
@@ -575,8 +580,29 @@ function shelfFill(p, m, x0, x1, y, zc, kind, seed) {
 
 // ================================================================== LIVING
 function sofa(m, o = {}) {
-  const L = o.len || 2.3, D = o.depth || 0.98, s = m.styleId, g = new THREE.Group();
+  const L = o.len || 2.3, D = o.depth || 0.98, s = m.fam, g = new THREE.Group();
   const F = m.fabric;
+  if (m.styleId === 'kyoto') {
+    // low Japandi platform sofa: a solid oak plinth that runs past the seat as side tables, low linen cushions
+    const P = 0.18, ext = 0.0;
+    box(g, L - 0.06, 0.04, D - 0.1, m.woodDark, 0, 0, -0.01);
+    box(g, L, P - 0.04, D, m.woodLight, 0, 0.04, 0);
+    box(g, L, 0.03, D, m.woodLight, 0, P - 0.03 + 0.0, 0);
+    const arm = 0.18; void ext;
+    for (const sx of [-1, 1]) rbox(g, arm, 0.26, D - 0.04, 0.05, F, sx * (L / 2 - arm / 2 - 0.02), P, 0);
+    rbox(g, L - 2 * arm - 0.04, 0.3, 0.2, 0.06, F, 0, P, -D / 2 + 0.12);
+    const seats = L > 2.1 ? 3 : 2, sw = (L - 2 * arm - 0.04) / seats;
+    for (let i = 0; i < seats; i++) {
+      seatC(g, sw - 0.008, 0.15, D - 0.26, F, -L / 2 + arm + 0.02 + sw * (i + 0.5), P, 0.09);
+      backC(g, sw - 0.014, 0.4, 0.18, F, -L / 2 + arm + 0.02 + sw * (i + 0.5), P + 0.12, -D / 2 + 0.28, [-0.22, 0, 0]);
+    }
+    cushion(g, 0.44, 0.44, 0.12, m.cushionA, -L / 2 + arm + 0.32, P + 0.2, -D / 2 + 0.42, 0.22);
+    cushion(g, 0.4, 0.4, 0.12, m.cushionC, L / 2 - arm - 0.34, P + 0.2, -D / 2 + 0.42, -0.18);
+    cushion(g, 0.5, 0.3, 0.11, m.cushionB, L / 2 - arm - 0.72, P + 0.18, -D / 2 + 0.44, -0.05);
+    add(g, clothGeo(arm + 0.02, -0.3, 0.2, P + 0.26, 0.22, 0.05, 3, 0.012), m.throw, L / 2 - arm / 2 - 0.02, 0, 0.06);
+    g.userData.solidBox = { w: L, d: D, h: 0.62 };
+    return g;
+  }
   if (s === 'milano') {
     box(g, L - 0.12, 0.07, D - 0.12, m.lacquer, 0, 0, 0);
     box(g, L - 0.1, 0.012, D - 0.1, m.brass, 0, 0.07, 0);
@@ -626,7 +652,32 @@ function sofa(m, o = {}) {
 }
 
 function armchair(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group();
+  const s = m.fam, g = new THREE.Group();
+  if (m.styleId === 'monaco') {
+    // Art-Deco tub chair: navy velvet barrel back wrapping a deep seat, on a stepped brass plinth
+    cyl(g, 0.33, 0.35, 0.04, m.brass, 0, 0, 0, 40); cyl(g, 0.31, 0.31, 0.06, m.lacquer, 0, 0.04, 0, 40);
+    soft(g, 0.72, 0.24, 0.68, m.fabricAccent, 0, 0.1, 0.02, null, { e: [0.55, 0.3, 0.55], seg: 26 });
+    const shellG = cg('decoTub', () => new THREE.TorusGeometry(0.33, 0.075, 12, 36, Math.PI * 1.25));
+    add(g, shellG, m.fabricAccent, 0, 0.55, -0.02, [HALF, 0, 0.875 * Math.PI], [1, 1, 3.2]);   // arc centred behind the seat
+    soft(g, 0.58, 0.15, 0.56, m.fabricAccent, 0, 0.32, 0.04, null, { e: [0.5, 0.45, 0.5], sag: 0.01 });
+    for (let i = 0; i < 7; i++) { const a = -Math.PI * 0.62 + i * Math.PI * 0.207; soft(g, 0.1, 0.42, 0.1, m.fabricAccent, Math.sin(a) * 0.3, 0.36, -Math.cos(a) * 0.3 + 0.02, [0, -a, 0], { e: [0.6, 0.18, 0.6], seg: 14 }); }
+    cushion(g, 0.38, 0.3, 0.12, m.cushionA, 0, 0.5, -0.1, 0, -0.2);
+    g.userData.solidBox = { w: 0.8, d: 0.8, h: 0.8 };
+    return g;
+  }
+  if (m.styleId === 'kyoto') {
+    // low lounge chair: solid oak frame with wide flat arms, deep linen seat and back cushions
+    const W = 0.78, D = 0.82, oak = m.woodLight;
+    for (const sx of [-1, 1]) { box(g, 0.06, 0.5, D, oak, sx * (W / 2 - 0.03), 0, 0); box(g, 0.12, 0.03, D + 0.02, oak, sx * (W / 2 - 0.05), 0.5, 0); }
+    box(g, W - 0.12, 0.04, D - 0.1, oak, 0, 0.16, 0.02);
+    box(g, W - 0.12, 0.45, 0.04, oak, 0, 0.2, -D / 2 + 0.06, [-0.18, 0, 0]);
+    seatC(g, W - 0.13, 0.14, D - 0.16, m.fabric, 0, 0.2, 0.04);
+    backC(g, W - 0.14, 0.42, 0.14, m.fabric, 0, 0.32, -D / 2 + 0.16, [-0.2, 0, 0]);
+    cushion(g, 0.4, 0.3, 0.11, m.cushionB, 0.05, 0.42, -0.18, 0.1, -0.3);
+    add(g, clothGeo(0.13, -0.3, 0.3, 0.53, 0.25, 0.03, 4, 0.006), m.throw, W / 2 - 0.05, 0, 0.0);
+    g.userData.solidBox = { w: 0.8, d: 0.84, h: 0.6 };
+    return g;
+  }
   if (s === 'milano') {
     // cognac leather lounge chair, brass sled base
     for (const sx of [-1, 1]) { box(g, 0.02, 0.02, 0.7, m.brass, sx * 0.33, 0, 0); rod(g, 0.01, 0.2, m.brass, sx * 0.33, 0.1, -0.3, [0, 0, 0]); rod(g, 0.01, 0.2, m.brass, sx * 0.33, 0.1, 0.3, [0, 0, 0]); }
@@ -657,8 +708,22 @@ function armchair(m, o = {}) {
 }
 
 function coffeeTable(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group();
+  const s = m.fam, g = new THREE.Group();
   let top;
+  if (m.styleId === 'kyoto') {
+    // low travertine plinth table (a solid honed block with a shadow gap) — bonsai, tea set, books
+    box(g, 1.0, 0.04, 0.6, m.woodDark, 0, 0, 0);
+    rbox(g, 1.12, 0.26, 0.7, 0.01, m.stone, 0, 0.04, 0);
+    top = 0.3;
+    bookStack(g, m, 2, -0.3, top, 0.1, 5, 0.25);
+    bonsai(g, m, 0.22, top, -0.06, 0.34);
+    // tea: cast-iron pot + two cups on an oak board
+    box(g, 0.3, 0.02, 0.16, m.woodLight, -0.22, top, -0.16);
+    lathe(g, [[0, 0], [0.05, 0], [0.065, 0.04], [0.06, 0.08], [0.03, 0.095], [0, 0.1]], m.blackMetal, -0.27, top + 0.02, -0.16, 18);
+    for (const dx of [-0.12, -0.07]) lathe(g, [[0, 0], [0.022, 0], [0.028, 0.045], [0.025, 0.045], [0.02, 0.006], [0, 0.006]], m.ceramic, dx + 0.0, top + 0.02, -0.13 - (dx + 0.12) * 0.6, 14);
+    g.userData.solidBox = { w: 1.12, d: 0.7, h: 0.32 };
+    return g;
+  }
   if (s === 'milano') {
     cyl(g, 0.22, 0.26, 0.3, m.brass, 0, 0, 0, 28);
     const t = cyl(g, 0.5, 0.5, 0.04, m.marble, 0, 0.3, 0, 40); t.scale.set(1.35, 1, 0.85); top = 0.34;
@@ -681,7 +746,7 @@ function coffeeTable(m, o = {}) {
 }
 
 function sideTable(m, o = {}) {
-  const g = new THREE.Group(), s = m.styleId;
+  const g = new THREE.Group(), s = m.fam;
   if (s === 'milano') { cyl(g, 0.2, 0.2, 0.02, m.marble, 0, 0.5, 0, 28); rod(g, 0.02, 0.5, m.brass, 0, 0.25, 0); cyl(g, 0.15, 0.15, 0.015, m.brass, 0, 0, 0, 24); }
   else if (s === 'nordic') { cyl(g, 0.21, 0.21, 0.025, m.woodLight, 0, 0.5, 0, 28); for (let i = 0; i < 3; i++) { const a = i * 2.09; rod(g, 0.012, 0.5, m.blackMetal, Math.cos(a) * 0.15, 0.25, Math.sin(a) * 0.15); } }
   else { cyl(g, 0.2, 0.22, 0.5, m.rattan, 0, 0, 0, 24); cyl(g, 0.21, 0.21, 0.02, m.woodDark, 0, 0.5, 0, 24); }
@@ -691,7 +756,13 @@ function sideTable(m, o = {}) {
 }
 
 function tableLamp(p, m, x, y, z, h = 0.5) {
-  const s = m.styleId, g = grp(p, x, y, z);
+  const s = m.fam, g = grp(p, x, y, z);
+  if (m.styleId === 'kyoto') {          // small washi globe on a bronze ring foot
+    cyl(g, 0.06, 0.07, 0.015, m.blackMetal, 0, 0, 0, 20); for (let i = 0; i < 3; i++) { const a = i * 2.094; rod(g, 0.004, h * 0.2, m.blackMetal, Math.cos(a) * 0.05, h * 0.1, Math.sin(a) * 0.05, null, 4); }
+    washiLantern(g, m, 0, h * 0.2 + h * 0.36, 0, h * 0.18, 1.0);
+    fxFlat(g, m.glowFaint, 'disc', 0, 0.003, 0, 0.8, 0.8);
+    return g;
+  }
   if (s === 'milano') { cyl(g, 0.07, 0.08, 0.02, m.brass, 0, 0, 0, 20); rod(g, 0.008, h * 0.6, m.brass, 0, h * 0.3, 0); cyl(g, 0.1, 0.17, h * 0.4, m.lampShade, 0, h * 0.55, 0, 24, null, true); }
   else if (s === 'nordic') { lathe(g, [[0, 0], [0.06, 0], [0.08, h * 0.25], [0.02, h * 0.5], [0, h * 0.5]], m.ceramic, 0, 0, 0, 20); cyl(g, 0.13, 0.16, h * 0.35, m.lampShade, 0, h * 0.48, 0, 24, null, true); }
   else { lathe(g, [[0, 0], [0.05, 0], [0.11, h * 0.28], [0.05, h * 0.52], [0, h * 0.52]], m.pot, 0, 0, 0, 20); cyl(g, 0.12, 0.17, h * 0.34, m.lampShade, 0, h * 0.5, 0, 24, null, true); }
@@ -702,7 +773,7 @@ function tableLamp(p, m, x, y, z, h = 0.5) {
 }
 
 function diningTable(m, o = {}) {
-  const L = o.len || 1.8, W = o.width || 0.95, s = m.styleId, g = new THREE.Group(), H = 0.76;
+  const L = o.len || 1.8, W = o.width || 0.95, s = m.fam, g = new THREE.Group(), H = 0.76;
   if (s === 'milano') {
     rbox(g, L, 0.035, W, 0.012, m.marble, 0, H - 0.035, 0);
     for (const sx of [-1, 1]) { box(g, 0.1, H - 0.035, W * 0.55, m.woodDark, sx * L * 0.3, 0, 0); box(g, 0.12, 0.012, W * 0.58, m.brass, sx * L * 0.3, 0, 0); }
@@ -727,7 +798,7 @@ function diningTable(m, o = {}) {
 function tableSetting(m, o = {}) { const g = new THREE.Group(); placeSetting(g, m, 0, o.y ?? 0, 0, 0); g.userData.noSolid = true; return g; }
 
 function diningChair(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group(), SH = 0.46;
+  const s = m.fam, g = new THREE.Group(), SH = 0.46;
   if (s === 'milano') {
     // cognac-leather tub chair: tapered dark legs, a padded seat and a curved wrap-around back shell
     for (const [x, z] of [[-0.19, -0.17], [0.19, -0.17], [-0.19, 0.19], [0.19, 0.19]]) cyl(g, 0.017, 0.011, SH - 0.05, m.woodDark, x, 0, z, 10, [z * 0.25, 0, -x * 0.25]);
@@ -736,11 +807,12 @@ function diningChair(m, o = {}) {
     add(g, shell, m.fabricAccent, 0, SH + 0.17, 0.0, [-HALF, 0, -0.075 * Math.PI], [1.02, 1, 4.2]);
     soft(g, 0.4, 0.26, 0.06, m.fabricAccent, 0, SH + 0.06, -0.19, [-0.12, 0, 0], { e: [0.25, 0.3, 0.6], pinch: 0.2 });
   } else if (s === 'nordic') {
-    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(g, 0.017, 0.014, SH, m.woodLight, x, 0, z, 10);
+    const wd = m.styleId === 'kyoto' ? m.woodDark : m.woodLight;     // kyoto: smoked-oak wishbone chairs
+    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(g, 0.017, 0.014, SH, wd, x, 0, z, 10);
     box(g, 0.44, 0.02, 0.42, m.rattan, 0, SH - 0.02, 0);
-    box(g, 0.46, 0.03, 0.44, m.woodLight, 0, SH - 0.05, 0);
-    for (const sx of [-1, 1]) rod(g, 0.015, 0.34, m.woodLight, sx * 0.2, SH + 0.15, -0.2);
-    torus(g, 0.22, 0.02, m.woodLight, 0, SH + 0.3, -0.12, [HALF, 0, 0], Math.PI, 20);
+    box(g, 0.46, 0.03, 0.44, wd, 0, SH - 0.05, 0);
+    for (const sx of [-1, 1]) rod(g, 0.015, 0.34, wd, sx * 0.2, SH + 0.15, -0.2);
+    torus(g, 0.22, 0.02, wd, 0, SH + 0.3, -0.12, [HALF, 0, 0], Math.PI, 20);
   } else {
     for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(g, 0.018, 0.016, SH, m.woodDark, x, 0, z, 10);
     box(g, 0.46, 0.04, 0.44, m.woodDark, 0, SH - 0.04, 0);
@@ -753,7 +825,7 @@ function diningChair(m, o = {}) {
   return g;
 }
 function stool(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group(), H = o.h || 0.65;
+  const s = m.fam, g = new THREE.Group(), H = o.h || 0.65;
   const legM = s === 'nordic' ? m.woodLight : s === 'milano' ? m.brass : m.woodDark;
   for (let i = 0; i < 4; i++) { const a = i * HALF + 0.785; rod(g, 0.012, H, legM, Math.cos(a) * 0.15, H / 2, Math.sin(a) * 0.15, [Math.sin(a) * 0.06, 0, -Math.cos(a) * 0.06], 8); }
   torus(g, 0.16, 0.008, legM, 0, H * 0.3, 0, [HALF, 0, 0]);
@@ -787,7 +859,7 @@ function lowDoors(g, m, C, L, n, yDoor, hDoor, zBack, faceFn, fill) {
   return bays;
 }
 function tvUnit(m, o = {}) {
-  const L = o.len || 2.0, s = m.styleId, g = new THREE.Group(), H = 0.45, D = 0.42;
+  const L = o.len || 2.0, s = m.fam, g = new THREE.Group(), H = 0.45, D = 0.42;
   box(g, L - 0.1, 0.06, D - 0.08, m.darkPlastic, 0, 0, -0.02);
   const body = s === 'nordic' ? m.woodLight : s === 'milano' ? m.woodDark : m.lacquer2;
   const zB = D / 2 - 0.005, C = lowCarcass(g, m, L, D, 0.06, H, body, zB);
@@ -798,7 +870,7 @@ function tvUnit(m, o = {}) {
     if (s === 'milano') box(mv, 0.12, 0.008, 0.01, m.brass, cx, h - 0.04, 0.017);
   }, (c, b, i) => {
     // media / games / books
-    const x0 = b.x0 + 0.02, x1 = b.x1 - 0.02, y = C.y0, W = WEAR[s], k = i % 3;
+    const x0 = b.x0 + 0.02, x1 = b.x1 - 0.02, y = C.y0, W = (WEAR[m.styleId] || WEAR[s]), k = i % 3;
     if (k === 0) {
       const cols = ['#b8322a', '#1f4e79', '#2f5d3a', '#e6c35a', '#efe6d4', '#6b3b24'];
       let yy = y; for (let j = 0; j < 4; j++) { const h = 0.045 + (j % 2) * 0.02; gameBox(c, m, x0 + 0.2, yy, C.zc + 0.02, 0.36 - j * 0.02, h, 0.26 - j * 0.015, cols[(j + i) % cols.length], (j - 1.5) * 0.04); yy += h; }
@@ -843,7 +915,7 @@ function tv(m, o = {}) {
 }
 
 function bookshelf(m, o = {}) {
-  const W = o.w || 1.2, H = o.h || 2.0, D = 0.34, s = m.styleId, g = new THREE.Group();
+  const W = o.w || 1.2, H = o.h || 2.0, D = 0.34, s = m.fam, g = new THREE.Group();
   const fm = s === 'nordic' ? m.woodLight : s === 'milano' ? m.woodDark : m.woodDark;
   const sm = s === 'milano' ? m.brass : fm;
   const shelves = Math.max(4, Math.round(H / 0.38));
@@ -866,7 +938,7 @@ function bookshelf(m, o = {}) {
 }
 
 function sideboard(m, o = {}) {
-  const L = o.len || 1.8, D = 0.45, H = o.h || 0.8, s = m.styleId, g = new THREE.Group();
+  const L = o.len || 1.8, D = 0.45, H = o.h || 0.8, s = m.fam, g = new THREE.Group();
   const body = s === 'nordic' ? m.woodLight : s === 'milano' ? m.lacquer : m.lacquer2;
   if (s === 'milano') for (const sx of [-1, 1]) box(g, 0.03, 0.12, D - 0.06, m.brass, sx * (L / 2 - 0.08), 0, 0);
   else for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.02, 0.015, 0.14, s === 'nordic' ? m.blackMetal : m.woodDark, sx * (L / 2 - 0.08), 0, sz * (D / 2 - 0.06), 8);
@@ -900,7 +972,8 @@ function sideboard(m, o = {}) {
 
 // ================================================================== BEDROOM
 function bed(m, o = {}) {
-  const W = o.w || 1.6, L = 2.05, s = m.styleId, g = new THREE.Group();
+  if (m.styleId === 'kyoto') return lowBed(m, o);
+  const W = o.w || 1.6, L = 2.05, s = m.fam, g = new THREE.Group();
   const frameM = s === 'milano' ? m.headboard : s === 'nordic' ? m.woodLight : m.woodDark;
   // base
   if (s === 'nordic') { for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.025, 0.02, 0.18, m.woodLight, sx * (W / 2), 0, sz * (L / 2 - 0.1) + 0.03, 10); box(g, W + 0.06, 0.12, L, m.woodLight, 0, 0.16, 0.03); }
@@ -938,9 +1011,34 @@ function bed(m, o = {}) {
   g.userData.solidBox = { w: W + 0.2, d: L + 0.1, h: 0.6, z: -0.0 };
   return g;
 }
+// Kyoto: a low oak platform bed (wide surround to sit on), mattress just above knee-low, a slatted oak headboard
+// panel with a linen-wrapped cushion rail, a folded throw.
+function lowBed(m, o = {}) {
+  const W = o.w || 1.6, L = 2.05, g = new THREE.Group();
+  box(g, W + 0.2, 0.06, L - 0.1, m.woodDark, 0, 0, 0.05);                         // recessed shadow plinth
+  box(g, W + 0.44, 0.12, L + 0.16, m.woodLight, 0, 0.06, 0.06);                  // platform surround
+  const top = 0.18;
+  rbox(g, W, 0.2, L - 0.04, 0.05, m.linen, 0, top, 0.04);
+  const dy = top + 0.24, Wc = W + 0.08, zH = -L * 0.2 + 0.08, zF = L / 2 + 0.06;
+  add(g, clothGeo(Wc, zH, zF, dy, 0.2, 0.06, 2), m.duvet);
+  soft(g, Wc + 0.02, 0.08, 0.32, m.duvet, 0, dy - 0.04, zH + 0.1, null, { e: [0.14, 0.7, 0.5], sag: 0.006 });
+  soft(g, W * 0.9, 0.06, 0.5, m.throw, 0, dy - 0.01, L / 2 - 0.35, null, { e: [0.1, 0.7, 0.2], sag: 0.004 });   // folded throw at the foot
+  const pz = -L / 2 + 0.2;
+  for (const sx of [-1, 1]) {
+    cushion(g, W / 2 - 0.06, 0.38, 0.15, m.linen, sx * W / 4, top + 0.2, pz, 0, -0.6);
+    cushion(g, 0.4, 0.4, 0.12, sx < 0 ? m.cushionA : m.cushionB, sx * 0.25, top + 0.24, pz + 0.18, sx * -0.1, -0.3);
+  }
+  // headboard: oak slats on a dark backing, with a padded linen rail
+  const hz = -L / 2 - 0.05, HW = W + 0.44, n = Math.round(HW / 0.07);
+  box(g, HW, 0.95, 0.03, m.woodDark, 0, 0.18, hz);
+  for (let i = 0; i < n; i++) box(g, 0.04, 0.95, 0.03, m.woodLight, -HW / 2 + (i + 0.5) * HW / n, 0.18, hz + 0.03);
+  rbox(g, W - 0.1, 0.22, 0.09, 0.04, m.headboard, 0, top + 0.28, hz + 0.08);
+  g.userData.solidBox = { w: W + 0.44, d: L + 0.16, h: 0.45, z: 0.06 };
+  return g;
+}
 // Bedside drawer contents (drawer-box floor at y = 0, box centred on x, depth along -z from the front)
 function bedsideFill(p, m, w, d, seed) {
-  const r = rngM(seed), pal = BOOKCOL[m.styleId], W = WEAR[m.styleId];
+  const r = rngM(seed), pal = (BOOKCOL[m.styleId] || BOOKCOL[m.fam]), W = (WEAR[m.styleId] || WEAR[m.fam]);
   add(p, bookGeo(0.15, 0.024, 0.21, pal[(r() * pal.length) | 0]), m.books, -w * 0.2, 0.012, -d * 0.45, [0, 0.12, 0]);
   add(p, bookGeo(0.13, 0.018, 0.19, pal[(r() * pal.length) | 0]), m.books, -w * 0.18, 0.036, -d * 0.47, [0, -0.1, 0]);
   tint(soft(p, 0.16, 0.035, 0.065, m.goods, w * 0.22, 0, -d * 0.25, [0, 0.3, 0], { e: [0.3, 0.5, 0.5], seg: 12 }), W.bags[1]);   // glasses case
@@ -950,7 +1048,7 @@ function bedsideFill(p, m, w, d, seed) {
   cbox(p, 0.05, 0.02, 0.05, '#f2f0ec', m.goods, -w * 0.05, 0, -d * 0.18);                                                  // charger
 }
 function nightstand(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group(), W = o.w || 0.48, H = 0.5, D = 0.4, inM = m.cabinetIn;
+  const s = m.fam, g = new THREE.Group(), W = o.w || 0.48, H = 0.5, D = 0.4, inM = m.cabinetIn;
   // body built around a drawer cavity (walls, not a solid block) so the drawer can slide out
   const cavity = (body, yc0, yc1, yTop) => {
     box(g, W, yc0 - body[0], D, body[1], 0, body[0], 0);
@@ -990,7 +1088,7 @@ function nightstand(m, o = {}) {
 // shelf, rails; hinged pairs of doors (bedrooms) or staggered sliding panels (o.sliding: hall, dressing room).
 // Contents (clothes, folded stacks, shoe boxes, bags, shoes) + the interior LED are built on the first opening.
 function wardrobe(m, o = {}) {
-  const L = o.len || 1.8, H = o.h || 2.45, D = 0.6, s = m.styleId, g = new THREE.Group(), kind = o.kind || 'bed';
+  const L = o.len || 1.8, H = o.h || 2.45, D = 0.6, s = m.fam, g = new THREE.Group(), kind = o.kind || 'bed';
   const inM = m.cabinetIn, T = 0.018, ib = -D / 2 + 0.016, iF = D / 2 - 0.02, zc = (ib + iF) / 2, dI = iF - ib;
   const endM = s === 'riviera' ? m.lacquer2 : m.lacquer, railM = s === 'nordic' ? m.blackMetal : m.brass;
   const sliding = !!o.sliding, tall = H > 1.6;
@@ -1025,7 +1123,7 @@ function wardrobe(m, o = {}) {
     return bay;
   });
   const comp = tall ? compartment(g, (c) => {
-    const W = WEAR[s];
+    const W = (WEAR[m.styleId] || WEAR[s]);
     plan.forEach((bay, i) => {
       const { x, w, type } = bay, x0 = x - w / 2 + 0.01, x1 = x + w / 2 - 0.01, seed = i * 31 + ((L * 100) | 0) + (o.seed || 0) * 7;
       const r = rngM(seed);
@@ -1087,7 +1185,7 @@ function wardrobe(m, o = {}) {
   return g;
 }
 function desk(m, o = {}) {
-  const L = o.len || 1.2, s = m.styleId, g = new THREE.Group(), H = 0.75;
+  const L = o.len || 1.2, s = m.fam, g = new THREE.Group(), H = 0.75;
   const top = s === 'nordic' ? m.woodLight : s === 'milano' ? m.woodDark : m.woodDark;
   box(g, L, 0.03, 0.6, top, 0, H - 0.03, 0);
   for (const sx of [-1, 1]) box(g, 0.03, H - 0.03, 0.56, s === 'nordic' ? m.blackMetal : top, sx * (L / 2 - 0.03), 0, 0);
@@ -1107,7 +1205,7 @@ function desk(m, o = {}) {
 
 // ================================================================== KITCHEN
 function handle(p, m, x, y, z, len = 0.2, vertical = false) {
-  const s = m.styleId;
+  const s = m.fam;
   if (s === 'riviera') { sph(p, 0.016, m.brass, x, y, z + 0.014, [1, 1, 0.8], 10); return; }
   // bar pull on two standoffs (a real shadow line between bar and front)
   if (vertical) {
@@ -1271,7 +1369,7 @@ function hob(m, o = {}) {
   return g;
 }
 function hood(m, o = {}) {
-  const g = new THREE.Group(), W = o.w || 0.8, s = m.styleId, H = o.h || 0.9;
+  const g = new THREE.Group(), W = o.w || 0.8, s = m.fam, H = o.h || 0.9;
   if (s === 'milano') {
     box(g, W, 0.12, 0.52, m.lacquer, 0, 0, 0);
     box(g, W + 0.004, 0.02, 0.524, m.brass, 0, 0.1, 0);
@@ -1335,7 +1433,7 @@ function dishRacks(g, m, x, y, w, h, zb, zf, group) {
 // Under-sink cupboard (lazy): waste bins, cleaning bottles, sponges
 function underSink(c, m, w, y, zb, zf) {
   const zc = (zb + zf) / 2;
-  cbox(c, 0.22, 0.34, 0.3, m.styleId === 'nordic' ? '#e9e7e2' : '#2b2b2c', m.goods, -w / 2 + 0.14, y, zc + 0.04);
+  cbox(c, 0.22, 0.34, 0.3, m.fam === 'nordic' ? '#e9e7e2' : '#2b2b2c', m.goods, -w / 2 + 0.14, y, zc + 0.04);
   cbox(c, 0.23, 0.02, 0.31, '#8a8d90', m.goods, -w / 2 + 0.14, y + 0.34, zc + 0.04);
   const cols = ['#2f6db0', '#6aa84f', '#f4f2ee', '#e8a33c'];
   for (let i = 0; i < 4; i++) { const x = w / 2 - 0.08 - (i % 2) * 0.09, z = zc + (i < 2 ? 0.08 : -0.05); bottle(c, m, x, y, z, m.goods, 0.24 + (i % 2) * 0.04, 0.035, cols[i]); }
@@ -1366,26 +1464,26 @@ const DFILL = {
   // spice drawer: angled insert with rows of labelled jars lying on their side, lids to the front
   spices: (c, m, w, d) => {
     const cols = ['#b0452a', '#d9a441', '#5f7a2e', '#7a2f2a', '#c2862f', '#3b2418', '#e8c93a', '#8a5a2b'];
-    box(c, w - 0.01, 0.012, d - 0.02, m.styleId === 'milano' ? m.woodDark : m.woodLight, 0, 0, -d / 2);
+    box(c, w - 0.01, 0.012, d - 0.02, m.fam === 'milano' ? m.woodDark : m.woodLight, 0, 0, -d / 2);
     const n = Math.max(3, Math.floor((w - 0.02) / 0.05));
     for (let row = 0; row < Math.floor((d - 0.04) / 0.13); row++) for (let i = 0; i < n; i++) {
       const x = -w / 2 + 0.035 + i * (w - 0.04) / n, z = -0.03 - row * 0.13, jg = grp(c, x, 0.033, z - 0.05);
       jg.rotation.x = -HALF + 0.25;
       lathe(jg, [[0, 0], [0.019, 0], [0.019, 0.075], [0.016, 0.08], [0, 0.08]], m.glass, 0, -0.04, 0, 12);
       tint(cyl(jg, 0.016, 0.016, 0.06, m.food, 0, -0.035, 0, 10), cols[(i + row * 3) % cols.length]);
-      cyl(jg, 0.0175, 0.0175, 0.018, m.styleId === 'nordic' ? m.blackMetal : m.brass, 0, 0.04, 0, 12);
+      cyl(jg, 0.0175, 0.0175, 0.018, m.fam === 'nordic' ? m.blackMetal : m.brass, 0, 0.04, 0, 12);
     }
   },
   // utensils: wooden spoons, whisk, ladle, tongs, peeler on a liner
   utensils: (c, m, w, d) => {
-    const wd = m.styleId === 'milano' ? m.woodDark : m.woodLight;
+    const wd = m.fam === 'milano' ? m.woodDark : m.woodLight;
     for (let i = 0; i < 3; i++) { rod(c, 0.008, 0.26, wd, -w / 2 + 0.06 + i * 0.05, 0.012, -d / 2, [HALF, 0, 0], 8); sph(c, 0.026, wd, -w / 2 + 0.06 + i * 0.05, 0.012, -d / 2 - 0.15, [0.8, 0.35, 1.1], 10); }
     rod(c, 0.006, 0.3, m.steel, w * 0.05, 0.012, -d / 2 + 0.02, [HALF, 0, 0], 8); sph(c, 0.04, m.steel, w * 0.05, 0.02, -d / 2 - 0.17, [1, 0.5, 1], 12);   // ladle
     for (let k = 0; k < 6; k++) torus(c, 0.025, 0.0015, m.steel, w * 0.22, 0.03, -d / 2 - 0.12, [HALF, k * 0.5, 0], Math.PI * 2, 12);                      // whisk
     rod(c, 0.007, 0.13, m.steel, w * 0.22, 0.012, -d / 2 + 0.03, [HALF, 0, 0], 8);
     for (const sx of [-1, 1]) box(c, 0.012, 0.006, 0.26, m.steel, w * 0.38 + sx * 0.012, 0.006, -d / 2, [0, sx * 0.05, 0]);                                     // tongs
   },
-  trays: (c, m, w, d) => { for (let i = 0; i < 3; i++) box(c, w - 0.06, 0.012, d - 0.06, i === 1 ? m.steel : m.enamel, 0, i * 0.018, -d / 2); box(c, w * 0.6, 0.02, d * 0.5, m.styleId === 'milano' ? m.woodDark : m.woodLight, -w * 0.15, 0.054, -d * 0.3); },
+  trays: (c, m, w, d) => { for (let i = 0; i < 3; i++) box(c, w - 0.06, 0.012, d - 0.06, i === 1 ? m.steel : m.enamel, 0, i * 0.018, -d / 2); box(c, w * 0.6, 0.02, d * 0.5, m.fam === 'milano' ? m.woodDark : m.woodLight, -w * 0.15, 0.054, -d * 0.3); },
 };
 // Front-loading washer (o.h: 0.85 freestanding / lower when integrated): real porthole — the front panel is cut
 // around a stainless drum, the chrome-rimmed glass door swings open; a few towels tumble inside (lazy).
@@ -1412,8 +1510,8 @@ function washer(m, o = {}) {
   add(g, cg(`drum${r3(R)}`, () => new THREE.LatheGeometry([new THREE.Vector2(R + 0.02, 0), new THREE.Vector2(R, -0.025), new THREE.Vector2(R, -D + 0.1), new THREE.Vector2(0.001, -D + 0.08)], 32)), m.drum, 0, cy, zf - 0.02, [HALF, 0, 0]);
   const comp = compartment(g, (c) => {
     // a load of laundry slumped in the drum: shirts, a towel, a sock pair; the dryer holds fluffy towels
-    const W2 = WEAR[m.styleId], r = rngM(o.dryer ? 41 : 17), base = cy - R + 0.012;
-    const cols = o.dryer ? ['#f4f1ea', m.styleId === 'milano' ? '#2d2b2a' : '#c9b89c', '#e9e3d6'] : [W2.shirts[0], W2.warm[1], W2.dark[1], W2.shirts[2]];
+    const W2 = (WEAR[m.styleId] || WEAR[m.fam]), r = rngM(o.dryer ? 41 : 17), base = cy - R + 0.012;
+    const cols = o.dryer ? ['#f4f1ea', m.fam === 'milano' ? '#2d2b2a' : '#c9b89c', '#e9e3d6'] : [W2.shirts[0], W2.warm[1], W2.dark[1], W2.shirts[2]];
     for (let i = 0; i < (o.dryer ? 4 : 5); i++) {
       const sx = R * (0.7 + r() * 0.5), sy = R * (0.32 + r() * 0.25);
       tint(soft(c, sx, sy, D * (0.3 + r() * 0.2), o.dryer ? m.towel : m.clothes, (r() - 0.5) * R * 0.7, base + i * R * 0.08, zf - D * (0.3 + r() * 0.25), [(r() - 0.5) * 0.6, r() * 3, (r() - 0.5) * 0.5], { e: [0.5, 0.6, 0.5], seg: 12 }), cols[i % cols.length]);
@@ -1481,7 +1579,7 @@ function tap(p, m, x, y, z, h = 0.3, mat) {
   return g;
 }
 function coffeeMachine(m, o = {}) {
-  const g = new THREE.Group(), s = m.styleId;
+  const g = new THREE.Group(), s = m.fam;
   const body = s === 'nordic' ? m.plastic : s === 'milano' ? m.steel : m.ceramic;
   rbox(g, 0.28, 0.36, 0.38, 0.03, body, 0, 0, 0);
   box(g, 0.2, 0.02, 0.12, m.steel, 0, 0.02, 0.16);
@@ -1495,7 +1593,7 @@ function coffeeMachine(m, o = {}) {
 function kettle(p, m, x, y, z) {
   const g = grp(p, x, y, z);
   cyl(g, 0.08, 0.08, 0.02, m.darkPlastic, 0, 0, 0, 20);
-  lathe(g, [[0, 0], [0.075, 0], [0.08, 0.1], [0.06, 0.2], [0, 0.21]], m.styleId === 'nordic' ? m.blackMetal : m.steel, 0, 0.02, 0, 20);
+  lathe(g, [[0, 0], [0.075, 0], [0.08, 0.1], [0.06, 0.2], [0, 0.21]], m.fam === 'nordic' ? m.blackMetal : m.steel, 0, 0.02, 0, 20);
   torus(g, 0.06, 0.01, m.darkPlastic, -0.08, 0.14, 0, [0, 0, HALF], Math.PI, 12);
   return g;
 }
@@ -1533,7 +1631,7 @@ function packBase(x0, x1, side, washer, hobW) {
 // dishwasher flaps drop, fridge / freezer / microwave open; cupboards fill lazily with crockery / pantry goods.
 function kitchenRun(m, len = 3, o = {}) {
   if (typeof len === 'object') { o = len; len = o.len || 3; }
-  const g = new THREE.Group(), s = m.styleId, D = 0.62, CH = o.ceiling || 2.7;
+  const g = new THREE.Group(), s = m.fam, D = 0.62, CH = o.ceiling || 2.7;
   const BH = 0.9, plinth = 0.1, T = 0.03;
   const front = m.lacquer, carcass = m.darkPlastic, inM = m.cabinetIn;
   const dsM = s === 'milano' ? m.darkPlastic : m.plastic;          // drawer sides (slim metal boxes)
@@ -1743,7 +1841,7 @@ function j2(m, r) { return r() < 0.5 ? m.ceramic : m.ceramic2; }
 function bread(p, m, x, y, z) { sph(p, 0.07, m.bread, x, y + 0.03, z, [1.6, 0.6, 0.9], 12); }
 
 function island(m, o = {}) {
-  const L = o.len || 1.8, W = o.width || 0.9, s = m.styleId, g = new THREE.Group(), H = 0.9;
+  const L = o.len || 1.8, W = o.width || 0.9, s = m.fam, g = new THREE.Group(), H = 0.9;
   box(g, L - 0.04, 0.1, W - 0.3, m.darkPlastic, 0, 0, -0.1);
   box(g, L - 0.04, H - 0.14, W - 0.3, m.lacquer, 0, 0.1, -0.13);
   const n = Math.max(2, Math.round(L / 0.6)), dw = (L - 0.04) / n;
@@ -1768,8 +1866,8 @@ function toilet(m, o = {}) {           // wall-hung, back at z = 0 (against the 
   soft(g, 0.37, 0.035, 0.47, m.porcelain, 0, 0.405, 0.28, null, { e: [0.5, 0.6, 0.55], seg: 22 });
   fxFlat(g, m.aoSoft, 'disc', 0, 0.012, 0.28, 0.5, 0.62);
   // flush plate on the wall
-  box(g, 0.24, 0.16, 0.012, m.styleId === 'nordic' ? m.blackMetal : m.brass, 0, 0.95, 0.006);
-  box(g, 0.1, 0.13, 0.004, m.styleId === 'nordic' ? m.darkPlastic : m.chrome, -0.055, 0.965, 0.013);
+  box(g, 0.24, 0.16, 0.012, m.fam === 'nordic' ? m.blackMetal : m.brass, 0, 0.95, 0.006);
+  box(g, 0.1, 0.13, 0.004, m.fam === 'nordic' ? m.darkPlastic : m.chrome, -0.055, 0.965, 0.013);
   // toilet roll holder
   rod(g, 0.006, 0.14, m.tap, 0.36, 0.72, 0.08, [0, 0, HALF]);
   cyl(g, 0.055, 0.055, 0.1, m.linen, 0.36, 0.67, 0.08, 16, [0, 0, HALF]);
@@ -1777,7 +1875,7 @@ function toilet(m, o = {}) {           // wall-hung, back at z = 0 (against the 
   return g;
 }
 function vanity(m, o = {}) {           // floating vanity, back at z=0, basin(s) facing +z
-  const L = o.len || 1.0, s = m.styleId, g = new THREE.Group(), H = 0.86, D = 0.5;
+  const L = o.len || 1.0, s = m.fam, g = new THREE.Group(), H = 0.86, D = 0.5;
   const body = s === 'nordic' ? m.woodLight : s === 'milano' ? m.woodDark : m.woodDark, inM = m.cabinetIn;
   // floating body: shell around one or two full-height drawers (towels, toiletries)
   const yb = H - 0.4, bh = 0.36, zb0 = 0.01, zf = D - 0.03, zm = (zb0 + zf) / 2;
@@ -1785,7 +1883,7 @@ function vanity(m, o = {}) {           // floating vanity, back at z=0, basin(s)
   for (const sx of [-1, 1]) box(g, 0.018, bh, zf - zb0, body, sx * (L / 2 - 0.009), yb, zm);
   box(g, L - 0.036, bh, 0.016, inM, 0, yb, zb0 + 0.008);
   box(g, L - 0.036, 0.018, zf - zb0, inM, 0, yb + bh - 0.018, zm);
-  const nd = L > 1.3 ? 2 : 1, dw = (L - 0.012) / nd, W = WEAR[s];
+  const nd = L > 1.3 ? 2 : 1, dw = (L - 0.012) / nd, W = (WEAR[m.styleId] || WEAR[s]);
   for (let k = 0; k < nd; k++) {
     const xm = -L / 2 + 0.006 + dw * (k + 0.5), dr = drawerMv(g, xm, yb + 0.004, zf, 0.3);
     box(dr, dw - 0.006, bh - 0.008, 0.02, body, 0, 0, 0.01);
@@ -1808,6 +1906,19 @@ function vanity(m, o = {}) {           // floating vanity, back at z=0, basin(s)
   box(g, L, 0.04, D + 0.01, m.counter, 0, H - 0.04, D / 2);
   const basins = L > 1.3 ? [-L / 4, L / 4] : [0];
   for (const bx of basins) {
+    if (m.styleId === 'kyoto') {
+      // carved travertine vessel basin (thick rim, honed) with a bronze wall-style spout
+      lathe(g, [[0.001, 0], [0.17, 0], [0.2, 0.06], [0.21, 0.13], [0.19, 0.135], [0.17, 0.07], [0.12, 0.035], [0.001, 0.03]], m.stone, bx, H, D / 2 + 0.04, 32);
+      tap(g, m, bx, H, 0.06, 0.32);
+      continue;
+    }
+    if (m.styleId === 'monaco') {
+      // Calacatta Oro vessel bowl on the Nero counter, brass tap
+      lathe(g, [[0.001, 0], [0.11, 0], [0.18, 0.06], [0.2, 0.14], [0.19, 0.145], [0.165, 0.08], [0.1, 0.03], [0.001, 0.025]], m.marble, bx, H, D / 2 + 0.05, 32);
+      torus(g, 0.196, 0.006, m.brass, bx, H + 0.143, D / 2 + 0.05, [HALF, 0, 0], Math.PI * 2, 32);
+      tap(g, m, bx, H, 0.08, 0.34);
+      continue;
+    }
     if (s === 'nordic') { box(g, 0.44, 0.004, 0.32, m.porcelain, bx, H + 0.0005, D / 2 + 0.03); }
     else lathe(g, [[0, 0], [0.12, 0], [0.19, 0.08], [0.2, 0.14], [0.19, 0.14], [0.17, 0.09], [0.001, 0.02]], s === 'milano' ? m.porcelain : m.ceramic, bx, H, D / 2 + 0.05, 28);
     tap(g, m, bx, H, 0.08, s === 'nordic' ? 0.22 : 0.3);
@@ -1827,7 +1938,7 @@ function vanity(m, o = {}) {           // floating vanity, back at z=0, basin(s)
 // Bathroom mirror cabinet in the style's mirror shape (milano rectangle, nordic round, riviera arch): shallow
 // carcass with glass shelves, hinged mirror door(s); bottles, perfume, creams, toothbrushes + LED appear when opened.
 function mirrorCabinet(m, o = {}) {
-  const W = o.w || 0.8, H = o.h || 0.9, s = m.styleId, g = new THREE.Group(), Dp = 0.13, inM = m.cabinetIn;
+  const W = o.w || 0.8, H = o.h || 0.9, s = m.fam, g = new THREE.Group(), Dp = 0.13, inM = m.cabinetIn;
   const fm = s === 'nordic' ? m.blackMetal : m.brass;
   const R = W / 2, spring = H - W / 2;
   const halfW = (y) => s === 'nordic' ? Math.sqrt(Math.max(0, R * R - (y - R) * (y - R))) : s === 'riviera' && y > spring ? Math.sqrt(Math.max(0, R * R - (y - spring) * (y - spring))) : W / 2;
@@ -1851,7 +1962,7 @@ function mirrorCabinet(m, o = {}) {
   }
   for (const y of shelfY) { const hw = halfW(y) - 0.02; box(g, hw * 2, 0.006, Dp - 0.03, m.glass, 0, y, Dp / 2 - 0.005); }
   const comp = compartment(g, (c) => {
-    const W2 = WEAR[s], cols = [W2.shirts[0], W2.warm[0], W2.bags[2], W2.warm[3], W2.shirts[1], W2.dark[1]];
+    const W2 = (WEAR[m.styleId] || WEAR[s]), cols = [W2.shirts[0], W2.warm[0], W2.bags[2], W2.warm[3], W2.shirts[1], W2.dark[1]];
     const bands = [s === 'nordic' ? H * 0.12 : 0.014, ...shelfY.map(y => y + 0.006)];
     bands.forEach((y, bi) => {
       const hw = Math.min(halfW(y + 0.02), halfW(y + 0.12)) - 0.04;
@@ -1889,7 +2000,7 @@ function mirrorCabinet(m, o = {}) {
 const PI_ = Math.PI;
 function mirror(m, o = {}) {           // wall mirror, back at z=0
   if (o.cabinet) return mirrorCabinet(m, o);
-  const W = o.w || 0.8, H = o.h || 0.9, s = m.styleId, g = new THREE.Group();
+  const W = o.w || 0.8, H = o.h || 0.9, s = m.fam, g = new THREE.Group();
   if (s === 'riviera') {
     // arched mirror in thin brass
     const sh = new THREE.Shape(); sh.moveTo(-W / 2, 0); sh.lineTo(W / 2, 0); sh.lineTo(W / 2, H - W / 2); sh.absarc(0, H - W / 2, W / 2, 0, Math.PI, false); sh.lineTo(-W / 2, 0);
@@ -1911,14 +2022,45 @@ function sconce(p, m, x, y, z) {
   const g = grp(p, x, y, z);
   cyl(g, 0.035, 0.035, 0.015, m.metal, 0, 0, 0.0075, 16, [HALF, 0, 0]);
   rod(g, 0.006, 0.1, m.metal, 0, 0, 0.05, [HALF, 0, 0]);
-  if (m.styleId === 'nordic') cyl(g, 0.06, 0.06, 0.12, m.lampShade, 0, -0.06, 0.12, 20, null, true);
+  if (m.fam === 'nordic') cyl(g, 0.06, 0.06, 0.12, m.lampShade, 0, -0.06, 0.12, 20, null, true);
   else sph(g, 0.06, m.lampShade, 0, 0, 0.12, [1, 1, 1], 16);
   fxWallZ(g, m.lampGlow, 'lamp', 0, 0, 0.004, 0.6, 1.1);
   bloom(g, 0, 0, 0.12, 0.45, 0.5);
   return g;
 }
 function bathtub(m, o = {}) {          // along x, length 1.7, back to z = 0 wall
-  const L = o.len || 1.7, W = 0.78, s = m.styleId, g = new THREE.Group();
+  const L = o.len || 1.7, W = 0.78, s = m.fam, g = new THREE.Group();
+  if (m.styleId === 'monaco') {
+    // freestanding oval tub: Nero Marquina outer shell, white glazed interior, polished brass rim; brass floor filler
+    const gg = grp(g, 0, 0, W / 2); gg.scale.set(L / W, 1, 1);
+    lathe(gg, [[0, 0], [W * 0.36, 0], [W * 0.47, 0.18], [W * 0.5, 0.56], [W * 0.505, 0.6]], m.marbleDark, 0, 0, 0, 44);
+    lathe(gg, [[W * 0.5, 0.602], [W * 0.455, 0.6], [W * 0.42, 0.24], [W * 0.3, 0.12], [0.001, 0.12]], m.porcelain, 0, 0.001, 0, 44);
+    torus(gg, W * 0.488, 0.012, m.brass, 0, 0.603, 0, [HALF, 0, 0], Math.PI * 2, 48);
+    disc(gg, W * 0.445, m.water, 0, 0.47, 0, [-HALF, 0, 0], 40);
+    const f = grp(g, L / 2 + 0.14, 0, W / 2);
+    rod(f, 0.018, 0.92, m.brass, 0, 0.46, 0); torus(f, 0.1, 0.016, m.brass, -0.1, 0.92, 0, [0, 0, 0], Math.PI, 12);
+    cyl(f, 0.06, 0.07, 0.025, m.brass, 0, 0, 0, 20); rod(f, 0.01, 0.12, m.brass, 0.03, 0.75, 0, [0, 0, -1.2], 8);
+    const bt = grp(g, 0.1, 0.62, W / 2);
+    box(bt, 0.14, 0.018, W + 0.06, m.brass, 0, 0, 0);
+    candle(bt, m, 0.0, 0.018, -0.18, 0.08); glass(bt, m, 0, 0.018, 0.1, 'wine', true);
+    g.userData.solidBox = { w: L, d: W, h: 0.6, z: W / 2 };
+    return g;
+  }
+  if (m.styleId === 'kyoto') {
+    // ofuro: a deep soaking tub of oiled oak staves with a stone surround step, wooden lid half-on, a hinoki stool
+    const T = 0.05, Hh = 0.66, oak = m.woodLight;
+    box(g, L, 0.08, W, m.stone, 0, 0, W / 2);
+    box(g, L - 0.04, Hh - 0.08, T, oak, 0, 0.08, W - T / 2); box(g, L - 0.04, Hh - 0.08, T, oak, 0, 0.08, T / 2);
+    for (const sx of [-1, 1]) box(g, T, Hh - 0.08, W - 0.02, oak, sx * (L / 2 - 0.02 - T / 2), 0.08, W / 2);
+    for (const yy of [0.2, Hh - 0.12]) for (const sz of [0.005, W - 0.005]) box(g, L - 0.02, 0.025, 0.012, m.blackMetal, 0, yy, sz);   // bronze hoops
+    box(g, L - 0.04 - 2 * T, 0.02, W - 2 * T - 0.02, m.woodDark, 0, 0.1, W / 2);
+    box(g, L - 0.04 - 2 * T, 0.004, W - 2 * T - 0.02, m.water, 0, Hh - 0.12, W / 2);
+    for (let i = 0; i < 4; i++) box(g, 0.2, 0.025, W - 0.02, oak, -L / 2 + 0.14 + i * 0.205, Hh, W / 2);                   // lid boards, half on
+    lathe(g, [[0, 0], [0.09, 0], [0.11, 0.1], [0.105, 0.1], [0.085, 0.008], [0, 0.008]], oak, -L / 2 + 0.3, Hh + 0.025, W / 2, 20);   // wooden bucket on the lid
+    towelRoll(g, m, -L / 2 + 0.55, Hh + 0.025, W / 2 + 0.1, m.towel, 0.3);
+    g.userData.solidBox = { w: L, d: W, h: Hh, z: W / 2 };
+    return g;
+  }
   if (s === 'milano') {
     // built-in tub clad in black marble
     box(g, L, 0.56, W, m.marble, 0, 0, W / 2);
@@ -1945,7 +2087,7 @@ function bathtub(m, o = {}) {          // along x, length 1.7, back to z = 0 wal
   return g;
 }
 function shower(m, o = {}) {            // walk-in shower: w (x) × d (z), back wall at z = 0, glass panel at +z
-  const W = o.w || 1.2, D = o.d || 0.9, g = new THREE.Group(), s = m.styleId, GH = o.h || 2.0;
+  const W = o.w || 1.2, D = o.d || 0.9, g = new THREE.Group(), s = m.fam, GH = o.h || 2.0;
   box(g, W, 0.012, D, m.floorBath, 0, 0, D / 2);
   box(g, W * 0.6, 0.004, 0.06, m.steel, 0, 0.012, D - 0.1);        // linear drain
   const gw = Math.min(W - 0.1, 1.0);
@@ -1973,7 +2115,7 @@ function shower(m, o = {}) {            // walk-in shower: w (x) × d (z), back 
   return g;
 }
 function towelRail(m, o = {}) {
-  const g = new THREE.Group(), W = 0.5, H = 1.2, t = m.styleId === 'nordic' ? m.blackMetal : m.brass;
+  const g = new THREE.Group(), W = 0.5, H = 1.2, t = m.fam === 'nordic' ? m.blackMetal : m.brass;
   for (const sx of [-1, 1]) rod(g, 0.012, H, t, sx * W / 2, 0.3 + H / 2, 0.06);
   for (let i = 0; i < 6; i++) rod(g, 0.008, W, t, 0, 0.35 + i * 0.2, 0.06, [0, 0, HALF]);
   // bath towel folded over the top bar (two hanging layers + the soft roll over the bar), hand towel lower down
@@ -1988,7 +2130,51 @@ function towelRail(m, o = {}) {
 }
 
 // ================================================================== DECOR / LIGHTING / PLANTS
+// Kyoto bonsai / niwaki: a twisting trunk in a shallow dark pot, clipped "cloud" foliage pads on short branches,
+// moss on the soil. h = overall height.
+function bonsai(p, m, x, y, z, h = 0.35, seed = 3) {
+  const g = grp(p, x, y, z), r = rngF(seed * 31 + 7), s = h / 0.35, potR = 0.13 * Math.min(s, 1.8), sp = Math.min(s, 2.4);
+  lathe(g, [[0, 0], [potR * 0.9, 0], [potR, potR * 0.18], [potR * 1.04, potR * 0.38], [potR * 0.98, potR * 0.38], [0, potR * 0.34]], m.pot, 0, 0, 0, 24);
+  const top = potR * 0.36;
+  cyl(g, potR * 0.94, potR * 0.94, 0.004, m.foliage || m.leaf, 0, top - 0.004, 0, 20);
+  let px = 0, py = top, pz = 0;
+  const segs = 5, pads = [];
+  for (let i = 0; i < segs; i++) {
+    const a = r() * 6.28, lean = 0.35 + r() * 0.4, len = h * 0.16, dx = Math.cos(a) * Math.sin(lean) * len, dz = Math.sin(a) * Math.sin(lean) * len * 0.6, dy = Math.cos(lean) * len;
+    const mx = px + dx / 2, my = py + dy / 2, mz = pz + dz / 2;
+    const L = Math.hypot(dx, dy, dz), rr = 0.018 * s * (1 - i * 0.14);
+    const o = rod(g, rr, L, m.stem, mx, my, mz, null, 6); o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz).normalize());
+    px += dx; py += dy; pz += dz;
+    if (i >= 1) {
+      // a near-horizontal side branch, alternating sides, ending in a clipped cloud pad
+      const ba = a + (i % 2 ? 2.4 : -2.4) + (r() - 0.5) * 0.6, bl = (0.05 + r() * 0.05) * sp * (1.3 - i * 0.12);
+      const bv = new THREE.Vector3(Math.cos(ba) * bl, bl * 0.25, Math.sin(ba) * bl * 0.7);
+      const bo = rod(g, rr * 0.55, bv.length(), m.stem, px + bv.x / 2, py + bv.y / 2, pz + bv.z / 2, null, 5);
+      bo.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), bv.clone().normalize());
+      pads.push([px + bv.x, py + bv.y, pz + bv.z, (0.065 + r() * 0.04) * sp * (1.15 - i * 0.08)]);
+    }
+  }
+  pads.push([px, py + 0.02 * s, pz, 0.11 * sp]);
+  for (const [qx, qy, qz, R] of pads) {
+    soft(g, R * 2.1, R * 0.75, R * 1.6, m.foliage || m.leaf, qx, qy - R * 0.2, qz, [0, r() * 3, 0], { e: [0.5, 0.6, 0.5], seg: 16 });
+    soft(g, R * 1.3, R * 0.6, R * 1.1, m.foliage || m.leaf, qx + R * 0.4, qy + R * 0.25, qz - R * 0.2, [0, r() * 3, 0], { e: [0.55, 0.6, 0.55], seg: 12 });
+  }
+  return g;
+}
+// Ikebana: a slim dark vase holding one sweeping branch with blossoms and a couple of leaves (kyoto's vase stems)
+function ikebana(p, m, x, y, z, h, seed = 1) {
+  const r = rngF(seed * 17 + 3), n = 3;
+  for (let i = 0; i < n; i++) {
+    const a = r() * 6.28, lean = 0.25 + r() * 0.5, len = (0.28 + r() * 0.3) * (i ? 0.7 : 1);
+    const dir = new THREE.Vector3(Math.cos(a) * Math.sin(lean), Math.cos(lean), Math.sin(a) * Math.sin(lean));
+    const o = rod(p, 0.004, len, m.stem, x + dir.x * len / 2, y + h + dir.y * len / 2 - 0.02, z + dir.z * len / 2, null, 4);
+    o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    for (let k = 0; k < 5; k++) { const t = 0.45 + k * 0.13; sph(p, 0.013 + r() * 0.006, m.flower, x + dir.x * len * t + (r() - 0.5) * 0.03, y + h - 0.02 + dir.y * len * t, z + dir.z * len * t + (r() - 0.5) * 0.03, [1, 0.8, 1], 6); }
+    if (i === 0) leaf(p, m, 'lance', 0.12, 0.05, x, y + h, z, -0.6, a + 1.2, 0.3, m.leaf2);
+  }
+}
 function plantSmall(p, m, x, y, z, h = 0.25, ry = 0) {
+  if (m.styleId === 'kyoto') return bonsai(p, m, x, y, z, Math.max(0.2, h), ((x * 13 + z * 7) | 0) + 5);
   const g = grp(p, x, y, z, ry);
   lathe(g, [[0, 0], [0.05, 0], [0.065, h * 0.4], [0.06, h * 0.42], [0, h * 0.42]], m.pot, 0, 0, 0, 16);
   const r = rngF(((x + z) * 1000) | 0 + 11);
@@ -1996,14 +2182,23 @@ function plantSmall(p, m, x, y, z, h = 0.25, ry = 0) {
   return g;
 }
 function plant(m, o = {}) {
-  const kind = o.kind || ({ milano: 'fig', nordic: 'monstera', riviera: 'olive' }[m.styleId]);
+  if (m.styleId === 'kyoto' && !o.kind) {
+    // a cloud-pruned niwaki in a wide, low charcoal stoneware bowl on an oak stand
+    const g = new THREE.Group(), H = o.h || 1.6;
+    box(g, 0.56, 0.12, 0.56, m.woodLight, 0, 0, 0);
+    const b = bonsai(g, m, 0, 0.12, 0, Math.min(1.5, H * 0.85), o.seed || 5); void b;
+    g.userData.solidBox = { w: 0.6, d: 0.6, h: 1 };
+    g.userData.ao = { w: 0.9, d: 0.9, cell: 'disc' };
+    return g;
+  }
+  const kind = o.kind || ({ milano: 'fig', nordic: 'monstera', riviera: 'olive' }[m.fam]);
   const H = o.h || 1.6, g = new THREE.Group(), r = rngF(o.seed || 5);
   // pot
   const pr = kind === 'snake' ? 0.14 : 0.2;
-  if (m.styleId === 'riviera') lathe(g, [[0, 0], [pr * 0.8, 0], [pr, pr * 1.8], [pr * 1.05, pr * 1.9], [pr * 0.95, pr * 1.9], [0, pr * 1.75]], m.pot, 0, 0, 0, 24);
-  else if (m.styleId === 'milano') { cyl(g, pr, pr * 0.95, pr * 2.1, m.pot, 0, 0, 0, 24); }
+  if (m.fam === 'riviera') lathe(g, [[0, 0], [pr * 0.8, 0], [pr, pr * 1.8], [pr * 1.05, pr * 1.9], [pr * 0.95, pr * 1.9], [0, pr * 1.75]], m.pot, 0, 0, 0, 24);
+  else if (m.fam === 'milano') { cyl(g, pr, pr * 0.95, pr * 2.1, m.pot, 0, 0, 0, 24); }
   else lathe(g, [[0, 0], [pr * 0.9, 0], [pr * 1.05, pr * 0.9], [pr * 0.9, pr * 1.8], [0, pr * 1.8]], m.pot, 0, 0, 0, 24);
-  const top = kind === 'snake' ? pr * 1.8 : pr * (m.styleId === 'milano' ? 2.1 : 1.8);
+  const top = kind === 'snake' ? pr * 1.8 : pr * (m.fam === 'milano' ? 2.1 : 1.8);
   cyl(g, pr * 0.9, pr * 0.9, 0.01, m.soil, 0, top - 0.03, 0, 16);
   if (kind === 'fig') {
     // fiddle-leaf fig: slim trunk, three branches, leaves in overlapping clusters, larger towards the top
@@ -2044,7 +2239,20 @@ function plant(m, o = {}) {
   return g;
 }
 function floorLamp(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group();
+  const s = m.fam, g = new THREE.Group();
+  if (m.styleId === 'kyoto') {
+    // Akari-style column: a tall washi cylinder with bamboo ribs on slender bronze legs
+    for (let i = 0; i < 3; i++) { const a = i * 2.094 + 0.5; rod(g, 0.006, 0.32, m.blackMetal, Math.cos(a) * 0.11, 0.16, Math.sin(a) * 0.11, [Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12], 6); }
+    const R = 0.17, H = 1.05, y0 = 0.3;
+    const sh = cyl(g, R, R, H, m.washi, 0, y0, 0, 32, null, true); void sh;
+    for (const yy of [y0, y0 + H]) torus(g, R, 0.005, m.blackMetal, 0, yy, 0, [HALF, 0, 0], Math.PI * 2, 32);
+    for (let k = 0; k < 3; k++) sph(g, 0.035, m.bulb, 0, y0 + 0.25 + k * 0.3, 0, [1, 1, 1], 8);
+    bloom(g, 0, y0 + H * 0.55, 0, 1.3, 0.6);
+    fxFlat(g, m.glowFaint, 'disc', 0, 0.014, 0, 1.3, 1.3);
+    fxFlat(g, m.glowFaint, 'disc', 0, (o.ceil || 2.7) - 0.004, 0, 1.4, 1.4, true);
+    g.userData.solidBox = { w: 0.38, d: 0.38, h: 1.4 };
+    return g;
+  }
   if (s === 'milano') {
     // arc lamp, marble base, brass arc, dome
     box(g, 0.3, 0.14, 0.3, m.marble, 0, 0, 0);
@@ -2078,8 +2286,66 @@ function floorLamp(m, o = {}) {
   return g;
 }
 // Pendant hanging from the ceiling: origin at CEILING point (y=0), hangs down by `drop`.
+// Monaco: tiered Art-Deco chandelier — brass hoops hung with cut-crystal drops and prisms, candle-bulbs on the top ring
+function chandelier(m, o = {}) {
+  const g = new THREE.Group(), kind = o.kind || 'dining', big = kind === 'dining';
+  const drop = big ? Math.min(o.drop || 0.85, 0.75) : 0.42, R = big ? 0.42 : 0.3, H = big ? 0.6 : 0.42, B = m.brass, C = m.crystalLit || m.crystal;
+  cyl(g, 0.09, 0.09, 0.025, B, 0, -0.025, 0, 24);                               // canopy
+  for (let i = 0; i < 3; i++) rod(g, 0.0035, drop - 0.05, B, Math.cos(i * 2.094) * 0.05, -(drop - 0.05) / 2 - 0.02, Math.sin(i * 2.094) * 0.05, null, 5);
+  const y0 = -drop;                                                              // top of the body
+  rod(g, 0.012, H, B, 0, y0 - H / 2, 0, null, 10);                              // spine
+  lathe(g, [[0.001, 0], [0.05, -0.01], [0.03, -0.05], [0.001, -0.06]], B, 0, y0 - H, 0, 16);   // finial
+  const tiers = big ? [[R, 0], [R * 0.72, H * 0.42], [R * 0.42, H * 0.78]] : [[R, 0], [R * 0.6, H * 0.55]];
+  tiers.forEach(([r, dy], ti) => {
+    const y = y0 - dy;
+    torus(g, r, 0.008, B, 0, y, 0, [HALF, 0, 0], Math.PI * 2, 40);
+    for (let k = 0; k < 4; k++) { const a = k * HALF + ti * 0.4; rod(g, 0.004, r, B, Math.cos(a) * r / 2, y, Math.sin(a) * r / 2, [0, -a, HALF], 5); }
+    const n = Math.round(r * 2 * Math.PI / 0.042);
+    for (let k = 0; k < n; k++) {                                                // strands of drops: bead, bead, prism
+      const a = k / n * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r, len = (k % 2 ? 0.13 : 0.2) * (ti ? 0.8 : 1) * (big ? 1 : 0.8);
+      for (let b = 0; b < 3; b++) sph(g, 0.0075, C, x, y - 0.016 - b * 0.017, z, [1, 1, 1], 6);
+      lathe(g, [[0.001, 0], [0.0105, -len * 0.22], [0.001, -len * 0.5]], C, x, y - 0.062, z, 6);
+      if (k % 3 === 0) sph(g, 0.0055, C, x, y - 0.066 - len * 0.52, z, [1, 1, 1], 6);
+    }
+    if (ti === 0) {                                                              // candle bulbs on the widest hoop
+      const nb = big ? 8 : 6;
+      for (let k = 0; k < nb; k++) {
+        const a = k / nb * Math.PI * 2 + 0.2, x = Math.cos(a) * r * 0.86, z = Math.sin(a) * r * 0.86;
+        cyl(g, 0.018, 0.022, 0.05, B, x, y, z, 12); cyl(g, 0.012, 0.012, 0.06, m.candle, x, y + 0.05, z, 10);
+        sph(g, 0.016, m.bulb, x, y + 0.125, z, [1, 1.5, 1], 8);
+      }
+    }
+  });
+  bloom(g, 0, y0 - H * 0.2, 0, big ? 1.8 : 1.2, 0.75);
+  fxFlat(g, m.glow, 'disc', 0, -0.004, 0, big ? 2.6 : 1.8, big ? 2.6 : 1.8, true);            // the ceiling wash
+  g.userData.noSolid = true;
+  return g;
+}
+// Kyoto: Akari-style washi lanterns — dining: three globes of different sizes hung at staggered heights; bedroom: one
+function washiLantern(p, m, x, y, z, R, Hk = 1) {
+  const g = grp(p, x, y, z);
+  sph(g, R, m.washi, 0, -R * Hk, 0, [1, Hk, 1], 28);
+  for (const s of [-1, 1]) cyl(g, R * 0.24, R * 0.24, 0.012, m.blackMetal, 0, s < 0 ? -0.006 : -2 * R * Hk - 0.006, 0, 14);
+  sph(g, R * 0.25, m.bulb, 0, -R * Hk, 0, [1, 1, 1], 8);
+  bloom(g, 0, -R * Hk, 0, R * 4.2, 0.55);
+  return g;
+}
+function lanternPendant(m, o = {}) {
+  const g = new THREE.Group(), kind = o.kind || 'dining';
+  const set = kind === 'dining' ? [[-0.32, 0.92, 0.17, 1.05], [0.04, 0.7, 0.23, 0.95], [0.36, 1.0, 0.145, 1.15]] : [[0, 0.5, 0.23, 0.9]];
+  for (const [x, drop, R, Hk] of set) {
+    cyl(g, 0.04, 0.04, 0.015, m.blackMetal, x, -0.015, 0, 12);
+    rod(g, 0.0025, drop, m.darkPlastic, x, -drop / 2, 0, null, 4);
+    washiLantern(g, m, x, -drop, 0, R, Hk);
+  }
+  fxFlat(g, m.glowFaint, 'disc', 0, -0.004, 0, kind === 'dining' ? 2.2 : 1.5, kind === 'dining' ? 1.6 : 1.5, true);
+  g.userData.noSolid = true;
+  return g;
+}
 function pendant(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group(), drop = o.drop || 0.9, kind = o.kind || 'dining';
+  if (m.styleId === 'monaco') return chandelier(m, o);
+  if (m.styleId === 'kyoto') return lanternPendant(m, o);
+  const s = m.fam, g = new THREE.Group(), drop = o.drop || 0.9, kind = o.kind || 'dining';
   cyl(g, 0.06, 0.06, 0.02, s === 'nordic' ? m.blackMetal : m.metal, 0, -0.02, 0, 16);
   if (s === 'milano') {
     if (kind === 'dining') {
@@ -2149,7 +2415,7 @@ function curtainGeo(w, h, folds, depth, seed = 1) {
 function curtains(m, o = {}) {
   // drawn open: at each end a sheer stack and a heavier drape in front of it; track spans the full width
   const w = o.w || 2.4, h = o.h || 2.6, g = new THREE.Group(), side = o.drape ?? 0.42, sheer = Math.min(0.7, w * 0.16);
-  box(g, w + 0.1, 0.03, 0.1, m.styleId === 'milano' ? m.brass : m.frame, 0, -0.03, 0);
+  box(g, w + 0.1, 0.03, 0.1, m.fam === 'milano' ? m.brass : m.frame, 0, -0.03, 0);
   for (const sx of [-1, 1]) {
     add(g, curtainGeo(sheer, h - 0.05, Math.max(5, Math.round(sheer / 0.075)), 0.034, 2 + sx), m.sheer, sx * (w / 2 - sheer / 2 - 0.02), -h / 2 - 0.02, -0.02);
     add(g, curtainGeo(side, h - 0.05, Math.max(4, Math.round(side / 0.1)), 0.058, 5 + sx), m.curtain, sx * (w / 2 - side / 2 + 0.02), -h / 2 - 0.02, 0.05);
@@ -2174,7 +2440,7 @@ function drapeGeo(w, h, folds, depth, seed = 1) {
   });
 }
 function motorCurtains(m, o = {}) {
-  const w = o.w || 2.4, h = o.h || 2.5, s = m.styleId, g = new THREE.Group(), id = o.id || 'cur';
+  const w = o.w || 2.4, h = o.h || 2.5, s = m.fam, g = new THREE.Group(), id = o.id || 'cur';
   const blind = s === 'nordic';                          // nordic: blackout roller blind + sheer drapes
   // ceiling track (motor head at one end)
   box(g, w + 0.08, 0.028, 0.11, s === 'milano' ? m.brass : m.frame, 0, -0.028, 0.005);
@@ -2208,7 +2474,7 @@ function motorCurtains(m, o = {}) {
 // Wall switch for the motorised curtains, back at z = 0 (on the wall), centre at y = 0. The rocker / touch key tilts and
 // the status LED slides between the "closed" (bottom) and "open" (top) marks — both are movers of the curtain group.
 function curtainSwitch(m, o = {}) {
-  const s = m.styleId, g = new THREE.Group(), id = o.id || 'cur', S = 0.086;
+  const s = m.fam, g = new THREE.Group(), id = o.id || 'cur', S = 0.086;
   const plateM = s === 'milano' ? m.brass : s === 'nordic' ? m.plastic : m.ceramic;
   box(g, S, S, 0.009, plateM, 0, -S / 2, 0.0045);
   if (s === 'riviera') box(g, S - 0.012, S - 0.012, 0.002, m.brass, 0, -S / 2 + 0.006, 0.009);       // brass inlay frame
@@ -2232,7 +2498,7 @@ function throwBlanket(m, o = {}) { const g = new THREE.Group(); box(g, o.w || 0.
 
 // ================================================================== OUTDOOR
 function outdoorChair(m, o = {}) {
-  const g = new THREE.Group(), s = m.styleId;
+  const g = new THREE.Group(), s = m.fam;
   const fr = s === 'milano' ? m.blackMetal : m.teak;
   for (const [x, z] of [[-0.26, -0.26], [0.26, -0.26], [-0.26, 0.26], [0.26, 0.26]]) box(g, 0.04, 0.4, 0.04, fr, x, 0, z);
   box(g, 0.6, 0.04, 0.6, fr, 0, 0.36, 0);
@@ -2249,15 +2515,15 @@ function outdoorLounge(m, o = {}) {       // pair of lounge chairs + low table, 
   const a = outdoorChair(m); a.position.set(-W / 2 + 0.35, 0, 0); a.rotation.y = 0.35; g.add(a);
   const b = outdoorChair(m); b.position.set(W / 2 - 0.35, 0, 0); b.rotation.y = -0.35; g.add(b);
   const t = grp(g, 0, 0, 0.1);
-  cyl(t, 0.25, 0.25, 0.03, m.styleId === 'riviera' ? m.stone : m.teak, 0, 0.4, 0, 24);
-  cyl(t, 0.04, 0.12, 0.4, m.styleId === 'milano' ? m.blackMetal : m.teak, 0, 0, 0, 12);
+  cyl(t, 0.25, 0.25, 0.03, m.fam === 'riviera' ? m.stone : m.teak, 0, 0.4, 0, 24);
+  cyl(t, 0.04, 0.12, 0.4, m.fam === 'milano' ? m.blackMetal : m.teak, 0, 0, 0, 12);
   glass(t, m, -0.08, 0.43, 0.05, 'wine', true); glass(t, m, 0.08, 0.43, -0.03, 'wine', true);
   lathe(t, [[0, 0], [0.04, 0], [0.04, 0.22], [0.013, 0.28], [0.013, 0.33], [0, 0.33]], m.bottle, 0.0, 0.43, -0.12, 12);
   g.userData.solidBox = { w: W, d: 0.8, h: 0.7 };
   return g;
 }
 function outdoorTable(m, o = {}) {        // bistro table with 2 chairs
-  const g = new THREE.Group(), s = m.styleId;
+  const g = new THREE.Group(), s = m.fam;
   cyl(g, 0.35, 0.35, 0.03, s === 'riviera' ? m.stone : s === 'milano' ? m.marble : m.teak, 0, 0.72, 0, 28);
   rod(g, 0.025, 0.72, m.blackMetal, 0, 0.36, 0);
   cyl(g, 0.2, 0.22, 0.03, m.blackMetal, 0, 0, 0, 20);
@@ -2268,7 +2534,7 @@ function outdoorTable(m, o = {}) {        // bistro table with 2 chairs
   return g;
 }
 function planter(m, o = {}) {             // long planter box with grasses / olive
-  const L = o.len || 1.0, g = new THREE.Group(), s = m.styleId;
+  const L = o.len || 1.0, g = new THREE.Group(), s = m.fam;
   box(g, L, 0.5, 0.36, s === 'riviera' ? m.pot : s === 'milano' ? m.lacquer : m.pot2, 0, 0, 0);
   box(g, L - 0.04, 0.01, 0.32, m.soil, 0, 0.47, 0);
   const r = rngF((L * 97) | 0);

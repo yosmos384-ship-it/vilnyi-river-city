@@ -75,6 +75,8 @@ const FALLBACK_STYLES = [
   { id: 'milano', name: { he: 'מילאנו', en: 'Milano', ru: 'Милано' } },
   { id: 'nordic', name: { he: 'נורדי', en: 'Nordic', ru: 'Нордик' } },
   { id: 'riviera', name: { he: 'ריביירה', en: 'Riviera', ru: 'Ривьера' } },
+  { id: 'monaco', name: { he: 'מונאקו', en: 'Monaco', ru: 'Монако' } },
+  { id: 'kyoto', name: { he: 'קיוטו', en: 'Kyoto', ru: 'Киото' } },
 ];
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 
@@ -513,6 +515,8 @@ export class Walkthrough {
     this.opts = opts;
     this.i18n = opts.i18n || null;
     this.styleId = opts.styleId || 'milano';
+    // building finish of the commons: an explicit choice (HUD / opts.finish) or null = follow the apartment style
+    { const f = opts.finish || lsGet('vrc.walk.finish'); this.finishId = ['classic', 'grand', 'stone'].includes(f) ? f : null; }
     this.envMode = opts.timeMode || 'dusk';
     this.mode = 'walk';
     this.disposed = false;
@@ -755,9 +759,50 @@ export class Walkthrough {
     await this._texReady(styleId);
     if (this.disposed || this.styleId !== styleId) return;
     await this._buildApartment();       // player state untouched → camera keeps its place
-    this._renderRooms();
+    this._renderRooms(); this._renderFinish();
+    if (!this.finishId) this._reskinCommons();
     this._updateHud(true);
     if (this.mode === 'walk') this._depenetrate(4);
+  }
+
+  get finishList() {
+    const L = this.mods && this.mods.commons && this.mods.commons.COMMON_FINISHES;
+    return Array.isArray(L) && L.length ? L.map(f => f.id) : ['classic', 'grand', 'stone'];
+  }
+  _finish() {
+    if (this.finishId && this.finishList.includes(this.finishId)) return this.finishId;
+    const fn = this.mods && this.mods.commons && this.mods.commons.finishForStyle;
+    const f = typeof fn === 'function' ? fn(this.styleId) : 'classic';
+    return this.finishList.includes(f) ? f : 'classic';
+  }
+  /** Switch the building finish (lobbies, corridors, lifts, parking lobbies) and rebuild the current floor in place. */
+  async setFinish(id) {
+    if (!this.finishList.includes(id)) return;
+    const before = this._finish();
+    this.finishId = id; lsSet('vrc.walk.finish', id);
+    this._renderFinish();
+    if (id === before) return;
+    this._toast(this.t('walk.finish.' + id));
+    await this._reskinCommons();
+  }
+  async _reskinCommons() {
+    const c = this.commons;
+    // while riding / driving the next floor build picks the new finish up
+    if (!c || this.riding || this.drive || this.disposed || c.finish === this._finish()) return;
+    const tok = (this._reskinTok = (this._reskinTok || 0) + 1);
+    const inCar = this._carOf(this.player.pos);
+    let nc = null;
+    try { nc = await this._buildCommons(c.bId, c.floor); } catch (e) { console.warn('[walk] finish rebuild', e); return; }
+    if (this.disposed || tok !== this._reskinTok || this.commons !== c || this.riding || this.drive) { this._disposeCommons(nc); return; }
+    if (this._cgOpen) this._cgClose();
+    this._disposeCommons();
+    this._activateCommons(nc);
+    if (inCar) {
+      const tw = this.liftInfos.find(i => i.bId === inCar.bId && i.core === inCar.core && i.doorIndex === inCar.doorIndex);
+      if (tw) { tw.lift.car.visible = true; this._occupy(tw); try { tw.lift.open(); } catch (e) { console.warn(e); } }
+    }
+    this._hideFloorsForWalker(true);
+    this._renderLiftPanel(); this._updateHud(true);
   }
 
   setTimeMode(mode) {
@@ -999,7 +1044,7 @@ export class Walkthrough {
     const M = this.mods;
     let c = null;
     if (M.commons && M.commons.buildFloorCommons) {
-      try { c = await M.commons.buildFloorCommons(bId, floor, 'lobby'); } catch (e) { console.warn('[walk] buildFloorCommons threw', e); }
+      try { c = await M.commons.buildFloorCommons(bId, floor, this._finish()); } catch (e) { console.warn('[walk] buildFloorCommons threw', e); }
     }
     if (!c || !c.group) c = this._fallbackCommons(bId, floor);
     c.bId = bId; c.floor = floor;
@@ -2439,6 +2484,8 @@ export class Walkthrough {
         <div class="vw-seg vw-zoom" data-k="zoom"><button data-z="-1">−</button><span class="zv"></span><button data-z="1">+</button></div>
         <button class="vw-tlabel st" data-k="dlabel"></button>
         <div class="vw-styles"></div>
+        <button class="vw-tlabel st" data-k="flabel"></button>
+        <div class="vw-styles vw-finish"></div>
         <button class="vw-prow" data-k="help"><i>?</i><span></span></button>
       </div>
       <div class="vw-map vw-panel"><canvas></canvas></div>
@@ -2468,7 +2515,7 @@ export class Walkthrough {
     const q = s => h.querySelector(s);
     this.el = {
       hud: h, t1: q('.t1'), t2: q('.t2'), reserve: q('[data-k=reserve]'), photo: q('[data-k=photo]'), exit: q('[data-k=exit]'), helpBtn: q('[data-k=help]'),
-      tools: q('.vw-tools'), modeSeg: q('[data-k=mode]'), timeSeg: q('[data-k=time]'), dlabel: q('[data-k=dlabel]'), styles: q('.vw-styles'),
+      tools: q('.vw-tools'), modeSeg: q('[data-k=mode]'), timeSeg: q('[data-k=time]'), dlabel: q('[data-k=dlabel]'), styles: q('.vw-styles'), flabel: q('[data-k=flabel]'), finish: q('.vw-finish'),
       map: q('.vw-map canvas'), lift: q('.vw-lift'), liftGrid: q('.vw-lift .grid'), liftT: q('.vw-lift .lt'), liftInd: q('.vw-lift .ind'),
       pad: q('.vw-pad'), rooms: q('.vw-rooms'), tp: q('.vw-tp'), toast: q('.vw-toast'), fade: q('.vw-fade'),
       help: q('.vw-help'), loading: q('.vw-loading'),
@@ -2507,6 +2554,7 @@ export class Walkthrough {
     e.modeSeg.children[1].textContent = this.t('walk.360');
     for (const b of e.timeSeg.children) { b.title = this.t('walk.' + b.dataset.t); b.setAttribute('aria-label', b.title); }
     e.dlabel.textContent = this.t('walk.design');
+    e.flabel.textContent = this.t('walk.finish');
     e.liftT.textContent = this.t('walk.lift');
     e.floorsBtn.querySelector('.lbl').textContent = this.t('walk.floors');
     e.ureserve.textContent = this.t('walk.reserveThis');
@@ -2531,7 +2579,7 @@ export class Walkthrough {
       : [['☝', 'walk.help.drag'], ['W', 'walk.help.keys'], ['⤢', 'walk.help.dblclick'], ['◉', 'walk.help.click'], ['P', 'walk.car.tapCar'], ['360', 'walk.help.360']];
     e.help.querySelector('ul').innerHTML = '';
     for (const [ic, k] of items) { const li = document.createElement('li'); const i = document.createElement('i'); i.textContent = ic; if (ic === '360') i.style.fontSize = '10px'; const s = document.createElement('span'); s.textContent = this.t(k); li.append(i, s); e.help.querySelector('ul').appendChild(li); }
-    this._renderTeleports(); this._renderRooms(); this._renderStyles(); this._renderTime(); this._updateTitle(); this._applyModeSafe();
+    this._renderTeleports(); this._renderRooms(); this._renderStyles(); this._renderFinish(); this._renderTime(); this._updateTitle(); this._applyModeSafe();
   }
   _applyModeSafe() { if (this.el) this.el.modeSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === this.mode)); }
   /** Call after the site language changes. */
@@ -2566,9 +2614,19 @@ export class Walkthrough {
   _renderStyles() {
     if (!this.el) return;
     const box = this.el.styles; box.innerHTML = '';
+    this._renderFinish();   // an auto finish follows the style
     for (const s of this.styles || FALLBACK_STYLES) {
       const b = document.createElement('button'); b.textContent = this._styleName(s.id); b.dataset.s = s.id;
       b.classList.toggle('on', s.id === this.styleId); box.appendChild(b);
+    }
+  }
+  // Building finish of the common areas (commons.js COMMON_FINISHES): one chip per finish, the active one lit.
+  _renderFinish() {
+    if (!this.el || !this.el.finish) return;
+    const box = this.el.finish, cur = this._finish(); box.innerHTML = '';
+    for (const id of this.finishList) {
+      const b = document.createElement('button'); b.dataset.fin = id; b.textContent = this.t('walk.finish.' + id);
+      b.classList.toggle('on', id === cur); b.setAttribute('aria-pressed', String(id === cur)); box.appendChild(b);
     }
   }
   _renderTime() { if (this.el) for (const b of this.el.timeSeg.children) b.classList.toggle('on', b.dataset.t === this.envMode); }
@@ -3365,6 +3423,8 @@ export class Walkthrough {
     if (b.dataset.cg) return this._cgAction(b.dataset.cg, b);
     const k = b.dataset.k;
     if (k === 'gear') return this._setPopover(!this._popOpen);
+    if (k === 'flabel') return;
+    if (b.dataset.fin) return this.setFinish(b.dataset.fin);
     if (k === 'map') return this._setMapOpen(true);
     if (b.dataset.z) return this._zoomBy(+b.dataset.z > 0 ? 1 / 1.2 : 1.2);
     if (k === 'reserve') return this.opts.onReserve && this.opts.onReserve(this.unit && this.unit.id);

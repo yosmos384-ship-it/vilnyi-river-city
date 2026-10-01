@@ -15,7 +15,7 @@ const PW = 0.1, CW = 0.15, FW = 0.2, TW = 0.1;   // party wall, corridor wall, f
 const DOOR_W = 0.82, DOOR_H = 2.1, ENTRY_W = 1.0, ENTRY_H = 2.2;
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 const PI = Math.PI, HALF = PI / 2;
-const KEEP_UV = /\.(rug|art\d|leaf2?|rattanShade|ao|aoSoft|shade|glow|glowFaint|daylight|lampGlow|coldGlow)$/;
+const KEEP_UV = /\.(rug|art\d|leaf2?|rattanShade|washi|ao|aoSoft|shade|glow|glowFaint|daylight|lampGlow|coldGlow)$/;
 
 // ------------------------------------------------------------------ baking (merge by material)
 const nonIndexed = new WeakMap();
@@ -713,7 +713,7 @@ function buildShell(ctx, L) {
   const flo = { bath: m.floorBath, storage: m.floor, dressing: m.floor };
   for (const r of L.rooms) {
     if (r.outdoor || r.closet) continue;
-    const mat = flo[r.kind] || (r.kind === 'hall' && m.styleId === 'milano' ? m.marble : m.floor);
+    const mat = flo[r.kind] || (r.kind === 'hall' ? (m.floorHall || (m.fam === 'milano' ? m.marble : m.floor)) : m.floor);
     floorPoly(sg, mat, r, y0, P);
   }
   // floor collider(s)
@@ -798,7 +798,7 @@ function downlightFx(ctx, L, u, v, k = 1) {
 }
 function downlight(ctx, u, y, v) {
   const { m, sg } = ctx;
-  FX.cyl(sg, 0.05, 0.05, 0.004, ctx.m.styleId === 'nordic' ? m.blackMetal : m.metal, u, y - 0.006, v, 20);
+  FX.cyl(sg, 0.05, 0.05, 0.004, ctx.m.fam === 'nordic' ? m.blackMetal : m.metal, u, y - 0.006, v, 20);
   FX.disc(sg, 0.036, m.lightEmit, u, y - 0.0065, v, [HALF, 0, 0], 16);
   FX.bloom(sg, u, y - 0.03, v, 0.22, 0.5);
 }
@@ -984,9 +984,9 @@ function buildFacade(ctx, L) {
 //   riviera (or a single-pane bay, dir = 0): a pair of outward-opening french doors
 function buildBalconyDoor(ctx, L, f, p0, p1, dir, vg, topY) {
   const { m, sg, cut } = ctx, y0 = L.y, pw = p1 - p0, fr = m.frame, gl = m.glazing;
-  const hm = m.styleId === 'nordic' ? m.blackMetal : m.styleId === 'milano' ? m.brass : (m.brass || m.metal);
+  const hm = m.fam === 'nordic' ? m.blackMetal : m.fam === 'milano' ? m.brass : (m.brass || m.metal);
   const id = 'bd' + L.lv + '-' + ctx.balconyDoors.length;
-  const french = dir === 0 || m.styleId === 'riviera';
+  const french = dir === 0 || m.fam === 'riviera';
   const H = topY - y0;
   const rec = { id, level: L.lv, room: f.room.kind, roomName: f.room.name, u: (p0 + p1) / 2, v: vg, y: y0, p0, p1, kind: french ? 'french' : 'slide', collider: null, proxies: [], open: false };
   if (french) {
@@ -1201,11 +1201,11 @@ function finishWalls(ctx, L) {
 function buildStair(ctx) {
   const { P, m, sg, cg } = ctx;
   const s = P.stair, v0 = s.v0 + 0.05, v1 = s.v1;
-  const treadM = m.styleId === 'riviera' ? m.stone : m.styleId === 'milano' ? m.woodDark : m.woodLight;
+  const treadM = m.fam === 'riviera' || m.styleId === 'kyoto' ? m.stone : m.fam === 'milano' ? m.woodDark : m.woodLight;
   for (let i = 1; i < s.n; i++) {
     const y = i * s.rise, uA = s.s1 - i * s.tread, uB = s.s1 - (i - 1) * s.tread + 0.025;
     box(sg, treadM, uA, y - 0.05, v0, uB, y, v1 - 0.01);
-    if (m.styleId === 'milano') box(sg, m.led, uA + 0.015, y - 0.054, v0 + 0.03, uA + 0.035, y - 0.05, v1 - 0.04);  // LED line under the nosing
+    if (m.fam === 'milano') box(sg, m.led, uA + 0.015, y - 0.054, v0 + 0.03, uA + 0.035, y - 0.05, v1 - 0.04);  // LED line under the nosing
     collider(cg, uA, y - 0.06, v0, uB, y, v1, 'floor');
     // side guard (glass balustrade + closed under-stair) for i >= 2
     if (i >= 2) collider(cg, uA, 0.02, v1 - 0.01, uB, y + 1.0, v1 + 0.05);
@@ -1366,9 +1366,9 @@ function furnishBath(ctx, L, g, r) {
 function mirrorAt(ctx, g, u, v, face, vl) {
   const { m } = ctx;
   if (ctx.cut) return;
-  const mw = Math.min(0.9, vl - 0.1), mh = m.styleId === 'nordic' ? mw : 0.95;
-  put(g, F.mirror(m, { w: mw, h: mh, cabinet: true }), u, v, face, m.styleId === 'nordic' ? 1.05 : 1.08);
-  if (m.styleId !== 'nordic') {
+  const mw = Math.min(0.9, vl - 0.1), mh = m.fam === 'nordic' ? mw : 0.95;
+  put(g, F.mirror(m, { w: mw, h: mh, cabinet: true }), u, v, face, m.fam === 'nordic' ? 1.05 : 1.08);
+  if (m.fam !== 'nordic') {
     // pair of sconces left/right of the mirror
     const off = mw / 2 + 0.12;
     const s1 = new THREE.Group(); FX.sconce(s1, m, 0, 0, 0); put(g, s1, 0, 0, face); positionAlong(s1, u, v, face, -off, 1.6);
@@ -1467,7 +1467,7 @@ function furnishLiving(ctx, L, g, r) {
 // Lounge zone z = [u0, v0, u1, v1]; TV on side tvOn ('u0' | 'u1'); farIsWall: the opposite side is a real wall.
 function lounge(ctx, L, g, z, tvOn, farIsWall) {
   const { m } = ctx;
-  const [u0, v0, u1, v1] = z, zw = u1 - u0, zd = v1 - v0, s = m.styleId;
+  const [u0, v0, u1, v1] = z, zw = u1 - u0, zd = v1 - v0, s = m.fam;
   const t = tvOn === 'u1' ? 1 : -1, tvWall = t > 0 ? u1 : u0, farWall = t > 0 ? u0 : u1;
   const toTV = t > 0 ? '+u' : '-u', fromTV = t > 0 ? '-u' : '+u';
   const lc = (v0 + v1) / 2;
@@ -1535,8 +1535,32 @@ function dining(ctx, L, g, z, kitBack) {
 function featureWall(ctx, g, uWall, vc, face, len) {
   const { m } = ctx;
   if (ctx.cut) return;
-  const s = m.styleId, H = CH - 0.02, grp = new THREE.Group();
-  if (s === 'milano') {
+  const s = m.fam, H = CH - 0.02, grp = new THREE.Group();
+  if (m.styleId === 'monaco') {
+    // Art-Deco panelling: fluted walnut bays framed by polished brass pilasters, a brass plinth band and a stepped
+    // brass crown; a hidden LED behind the crown grazes the reeds
+    const bays = Math.max(2, Math.round(len / 0.75)), bw = len / bays, n = Math.max(6, Math.round((bw - 0.05) / 0.055));
+    FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01);
+    for (let b = 0; b < bays; b++) {
+      const x0 = -len / 2 + b * bw + 0.025, w = bw - 0.05;
+      for (let i = 0; i < n; i++) FX.cyl(grp, 0.026, 0.026, H - 0.3, m.woodDark, x0 + (i + 0.5) * w / n, 0.16, 0.026, 10);
+    }
+    for (let b = 0; b <= bays; b++) FX.box(grp, 0.03, H, 0.06, m.brass, -len / 2 + b * bw, 0, 0.03);
+    FX.box(grp, len + 0.02, 0.15, 0.065, m.brass, 0, 0, 0.0325);
+    FX.box(grp, len + 0.02, 0.025, 0.08, m.brass, 0, H - 0.14, 0.04); FX.box(grp, len + 0.02, 0.02, 0.1, m.brass, 0, H - 0.115, 0.05);
+    FX.box(grp, len - 0.05, 0.008, 0.012, m.led, 0, H - 0.15, 0.07);
+    FX.fxQuad(grp, m.glow, 'grad', [0, H - 0.7, 0.055], [len, 0, 0], [0, 1.1, 0]);
+  } else if (m.styleId === 'kyoto') {
+    // oak slats over a smoked-oak backing, floating above a stone-lined LED cove (indirect light up and down)
+    const n = Math.round(len / 0.085);
+    FX.box(grp, len, H, 0.015, m.woodDark, 0, 0, 0.0075);
+    for (let i = 0; i < n; i++) FX.box(grp, 0.045, H - 0.12, 0.035, m.woodLight, -len / 2 + (i + 0.5) * len / n, 0.1, 0.0325);
+    FX.box(grp, len, 0.1, 0.16, m.stone, 0, 0, 0.08);
+    FX.box(grp, len - 0.04, 0.008, 0.01, m.led, 0, 0.1, 0.15);
+    FX.box(grp, len - 0.04, 0.008, 0.01, m.led, 0, H - 0.02, 0.06);
+    FX.fxQuad(grp, m.glow, 'grad', [0, H - 0.55, 0.052], [len, 0, 0], [0, 1.1, 0]);
+    FX.fxQuad(grp, m.glowFaint, 'grad', [0, 0.65, 0.052], [len, 0, 0], [0, -1.1, 0]);
+  } else if (s === 'milano') {
     // fluted walnut panels with a brass shadow gap
     const n = Math.round(len / 0.06);
     for (let i = 0; i < n; i++) FX.cyl(grp, 0.028, 0.028, H, m.woodDark, -len / 2 + (i + 0.5) * len / n, 0.0, 0.02, 10);
@@ -1627,13 +1651,25 @@ function halo(ctx, obj, x, z, y = 1.0) {
   FX.fxQuad(obj, ctx.m.lampGlow, 'lamp', [x, y, z], [1.35, 0, 0], [0, 1.9, 0]);
   return obj;
 }
-const s3 = (m) => m.styleId === 'nordic' ? m.woodLight : m.styleId === 'milano' ? m.woodDark : m.woodDark;
+const s3 = (m) => m.fam === 'nordic' ? m.woodLight : m.woodDark;
 function featureWallBed(ctx, g, u, v, face, len) {
   const { m } = ctx;
   if (ctx.cut) return;
   if (ctx.curLevel) busy(ctx, ctx.curLevel, u, v, face, len / 2 + 0.05, 0, CH);
-  const s = m.styleId, grp = new THREE.Group(), H = CH - 0.02;
-  if (s === 'milano') { FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01); for (let i = 1; i < 4; i++) FX.box(grp, 0.006, H, 0.004, m.brass, -len / 2 + i * len / 4, 0, 0.022); }
+  const s = m.fam, grp = new THREE.Group(), H = CH - 0.02;
+  if (m.styleId === 'monaco') {
+    // navy velvet channel-upholstered wall panel in a brass frame, flanked by walnut
+    FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01);
+    const pw = Math.min(len - 0.3, 2.6), n = Math.round(pw / 0.14);
+    for (let i = 0; i < n; i++) FX.rbox(grp, pw / n - 0.006, 1.5, 0.07, 0.03, m.headboard, -pw / 2 + (i + 0.5) * pw / n, 0.45, 0.04);
+    FX.box(grp, pw + 0.06, 0.03, 0.09, m.brass, 0, 0.42, 0.045); FX.box(grp, pw + 0.06, 0.03, 0.09, m.brass, 0, 1.95, 0.045);
+    for (const sx of [-1, 1]) FX.box(grp, 0.03, 1.56, 0.09, m.brass, sx * (pw / 2 + 0.015), 0.42, 0.045);
+  } else if (m.styleId === 'kyoto') {
+    // smoked-oak wainscot up to 1.25 m with a ledge (ikebana, books) — the bed's pale slatted headboard stands in front
+    FX.box(grp, len, 1.25, 0.03, m.woodDark, 0, 0, 0.015);
+    FX.box(grp, len, 0.035, 0.16, m.woodDark, 0, 1.25, 0.08);
+    FX.vase(grp, m, len / 2 - 0.22, 1.285, 0.08, 0.2, m.ceramic2, true); FX.bookStack(grp, m, 2, -len / 2 + 0.3, 1.285, 0.08, 57, 0.15);
+  } else if (s === 'milano') { FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01); for (let i = 1; i < 4; i++) FX.box(grp, 0.006, H, 0.004, m.brass, -len / 2 + i * len / 4, 0, 0.022); }
   else if (s === 'nordic') { FX.box(grp, len, 1.2, 0.02, m.wallAccent, 0, 0, 0.01); FX.box(grp, len, 0.02, 0.12, m.woodLight, 0, 1.2, 0.06); FX.vase(grp, m, len / 2 - 0.2, 1.22, 0.06, 0.18, m.ceramic2, false); FX.bookStack(grp, m, 2, -len / 2 + 0.25, 1.22, 0.06, 55, 0.2); }
   else { FX.box(grp, len, H, 0.02, m.wallAccent, 0, 0, 0.01); }
   // hidden LED slot in the ceiling along the bed wall: a grazing wash down the feature wall
@@ -1905,7 +1941,7 @@ function bloomMesh(src, m) {
 }
 function buildStairLow(ctx) {
   const { P, m, sg } = ctx, s = P.stair;
-  const treadM = m.styleId === 'riviera' ? m.stone : m.styleId === 'milano' ? m.woodDark : m.woodLight;
+  const treadM = m.fam === 'riviera' || m.styleId === 'kyoto' ? m.stone : m.fam === 'milano' ? m.woodDark : m.woodLight;
   for (let i = 1; i < s.n; i++) { const y = i * s.rise; if (y > 1.2) break; box(sg, treadM, s.s1 - i * s.tread, y - 0.05, s.v0 + 0.05, s.s1 - (i - 1) * s.tread + 0.025, y, s.v1 - 0.01); }
 }
 function pointInPoly([x, y], poly) {
