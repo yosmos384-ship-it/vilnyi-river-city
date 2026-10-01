@@ -13,3 +13,4 @@ Every published version has a commit id (below). To go back to one: ask Claude "
 | v1.6 | 05487df | Opening image = the real night render with twinkling lights, auto slideshow of real renders + live 3D, "Main image" button; drivable luxury cars (parking + streets); every cabinet, wardrobe, drawer and appliance opens with contents |
 | v1.7 | d83d2ec | Hero: only the real render + live 3D (removed AI slides with wrong building shapes); caption shortened to the project name |
 | v1.8 | 2ffb613 | Real building shapes & arrangement (C3/C4 mirrored U with wings, Faza I/III, spiral ramp) matched to the developer render and CAD plans; correct unit orientation and lake views; instant photo while the 3D loads (textures cached, faster start); car colliders updated |
+| v1.9 | 1e61e07 | Lit lifts, all 12 lifts reach parking −1 with lit lobbies; every balcony/loggia/terrace door opens; photoreal 360 tour for all apartment types + per-building lobby/corridor |
