@@ -1,6 +1,6 @@
 // VILNYI RIVER CITY — project context around C3/C4 (Bot 2).
-// Faza I (delivered, beige U-shaped courtyard block with a roof garden on its podium), Faza III (two dark grey/brown bars
-// joined by a spine), the P deck with the round spiral car ramp, the open-air car parks with parked cars and light poles.
+// Faza I (delivered, beige U-shaped courtyard block with a roof garden on its podium), Faza III (a dark brown/charcoal
+// comb: two full-length bars joined by a spine), the P deck with the round spiral car ramp, the open-air car parks with parked cars and light poles.
 // Geometry comes from data.js CONTEXT_BLOCKS (world coords). Facades are single quads per wall carrying procedural canvas
 // textures (colour + roughness/metalness + two emissive "lit window" maps, dusk and night, swapped by setMode).
 // Balcony slabs, parapets, the deck and the ramp are merged vertex-coloured meshes. ~15 draw calls in total.
@@ -24,7 +24,8 @@ const PODIUM_Y = 0.9;
 const LOTS = [
   [-12, 10, -54, -13, [[-12, -7], [5, 10]]],                          // C3–C4 courtyard mouth
   [-12, 40, 19, 35, [[-12, -7], [-1, 4], [4, 9], [15, 20], [20, 25], [35, 40]]],   // between C3 and Faza I
-  [-12, 24, -104, -88, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],       // between C4 and Faza III
+  [-12, 24, -99, -87, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],        // between C4 and Faza III
+  [-12, 10, -164, -122, [[-12, -7], [5, 10]]],                        // Faza III courtyard mouth
   [-38, -17, 40, 120, [[-38, -33], [-22, -17]]],                      // in front of Faza I, along Intrarea Guliver
 ];
 const AISLES = [[-21, -13.2, -64, 32], [SPIRAL.x - SPIRAL.r1 - 1.5, -33, SPIRAL.z - SPIRAL.r1 - 2, SPIRAL.z + SPIRAL.r1 + 2]];   // drive lane in front of the blocks, round the spiral
@@ -36,9 +37,12 @@ const PHASES = {
     plinth: '#6d655b', parapet: '#efe8da', roofEdge: '#d8ccb4', balc: '#f0e9da', lowerWin: 0.85, fins: true,
   },
   III: {
-    NB: 12, pattern: 'BBBWABBBWABW', seed: 23, balcony: 'B', balDepth: 1.45,
-    wall: '#463e38', wall2: '#51483f', accent: '#c9bfae', recess: '#3a3531', slab: '#ddd5c7', frame: '#8d857c',
-    plinth: '#3c3935', parapet: '#4e4843', roofEdge: '#d6cec0', balc: '#e9e3d8', lowerWin: 0.9,
+    // dark brown/charcoal (developer renders): loggia-like balconies boxed in by dark side walls, thin light slab edges,
+    // dark accent strips, light-grey rooftop plant boxes
+    NB: 12, pattern: 'BBWABBWABBWA', seed: 23, balcony: 'B', balDepth: 1.25,
+    wall: '#4b3e35', wall2: '#56473d', accent: '#33291f', recess: '#221c18', slab: '#5c5047', frame: '#2f2924',
+    plinth: '#2a2623', parapet: '#3b332d', roofEdge: '#8f8a83', balc: '#cfc8bd', lowerWin: 0.9,
+    fins: true, finCol: '#4b3e35', railCol: '#2f3236', plant: '#c9c7c2', plantCap: '#b3b1ac',
   },
 };
 
@@ -270,9 +274,9 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
           const y = floorBase(k);
           segBox(concrete, seg, s0, s1, 0, D, y - 0.22, y, P.balc);
           segBox(glassRails, seg, s0 + 0.05, s1 - 0.05, D - 0.08, D - 0.04, y, y + 1.02, '#ffffff');
-          segBox(concrete, seg, s0, s1, D - 0.1, D, y + 1.0, y + 1.06, '#2d2a27');
-          if (P.fins && !prevB) { segBox(concrete, seg, s0, s0 + 0.18, 0, D, y, y + FH - 0.22, P.balc, 0.93); }
-          if (P.fins && !nextB) { segBox(concrete, seg, s1 - 0.18, s1, 0, D, y, y + FH - 0.22, P.balc, 0.93); }
+          segBox(concrete, seg, s0, s1, D - 0.1, D, y + 1.0, y + 1.06, P.railCol || '#2d2a27');
+          if (P.fins && !prevB) { segBox(concrete, seg, s0, s0 + 0.18, 0, D, y, y + FH - 0.22, P.finCol || P.balc, 0.93); }
+          if (P.fins && !nextB) { segBox(concrete, seg, s1 - 0.18, s1, 0, D, y, y + FH - 0.22, P.finCol || P.balc, 0.93); }
         }
       }
       // parapet + coping
@@ -291,8 +295,8 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
       const long = (r.x1 - r.x0) > (r.z1 - r.z0), L = long ? r.x1 - r.x0 : r.z1 - r.z0;
       for (let s = 14; s < L - 8; s += 26) {
         const cx = long ? r.x0 + s : (r.x0 + r.x1) / 2, cz = long ? (r.z0 + r.z1) / 2 : r.z0 + s;
-        boxC(concrete, cx - 3.2, cx + 3.2, h, h + 3.4, cz - 2.6, cz + 2.6, P.parapet, 0.95);
-        boxC(concrete, cx - 3.4, cx + 3.4, h + 3.4, h + 3.6, cz - 2.8, cz + 2.8, P.roofEdge);
+        boxC(concrete, cx - 3.2, cx + 3.2, h, h + 3.4, cz - 2.6, cz + 2.6, P.plant || P.parapet, 0.95);
+        boxC(concrete, cx - 3.4, cx + 3.4, h + 3.4, h + 3.6, cz - 2.8, cz + 2.8, P.plantCap || P.roofEdge);
         if (!low) for (let q = 0; q < 3; q++) boxC(concrete, cx + 4.5 + q * 1.4, cx + 5.5 + q * 1.4, h, h + 1.1, cz - 0.6, cz + 0.6, '#9a9894');
       }
     }

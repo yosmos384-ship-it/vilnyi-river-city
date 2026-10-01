@@ -460,10 +460,12 @@ const wDir = b => { const a = WAZ(b) * Math.PI / 180; return [Math.sin(a), -Math
 
 // Traced streets (px polylines). w = carriageway width (m); main = through traffic.
 const T_ROADS = [
-  { id: 'murelor', w: 8, main: true, px: [[205, 1500], [213, 1450], [226, 1400], [230, 1300], [232, 1200], [233, 1100], [235, 1000], [242, 900], [250, 750], [262, 590]] },
+  // Str. Murelor bends west round the plot's west corner here (the traced line ran ≈ 40 m further east, through the site of
+  // Faza III as the developer renders draw it): Faza III's outer bar C6 keeps ≈ 15 m to the kerb.
+  { id: 'murelor', w: 8, main: true, px: [[205, 1500], [213, 1450], [226, 1400], [230, 1300], [232, 1200], [206, 1114], [162, 1048], [134, 988], [148, 903], [187, 776], [231, 662], [262, 590]] },
   { id: 'agnita', w: 8, main: true, px: [[262, 590], [300, 445], [340, 330], [378, 225], [412, 120], [445, 0], [490, -160], [540, -330]] },
-  { id: 'murelor-w', w: 6, px: [[245, 690], [120, 645], [0, 605], [-160, 550]] },
-  { id: 'guliver', w: 6, px: [[236, 1048], [330, 1075], [450, 1112], [560, 1138], [680, 1163], [760, 1180]] },
+  { id: 'murelor-w', w: 6, px: [[222, 682], [120, 645], [0, 605], [-160, 550]] },
+  { id: 'guliver', w: 6, px: [[145, 1019], [190, 1034], [236, 1048], [330, 1075], [450, 1112], [560, 1138], [680, 1163], [760, 1180]] },
   { id: 'grandea', w: 7, px: [[-200, 975], [0, 1050], [80, 1090], [150, 1125], [233, 1165], [330, 1190], [430, 1212], [530, 1232], [630, 1245], [740, 1246], [830, 1246]] },
   { id: 'east', w: 8, main: true, px: [[830, 1246], [860, 1200], [890, 1150], [925, 1085], [960, 1015], [995, 950], [1015, 900], [1050, 810], [1090, 720], [1130, 630], [1170, 540], [1230, 420], [1320, 240]] },
   { id: 'north', w: 6, px: [[470, 690], [640, 762], [800, 825], [940, 885], [1015, 900]] },
@@ -559,6 +561,18 @@ function inLake(x, z, m = 0) {
 }
 const nearPoly = (poly, x, z, m) => inPoly(poly, x, z) || (m > 0 && distPoly(poly, x, z) < m);
 
+// The plot as landscaped here: data.js PLOT with its west corner pushed out to the bent Str. Murelor so the full-width
+// Faza III comb (CONTEXT_BLOCKS F3-*) stands on site ground (paving, lawns, no houses).
+const SITE_PLOT = (() => {
+  const f3 = CONTEXT_BLOCKS.filter(b => b.phase === 'III');
+  if (!f3.length) return PLOT;
+  const zMin = Math.min(...f3.map(b => b.z0)) - 6, xMax = Math.max(...f3.map(b => b.x1));
+  const keep = PLOT.filter(([x, z]) => !(z < -130 && x < xMax + 20));
+  const i = keep.findIndex(([x, z]) => x < -40 && z < -100);   // the plot's SW corner on Intrarea Guliver
+  if (i < 0) return PLOT;
+  return [...keep.slice(0, i + 1), [-41.5, zMin], [xMax + 17, zMin], ...keep.slice(i + 1)];
+})();
+
 // Project massing (world): our buildings, the context blocks, the P deck + spiral ramp
 const BLD_POLYS = Object.keys(BUILDINGS).map(id => footprintOf(id).map(([x, z]) => localToWorld(id, x, z)));
 const P_DECK = CONTEXT_BLOCKS.find(b => b.parking);
@@ -635,7 +649,7 @@ function computeLayout(low) {
   const R_GRID = low ? 1350 : 1980, R_HOUSE = low ? 760 : 1180, R_FAR = R_GRID - 30;
   const occ = makeOcc(SX, SZ, R_GRID + 60);
   // blocked areas
-  occ.fillPoly(offsetPolyXZ(PLOT, 4), 5);
+  occ.fillPoly(offsetPolyXZ(SITE_PLOT, 4), 5);
   occ.fillPoly(offsetShore(18), 5);
   for (const h of HALLS) occ.fillPoly(offsetPolyXZ(h.poly, 5), 5);
   for (const z of [Z_IND, Z_MID]) occ.fillPoly(z, 5);
@@ -653,7 +667,7 @@ function computeLayout(low) {
     }
     return false;
   };
-  const gridOK = (x, z, dx, dz) => Math.hypot(x - SX, z - SZ) < R_GRID && !inLake(x, z, 26) && !nearPoly(PLOT, x, z, 9) &&
+  const gridOK = (x, z, dx, dz) => Math.hypot(x - SX, z - SZ) < R_GRID && !inLake(x, z, 26) && !nearPoly(SITE_PLOT, x, z, 9) &&
     !inPoly(Z_TRACED, x, z) && !inPoly(Z_IND, x, z) && !inPoly(Z_MID, x, z) && !inPoly(Z_GREEN, x, z) &&
     !HALLS.some(h => nearPoly(h.poly, x, z, 8)) && !nearParallelTraced(x, z, dx, dz);
   const STEP = 12, { GZ, GX } = GRID;
@@ -784,7 +798,7 @@ function computeLayout(low) {
           acc = 0;
           for (const sd of [1, -1]) {
             const tx = x + nx * sd * (r.w / 2 + 1.5), tz = z + nz * sd * (r.w / 2 + 1.5), v = occ.at(tx, tz);
-            if ((v === 4 || v === 0) && rnd() < (r.traced ? 0.72 : 0.3) && !nearPoly(PLOT, tx, tz, -0.1) && !nearBuilding(tx, tz, 3)) sTrees.push([tx, tz, 0.8 + rnd() * 0.35]);
+            if ((v === 4 || v === 0) && rnd() < (r.traced ? 0.72 : 0.3) && !nearPoly(SITE_PLOT, tx, tz, -0.1) && !nearBuilding(tx, tz, 3)) sTrees.push([tx, tz, 0.8 + rnd() * 0.35]);
           }
         }
         if (dc < (r.traced ? 460 : 240) && lampAcc > 30) {
@@ -797,7 +811,7 @@ function computeLayout(low) {
         }
         if (r.traced && !r.main && dc < 330 && carAcc > 6.2) {
           carAcc = 0;
-          if (rnd() < 0.3) { const sd = rnd() < 0.5 ? 1 : -1; const cx = x + nx * sd * (r.w / 2 - 1.1), cz = z + nz * sd * (r.w / 2 - 1.1); if (!nearPoly(PLOT, cx, cz, 2)) kerbCars.push([cx, cz, Math.atan2(-uz, ux) + (rnd() < 0.5 ? 0 : Math.PI)]); }
+          if (rnd() < 0.3) { const sd = rnd() < 0.5 ? 1 : -1; const cx = x + nx * sd * (r.w / 2 - 1.1), cz = z + nz * sd * (r.w / 2 - 1.1); if (!nearPoly(SITE_PLOT, cx, cz, 2)) kerbCars.push([cx, cz, Math.atan2(-uz, ux) + (rnd() < 0.5 ? 0 : Math.PI)]); }
         }
       }
     }
@@ -814,7 +828,7 @@ function computeLayout(low) {
       const px = x + (x2 - x) * t + nx * d, pz = z + (z2 - z) * t + nz * d;
       if (Math.hypot(px - SX, pz - SZ) > R_GRID) continue;
       const v = occ.at(px, pz); if (v !== 0 && v !== 5) continue;
-      if (inLake(px, pz, 9) || nearPoly(PLOT, px, pz, 4) || HALLS.some(h => nearPoly(h.poly, px, pz, 4)) || roadsNear(roads, px, pz, 6)) continue;
+      if (inLake(px, pz, 9) || nearPoly(SITE_PLOT, px, pz, 4) || HALLS.some(h => nearPoly(h.poly, px, pz, 4)) || roadsNear(roads, px, pz, 6)) continue;
       (d < 30 && rnd() < 0.55 ? willows : pTrees).push([px, pz, 0.85 + rnd() * 0.45]);
     }
   }
@@ -853,7 +867,8 @@ function offsetPolyXZ(poly, d) {
 // Site plan canvas (world-axis rect around the plot and its four streets, painted at high resolution)
 const SITE = { x0: -64, x1: 160, z0: -206, z1: 164 };
 // Landscaping of the plot (world). C4 (x −13…115, z −75.8…−58.8) and C3 (z −8.5…8.5) enclose the courtyard (z −58.8…−8.5,
-// open to the SSW, closed by the two wings at x 98…115); Faza I is the ring east of C3, Faza III the pair west of C4.
+// open to the SSW, closed by the two wings at x 98…115); Faza I is the ring east of C3, Faza III the comb west of C4
+// (C5 z −118…−101, C6 z −185…−168, spine at x 98…115; its courtyard z −168…−118 opens to the SSW like ours).
 const YARD = { x: 58, z: -33.6 };                                    // courtyard garden centre (ring path, plaza, pool)
 const PLAY = [14, 30, -53, -41];                                     // kindergarten playground (by C4's kindergarten)
 // Lawns [x0, x1, z0, z1, corner radius] and footpaths [[x, z]…, width] of the plot (painted, and used to plant trees/shrubs)
@@ -862,19 +877,19 @@ const LAWNS = [
   [34, 82, -52, -13, 6],                                             // courtyard garden
   [91, 96.5, -28, -13, 2],                                           // courtyard, by the wing tips
   [44, 96, 19, 35.5, 3],                                             // C3–Faza I promenade garden
-  [28, 96, -104, -88, 5],                                            // C4–Faza III garden
+  [28, 96, -98.5, -87.5, 4],                                         // C4–Faza III garden
   [8, 94, 59, 111, 5],                                               // Faza I courtyard
-  [2, 97, -136.5, -129, 2],                                          // Faza III garden between the bars
+  [30, 92, -162, -124, 6],                                           // Faza III courtyard garden
 ];
 const PATHS = [
   [[[-12, 16], [101.7, 16]], 2.6], [[[-12, -85], [101.7, -85]], 2.6],   // promenades along the lobby fronts (outer sides)
   [[[10, YARD.z], [YARD.x - 16, YARD.z]], 2.2], [[[YARD.x + 16, YARD.z], [84, YARD.z]], 2.2],
   [[[YARD.x, YARD.z - 12], [YARD.x, -52]], 2.2], [[[YARD.x, YARD.z + 12], [YARD.x, -13]], 2.2],
-  [[[62, -86], [62, -104]], 2.4], [[[28, -96], [96, -96]], 2.2],
+  [[[62, -86], [62, -99]], 2.4], [[[28, -93], [96, -93]], 2.2],
   [[[8, 85], [94, 85]], 2.4], [[[51, 59], [51, 111]], 2.4],
-  [[[2, -132.7], [97, -132.7]], 2], [[[50, -136.5], [50, -129]], 2],
+  [[[2, -143], [97, -143]], 2.2], [[[61, -121], [61, -165]], 2.2],
 ];
-const PLAZAS = [[YARD.x, YARD.z, 8.6], [62, -96, 6.2], [51, 85, 7.4], [(PLAY[0] + PLAY[1]) / 2, (PLAY[2] + PLAY[3]) / 2, 9]];   // incl. the kindergarten playground
+const PLAZAS = [[YARD.x, YARD.z, 8.6], [62, -93, 4.8], [61, -143, 6.4], [51, 85, 7.4], [(PLAY[0] + PLAY[1]) / 2, (PLAY[2] + PLAY[3]) / 2, 9]];   // incl. the kindergarten playground
 function nearPath(x, z, m) {
   for (const [pts, w] of PATHS) for (let i = 0; i < pts.length - 1; i++) if (distSeg(x, z, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < w / 2 + m) return true;
   const e = Math.hypot((x - YARD.x) / 16, (z - YARD.z) / 12); if (Math.abs(e - 1) * 13 < 1.2 + m) return true;   // courtyard ring path
@@ -884,7 +899,8 @@ function nearPath(x, z, m) {
 const SITE_LOTS = [
   [-12, 10, -54, -13, [[-12, -7], [5, 10]]],                          // courtyard mouth
   [-12, 40, 19, 35, [[-12, -7], [-1, 4], [4, 9], [15, 20], [20, 25], [35, 40]]],   // between C3 and Faza I
-  [-12, 24, -104, -88, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],       // between C4 and Faza III
+  [-12, 24, -99, -87, [[-12, -7], [-1, 4], [4, 9], [19, 24]]],        // between C4 and Faza III
+  [-12, 10, -164, -122, [[-12, -7], [5, 10]]],                        // Faza III courtyard mouth
   [-38, -17, 40, 120, [[-38, -33], [-22, -17]]],                      // in front of Faza I, along Intrarea Guliver
 ];
 
@@ -1172,13 +1188,13 @@ export function createEnvironment(scene, renderer, opts = {}) {
       g.fillStyle = noisePattern(g, '#4e5c35', 'rgba(20,35,10,0.22)', 'rgba(170,180,100,0.08)', 900, 48); g.fillRect(SITE.x0, SITE.z0, W, H);
       paintLots(g, true);
       // the plot: lawn base (as on the developer render), warm limestone paving around the buildings, plazas and drives
-      g.save(); polyPath(g, PLOT); g.clip();
+      g.save(); polyPath(g, SITE_PLOT); g.clip();
       g.fillStyle = noisePattern(g, '#4f6a2b', 'rgba(20,40,5,0.16)', 'rgba(170,190,90,0.08)', 600, 40); g.fillRect(SITE.x0, SITE.z0, W, H);
       const paved = new Path2D();
       const pRect = (x0, x1, z0, z1) => paved.rect(x0, z0, x1 - x0, z1 - z0);
       for (const p of BLD_POLYS) { const q = offsetPolyXZ(p, 5); q.forEach(([x, z], i) => i ? paved.lineTo(x, z) : paved.moveTo(x, z)); paved.closePath(); }
       for (const b of CONTEXT_BLOCKS) pRect(b.x0 - 5, b.x1 + 5, b.z0 - 5, b.z1 + 5);
-      pRect(-13, 98, -58.8, -8.5); pRect(-13, 115, 8.5, 37.8); pRect(4, 98, 54.8, 115); pRect(-13, 115, -112.4, -75.8); pRect(0, 99, -138, -127.4);
+      pRect(-13, 98, -58.8, -8.5); pRect(-13, 115, 8.5, 37.8); pRect(4, 98, 54.8, 115); pRect(-13, 115, -101, -75.8); pRect(-13, 98, -168, -118);
       g.fillStyle = '#c9bfae'; g.fill(paved);
       g.save(); g.clip(paved);
       g.strokeStyle = 'rgba(80,70,55,0.12)'; g.lineWidth = 0.05;
@@ -1189,7 +1205,7 @@ export function createEnvironment(scene, renderer, opts = {}) {
       R(-13, RAMP.x1 + 0.3, -58.6, RAMP.z0, '#3a3b3e');
       g.restore();
       // plot kerb
-      g.strokeStyle = '#8e897f'; g.lineWidth = 0.5; polyPath(g, PLOT); g.stroke();
+      g.strokeStyle = '#8e897f'; g.lineWidth = 0.5; polyPath(g, SITE_PLOT); g.stroke();
       // soft contact shadow around the building footprints
       g.save(); g.filter = `blur(${Math.round(1.2 * ppm)}px)`; g.fillStyle = 'rgba(20,16,10,0.5)';
       for (const p of BLD_POLYS) { polyPath(g, p); g.fill(); }
@@ -1220,7 +1236,8 @@ export function createEnvironment(scene, renderer, opts = {}) {
       disc(YARD.x, YARD.z, 8.2, '#e3dccd'); disc(YARD.x, YARD.z, 5.2, '#bdb3a0');
       g.strokeStyle = 'rgba(120,105,85,0.35)'; g.lineWidth = 0.06;
       for (let r = 5.8; r < 8.2; r += 0.6) { g.beginPath(); g.arc(YARD.x, YARD.z, r, 0, TAU); g.stroke(); }
-      disc(62, -96, 5.8, '#e3dccd'); disc(62, -96, 2.4, '#b9ae99');
+      disc(62, -93, 4.5, '#e3dccd'); disc(62, -93, 1.9, '#b9ae99');
+      disc(61, -143, 6, '#e3dccd'); disc(61, -143, 2.8, '#9fb6a8');
       disc(51, 85, 7, '#e3dccd'); disc(51, 85, 3.2, '#9fb6a8');
       // kindergarten playground (by C4's kindergarten, at the courtyard mouth)
       { const [px0, px1, pz0, pz1] = PLAY, ox = px0 - 46, oz = pz0 + 50.5;
@@ -1525,17 +1542,17 @@ export function createEnvironment(scene, renderer, opts = {}) {
   function buildSiteObjects() {
     // ---- trees on the plot (courtyards, promenade, gardens) + street trees along the streets around it
     const site = [];
-    const addSite = (x, z, s = 1) => { if (!nearBuilding(x, z, 3.2) && inPoly(PLOT, x, z)) site.push([x, z, s]); };
+    const addSite = (x, z, s = 1) => { if (!nearBuilding(x, z, 3.2) && inPoly(SITE_PLOT, x, z)) site.push([x, z, s]); };
     for (let k = 0; k < 12; k++) { const a = k / 12 * TAU + 0.26; addSite(YARD.x + Math.cos(a) * 21, YARD.z + Math.sin(a) * 16, 1.05); }
     for (const [x, z] of [[20, -17], [26, -30], [93, -17], [93, -25], [36, -50]]) addSite(x, z, 1.15);
-    for (const [x, z] of [[34, -90], [46, -90], [78, -90], [90, -90], [34, -102], [46, -102], [78, -102], [90, -102], [30, -96], [94, -96]]) addSite(x, z, 1.1);
+    for (const [x, z] of [[34, -89], [46, -89], [78, -89], [90, -89], [34, -97], [46, -97], [78, -97], [90, -97], [30, -93], [94, -93]]) addSite(x, z, 1.1);
     for (const [x, z] of [[-10, 17], [30, 17], [42, 17], [12, 36.5]]) addSite(x, z, 1);
     for (let x = 46; x <= 94; x += 8) addSite(x, 18.3, 0.85);
     for (let z = 42; z <= 128; z += 11) addSite(-15.5, z, 1.05);
     for (const [x, z] of [[24, 64], [80, 64], [24, 106], [80, 106], [34, 75], [68, 96], [30, 96], [72, 74]]) addSite(x, z, 1.1);
-    for (let x = 6; x <= 94; x += 11) addSite(x, -132.7, 1);
-    for (let x = 6; x <= 96; x += 10) addSite(x, -157, 0.95);
-    for (let z = -140; z <= 120; z += 10) addSite(-39.5, z, 0.95);
+    for (let x = 16; x <= 94; x += 10) { addSite(x, -121.6, 0.95); addSite(x, -164.4, 0.95); }   // Faza III courtyard edges
+    for (let k = 0; k < 10; k++) { const a = k / 10 * TAU + 0.3; addSite(61 + Math.cos(a) * 15, -143 + Math.sin(a) * 12, 1.05); }
+    for (let z = -190; z <= 120; z += 10) addSite(-39.5, z, 0.95);
     for (let z = -100; z <= 12; z += 10) addSite(119, z, 0.9);
     treeSets.push({ pts: site.concat(L.sTrees.filter(([x, z]) => Math.hypot(x - SITE_CENTER[0], z - SITE_CENTER[1]) < 260)), leafy: true, h: [6, 9], r: [1.7, 2.7], trunk: [2.3, 3.1], cast: shadows, uplight: true, hue: 'site' });
     // young trees scattered over the lawns (off the paths), shrubs and flowering beds along the lawn edges
@@ -1574,11 +1591,11 @@ export function createEnvironment(scene, renderer, opts = {}) {
     const street = L.lamps, posts = [], bollards = [];
     for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + 0.39; posts.push([YARD.x + Math.cos(a) * 17.6, YARD.z + Math.sin(a) * 13.4]); }
     for (const [x, z] of [[-2, 13], [27, 13], [67, 13], [101.7, 19], [YARD.x + 16, YARD.z], [YARD.x, -52.5], [12, -30], [-2, -80.5], [27, -80.5], [67, -80.5], [101.7, -86],
-      [30, -96], [94, -96], [22, 60], [80, 60], [22, 108], [80, 108], [51, 64], [30, -132.7], [70, -132.7], [118, -60], [118, -10], [-17, -60], [-17, -8], [-17, 10], [-19, 60], [-19, 90]]) if (!nearBuilding(x, z, 1)) posts.push([x, z]);
+      [30, -93], [94, -93], [22, 60], [80, 60], [22, 108], [80, 108], [51, 64], [30, -143], [90, -143], [118, -60], [118, -10], [-17, -60], [-17, -8], [-17, 10], [-19, 60], [-19, 90]]) if (!nearBuilding(x, z, 1)) posts.push([x, z]);
     for (let x = -10; x <= 96; x += 6) if (Math.abs(x - 6.5) > 4 && Math.abs(x - 47) > 4) bollards.push([x, 13.6]);
     for (let x = -10; x <= 96; x += 6) if (Math.abs(x - 6.5) > 4 && Math.abs(x - 47) > 4) bollards.push([x, -80.4]);
     for (let x = 12; x <= 84; x += 6) bollards.push([x, -53.4]);
-    for (let x = 34; x <= 90; x += 6) { if (Math.abs(x - 62) > 7) bollards.push([x, -97.7]); }
+    for (let x = 34; x <= 90; x += 6) { if (Math.abs(x - 62) > 7) bollards.push([x, -94.8]); }
     for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; bollards.push([YARD.x + Math.cos(a) * 14.3, YARD.z + Math.sin(a) * 10.4]); }
     for (let z = 62; z <= 108; z += 8) { bollards.push([7.5, z]); bollards.push([94.5, z]); }
     const metal = registerMaterial(stdMat({ color: '#2b2b2d', roughness: 0.45, metalness: 0.7 }));
@@ -1607,7 +1624,7 @@ export function createEnvironment(scene, renderer, opts = {}) {
     // ---- benches
     const benches = [];
     for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; benches.push([YARD.x + Math.cos(a) * 6.6, YARD.z + Math.sin(a) * 6.6, -a + Math.PI / 2]); }
-    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.78; benches.push([62 + Math.cos(a) * 4.4, -96 + Math.sin(a) * 4.4, -a + Math.PI / 2]); }
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.78; benches.push([62 + Math.cos(a) * 3.6, -93 + Math.sin(a) * 3.6, -a + Math.PI / 2]); }
     for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; benches.push([51 + Math.cos(a) * 5.2, 85 + Math.sin(a) * 5.2, -a + Math.PI / 2]); }
     for (let x = 50; x <= 90; x += 8) benches.push([x, 17.9, 0]);
     const seat = new THREE.BoxGeometry(1.9, 0.08, 0.5); seat.translate(0, 0.45, 0);
