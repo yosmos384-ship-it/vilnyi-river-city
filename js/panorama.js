@@ -4,13 +4,29 @@
 // a north-up "radar" mini-map synced to the heading, category filters, and Google-Maps routes from the project.
 // Self-contained: bootstraps itself on #around; the DOM (header, radar, list) renders at load, WebGL starts lazily
 // when the section approaches the viewport. three.js is imported only then.
-import { bearingOf, dirOfBearing, LAKE } from './data.js';
+import { bearingOf, dirOfBearing, LAKE, BUILDINGS, GEOM, ROOF_Y, footprintOf, localToWorld } from './data.js';
 import { lang, onLangChange } from './i18n.js';
 import { pt, poiName, dirName, CARD } from './i18n-panorama.js';
 
 // ---------------------------------------------------------------- geometry of the capture (shared with the capture page)
 export const PANO_EYE_H = 120;
-export const PANO_EYE = [51, PANO_EYE_H, -33.6];        // world x,y,z — over the middle of the C3–C4 courtyard
+export const PANO_EYE = [51, PANO_EYE_H, -33.6];        // world x,y,z — over the middle of the C3–C4 "U" (see siteCentre)
+// The centre of the two blocks' combined footprint, from data.js. The baked faces in assets/panorama/ are only valid
+// for the massing and the eye they were captured with: if this drifts from PANO_EYE (or the buildings change shape),
+// re-run dev/pano-capture.html — it refuses to capture while the two disagree.
+export function siteCentre() {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const id of Object.keys(BUILDINGS)) for (const [lx, lz] of footprintOf(id)) {
+    const [x, z] = localToWorld(id, lx, lz);
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+  }
+  return [(x0 + x1) / 2, (z0 + z1) / 2];
+}
+// "You are here" anchors: the middle of each block's long bar, on the roof (world x,y,z) — always from data.js
+export const PROJECT_ANCHORS = Object.keys(BUILDINGS).map(id => {
+  const [x, z] = localToWorld(id, GEOM.wing.x0 / 2, 0);
+  return { id: id.toLowerCase(), name: id, world: [x, ROOF_Y, z] };
+});
 // Cube faces: capture camera looks along dir with the given up vector; the viewer rebuilds the same orientation.
 export const PANO_FACES = [
   { id: 'px', dir: [1, 0, 0], up: [0, 1, 0] }, { id: 'nx', dir: [-1, 0, 0], up: [0, 1, 0] },
@@ -89,6 +105,17 @@ export function trueBearing([la1, lo1], [la2, lo2]) {
 const walkMin = d => Math.max(1, Math.round(d * 1.3 / 80));
 const driveMin = d => Math.max(2, Math.round(2 + d * 1.35 / (d < 2500 ? 330 : d < 8000 ? 450 : 780)));
 const WALKABLE = 1200;                                    // ≤ ~20 min on foot → turquoise
+// The lake pin stands on the nearest point of the shore AS DRAWN in the 3D scene (data.js LAKE.shore), so it sits on the
+// water's edge in the panorama; its map coordinates follow from that offset (metres north / east of the project).
+{
+  let best = null;
+  for (const [x, z] of LAKE.shore) { const d = Math.hypot(x - PANO_EYE[0], z - PANO_EYE[2]); if (!best || d < best.d) best = { d, b: bearingOf(x - PANO_EYE[0], z - PANO_EYE[2]) }; }
+  const lake = POIS.find(p => p.id === 'lake');
+  if (lake && best) {
+    const n = best.d * Math.cos(best.b * RAD), e = best.d * Math.sin(best.b * RAD);
+    lake.ll = [+(PROJECT_LL[0] + n / 111320).toFixed(5), +(PROJECT_LL[1] + e / (111320 * Math.cos(PROJECT_LL[0] * RAD))).toFixed(5)];
+  }
+}
 for (const p of POIS) {
   p.dist = p.onSite ? 0 : haversine(PROJECT_LL, p.ll);
   p.bearing = p.onSite ? 0 : trueBearing(PROJECT_LL, p.ll);
@@ -236,9 +263,8 @@ function createPanorama(sec) {
   const pinEls = new Map();
   const projPins = [
     ...POIS.filter(p => !p.onSite),
-    // the project itself, seen when looking down (world positions of the two roofs)
-    { id: 'c3', proj: true, cat: 'project', name: 'C3', world: [51, 38, 0] },
-    { id: 'c4', proj: true, cat: 'project', name: 'C4', world: [51, 38, -67.3] },
+    // the project itself, seen when looking down (roof of each block's bar, from data.js)
+    ...PROJECT_ANCHORS.map(a => ({ ...a, proj: true, cat: 'project' })),
   ];
   pinsEl.innerHTML = projPins.map(p => p.proj
     ? `<div class="pp pp-proj" data-id="${p.id}"><span class="pp-card"><img src="assets/bird.png" alt="" width="20" height="18"><span class="pp-tx"><b dir="ltr">VILNYI RIVER CITY · ${p.name}</b><small data-p="here"></small></span></span><span class="pp-stem"></span><span class="pp-dot"></span></div>`
@@ -442,7 +468,7 @@ function createPanorama(sec) {
     S.dirty = true; kick();
   }
   function stopAuto() { S.auto = false; S.lastUser = performance.now(); hint.classList.add('gone'); }
-  S.yaw = yawForBearing(lsGet('vrc.panoBearing') ? +lsGet('vrc.panoBearing') : 160);
+  S.yaw = yawForBearing(lsGet('vrc.panoBearing') ? +lsGet('vrc.panoBearing') : 205);   // first look: SSW, over the open side of the U towards Lacul Morii
 
   // ---------- input: drag / swipe, pinch, wheel, keys
   const ptrs = new Map(); let pinch0 = 0, fov0 = 0, drag = null;

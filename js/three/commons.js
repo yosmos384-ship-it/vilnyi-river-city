@@ -403,8 +403,12 @@ const texWash = () => cached('wash', () => {
   g.fillStyle = gr; g.fillRect(0, 0, 8, 256); return texOf(c, { repeat: false });
 });
 // 3 columns × 4 rows (top row = highest floors), then a row with door-open / door-close / alarm
-const PANEL_ROWS = [[8, 9, 10], [5, 6, 7], [2, 3, 4], [-1, 0, 1], ['open', 'close', 'bell']];
-const KEY_R = 0.019, KEY_PITCH = 0.062;   // 3.8 cm keys on a 6.2 cm grid
+// The operating panel is a tall black-glass column on the front return wall (beside the doors, facing the back of the
+// car), read and tapped from the back of the car: 2 columns × 6 rows of floor keys (top row = highest floors), then
+// door-open / door-close and the alarm key below.
+const PANEL_ROWS = [[9, 10], [7, 8], [5, 6], [3, 4], [1, 2], [-1, 0], ['open', 'close'], ['bell']];
+const KEY_R = 0.043, KEY_PV = 0.118, KEY_PH = 0.128;   // 8.6 cm touch keys on an 11.8 × 12.8 cm grid
+const KEY_R2 = 0.036, KEY_R3 = 0.03;                   // door keys, alarm key
 
 function plateAtlas(entries) {   // brass number plates; returns {tex, uv(i)} with 8 × 8 cells of 128 × 64
   const c = canvas(1024, 512), g = c.getContext('2d');
@@ -871,6 +875,396 @@ function tween(ms, fn) {
     requestAnimationFrame(step);
   });
 }
+// ============================================================ painted figures
+// The people in the building (the visitor's reflection in the lift mirror, the concierge) are painted in code with
+// canvas 2D — frontal fashion-illustration portraits in metres, y up, for a 1.74 m woman with her eyes at 1.61 m —
+// and shown on cards. (Blurs use the shadow trick, not ctx.filter, so Safari paints the same picture.)
+const PAINT = (() => {
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+
+  // smooth closed/open curve through points (Catmull-Rom → Bézier)
+  function curve(g, pts, closed = true, move = true) {
+    const n = pts.length, P = i => closed ? pts[(i + n) % n] : pts[Math.max(0, Math.min(n - 1, i))];
+    if (move) g.moveTo(pts[0][0], pts[0][1]);
+    const m = closed ? n : n - 1;
+    for (let i = 0; i < m; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      g.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
+    }
+    if (closed) g.closePath();
+  }
+  const sym = half => [...half, ...half.slice(1, -1).reverse().map(([x, y]) => [-x, y])];   // half: top centre → bottom centre
+  function sample(pts, t) {   // Catmull-Rom sample of an open polyline, t ∈ [0, 1]
+    const n = pts.length - 1, f = Math.min(n - 1e-6, Math.max(0, t * n)), i = Math.floor(f), u = f - i;
+    const P = k => pts[Math.max(0, Math.min(n, k))], p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    const c = k => 0.5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * u + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * u * u + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u * u * u);
+    return [c(0), c(1)];
+  }
+  // Blurred fill without ctx.filter (Safari): draw the shape far off-canvas and keep only its shadow.
+  function soft(g, S, path, color, blur) {
+    const OFF = 6000;
+    g.save(); g.shadowColor = color; g.shadowBlur = blur * S; g.shadowOffsetX = OFF; g.shadowOffsetY = 0;
+    g.translate(-OFF / S, 0); g.fillStyle = '#000'; g.beginPath(); path(); g.fill(); g.restore();
+  }
+  const ellipse = (g, x, y, rx, ry, rot = 0) => { g.ellipse(x, y, rx, ry, rot, 0, TAU); };
+  function limb(g, ax, ay, ra, bx, by, rb) {   // tapered capsule path
+    const a = Math.atan2(by - ay, bx - ax), nx = -Math.sin(a), ny = Math.cos(a);
+    g.moveTo(ax + nx * ra, ay + ny * ra); g.lineTo(bx + nx * rb, by + ny * rb);
+    g.arc(bx, by, rb, a + Math.PI / 2, a - Math.PI / 2, true); g.lineTo(ax - nx * ra, ay - ny * ra);
+    g.arc(ax, ay, ra, a - Math.PI / 2, a + Math.PI / 2, true); g.closePath();
+  }
+  function rr(g, x, y, w, h, r) { g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  function lg(g, x0, y0, x1, y1, stops) { const r = g.createLinearGradient(x0, y0, x1, y1); stops.forEach(([t, c]) => r.addColorStop(t, c)); return r; }
+  function rg(g, x, y, r0, r1, stops) { const r = g.createRadialGradient(x, y, r0, x, y, r1); stops.forEach(([t, c]) => r.addColorStop(t, c)); return r; }
+
+  const SKIN = { hi: '#fbe3d0', lt: '#f3cfb6', mid: '#e7b999', sh: 'rgba(168,104,74,', deep: 'rgba(120,66,46,' };
+  const HAIRS = {
+    blonde: { base: '#d8b46e', dark: '#9f7a3c', deep: '#7a5a28', light: '#f2dc9e', hi: '#fff4cf', brow: '#8b6b45' },
+    brunette: { base: '#4a2f1f', dark: '#2c1a10', deep: '#1c100a', light: '#7a5236', hi: '#b98a5e', brow: '#3a2416' },
+  };
+
+  // ---- strands inside a lock bounded by two guide polylines (root → tip)
+  function lock(g, S, outer0, inner0, H, seed, n = 90, wave = 0.006, curl = 0, shade = 1) {
+    // curl: the whole lock undulates (big soft waves), growing from the root to the tip
+    const wv = (pts, ph, k) => pts.map(([x, y], i) => { const t = i / (pts.length - 1); return [x + Math.sin(t * 10.5 + ph) * curl * k * Math.min(1, t * 1.8), y]; });
+    const dense = pts => { const o = []; for (let i = 0; i <= 28; i++) o.push(sample(pts, i / 28)); return o; };
+    const outer = wv(dense(outer0), seed, 1), inner = wv(dense(inner0), seed + 0.6, 0.55);
+    const poly = []; const N = 40;
+    for (let i = 0; i <= N; i++) poly.push(sample(outer, i / N));
+    for (let i = N; i >= 0; i--) poly.push(sample(inner, i / N));
+    const ys = poly.map(p => p[1]), y1 = Math.max(...ys), y0 = Math.min(...ys);
+    g.beginPath(); g.moveTo(poly[0][0], poly[0][1]); for (const p of poly) g.lineTo(p[0], p[1]); g.closePath();
+    g.fillStyle = lg(g, 0, y1, 0, y0, [[0, H.base], [0.1, H.hi], [0.2, H.light], [0.36, H.base], [0.55, H.dark], [0.7, H.light], [0.82, H.base], [1, H.light]]);
+    g.fill();
+    g.save(); g.clip();
+    const r = rng(seed);
+    for (let k = 0; k < n; k++) {
+      const u = r(), ph = r() * TAU, amp = wave * (0.4 + r()), fr = 5 + r() * 4;
+      const tone = r(), col = tone < 0.3 ? H.dark : tone < 0.55 ? H.base : tone < 0.86 ? H.light : H.hi;
+      g.beginPath();
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40, a = sample(outer, t), b = sample(inner, t);
+        const w = Math.sin(t * fr + ph) * amp * Math.min(1, t * 2.2);
+        const x = lerp(a[0], b[0], u) + w, y = lerp(a[1], b[1], u);
+        if (i) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.strokeStyle = col; g.globalAlpha = (tone < 0.3 ? 0.4 : 0.5) * shade; g.lineWidth = 0.0009 + r() * 0.0022; g.lineCap = 'round'; g.stroke();
+    }
+    g.globalAlpha = 1; g.restore();
+  }
+
+  function eye(g, S, cx, cy, d0, iris) {   // d0 = +1 right of the face (viewer), −1 left
+    const K = 1.17; g.save(); g.translate(cx, cy); g.scale(d0 * K, K); cx = 0; cy = 0; const d = 1;
+    const ix = cx - d * 0.0152, ox = cx + d * 0.016, iy = cy - 0.0016, oy = cy + 0.0024;
+    const shape = () => { g.moveTo(ix, iy); g.bezierCurveTo(cx - d * 0.008, cy + 0.0092, cx + d * 0.007, cy + 0.0098, ox, oy); g.bezierCurveTo(cx + d * 0.009, cy - 0.0062, cx - d * 0.005, cy - 0.0066, ix, iy); g.closePath(); };
+    soft(g, S, () => ellipse(g, cx + d * 0.002, cy + 0.008, 0.021, 0.009), SKIN.sh + '0.3)', 0.006);   // socket
+    soft(g, S, () => ellipse(g, cx + d * 0.006, cy + 0.009, 0.012, 0.004), 'rgba(150,100,90,0.3)', 0.004);   // a touch of eye shadow
+    g.beginPath(); shape(); g.fillStyle = '#f7f3ee'; g.fill();
+    g.save(); g.beginPath(); shape(); g.clip();
+    const ex = cx + d * 0.0004, ey = cy + 0.0012, R = 0.0074;
+    g.beginPath(); ellipse(g, ex, ey, R, R); g.fillStyle = rg(g, ex, ey - 0.002, 0.001, R, [[0, iris[0]], [0.68, iris[1]], [0.92, iris[2]], [1, iris[2]]]); g.fill();
+    g.beginPath(); ellipse(g, ex, ey, 0.003, 0.003); g.fillStyle = '#120c08'; g.fill();
+    soft(g, S, () => g.rect(cx - 0.02, cy + 0.0052, 0.04, 0.01), 'rgba(40,24,16,0.6)', 0.003);   // lid shadow on the eyeball
+    g.beginPath(); ellipse(g, ex - d0 * 0.0026, ey + 0.0026, 0.0016, 0.0013); g.fillStyle = 'rgba(255,255,255,0.95)'; g.fill();
+    g.beginPath(); ellipse(g, ex + d0 * 0.0026, ey - 0.002, 0.0008, 0.0007); g.fillStyle = 'rgba(255,255,255,0.55)'; g.fill();
+    g.restore();
+    // upper lash line with a soft wing + a few lashes, faint lower line
+    g.beginPath(); g.moveTo(ix, iy + 0.0004); g.bezierCurveTo(cx - d * 0.008, cy + 0.0102, cx + d * 0.007, cy + 0.011, ox + d * 0.0036, oy + 0.0034);
+    g.bezierCurveTo(cx + d * 0.008, cy + 0.0082, cx - d * 0.007, cy + 0.0078, ix, iy + 0.0004); g.fillStyle = '#24160f'; g.fill();
+    for (let k = 0; k < 5; k++) { const t = 0.45 + k * 0.13, bx = lerp(ix, ox, t), by = cy + 0.0085 - Math.abs(t - 0.55) * 0.006;
+      g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo(bx + d * 0.001, by + 0.0016, bx + d * (0.0016 + k * 0.0003), by + 0.0022); g.strokeStyle = 'rgba(36,22,15,0.8)'; g.lineWidth = 0.0007; g.lineCap = 'round'; g.stroke(); }
+    g.beginPath(); g.moveTo(ox, oy); g.bezierCurveTo(cx + d * 0.009, cy - 0.0066, cx - d * 0.004, cy - 0.007, ix + d * 0.004, iy - 0.0016);
+    g.strokeStyle = 'rgba(70,40,28,0.45)'; g.lineWidth = 0.0007; g.stroke();
+    g.beginPath(); g.moveTo(ix + d * 0.003, cy + 0.0092); g.bezierCurveTo(cx - d * 0.004, cy + 0.0148, cx + d * 0.008, cy + 0.0148, ox + d * 0.001, cy + 0.0094);
+    g.strokeStyle = SKIN.deep + '0.36)'; g.lineWidth = 0.0008; g.stroke();
+    g.restore();
+  }
+
+  function face(g, S, H, o) {
+    const iris = o.iris || ['#9cc0d6', '#4f7f9f', '#27445a'];
+    const half = [[0, 1.74], [0.04, 1.735], [0.0635, 1.708], [0.0722, 1.662], [0.0718, 1.616], [0.067, 1.58], [0.0575, 1.553], [0.042, 1.533], [0.021, 1.522], [0, 1.5195]];
+    const outline = () => curve(g, sym(half));
+    g.beginPath(); outline();
+    g.fillStyle = lg(g, 0, 1.75, 0, 1.5, [[0, SKIN.lt], [0.45, SKIN.lt], [1, SKIN.mid]]); g.fill();
+    g.save(); g.beginPath(); outline(); g.clip();
+    // form: darker toward the jaw sides, brighter centre plane
+    for (const d of [-1, 1]) soft(g, S, () => ellipse(g, d * 0.088, 1.585, 0.03, 0.1), SKIN.sh + '0.42)', 0.02);
+    soft(g, S, () => ellipse(g, 0, 1.672, 0.03, 0.018), 'rgba(255,240,226,0.5)', 0.02);          // forehead light
+    soft(g, S, () => ellipse(g, 0, 1.534, 0.016, 0.008), 'rgba(255,238,224,0.4)', 0.008);        // chin light
+    for (const d of [-1, 1]) {
+      soft(g, S, () => ellipse(g, d * 0.044, 1.588, 0.02, 0.013), 'rgba(226,120,108,0.26)', 0.014);   // blush
+      soft(g, S, () => ellipse(g, d * 0.038, 1.602, 0.012, 0.007), 'rgba(255,236,220,0.45)', 0.008); // cheekbone light
+    }
+    // nose: bridge light, side shade, tip, nostrils
+    soft(g, S, () => ellipse(g, 0.0095, 1.596, 0.0035, 0.018), SKIN.sh + '0.22)', 0.005);
+    soft(g, S, () => ellipse(g, -0.001, 1.598, 0.0028, 0.018), 'rgba(255,240,228,0.5)', 0.004);
+    soft(g, S, () => ellipse(g, 0, 1.579, 0.0052, 0.0042), 'rgba(255,238,226,0.6)', 0.004);
+    soft(g, S, () => ellipse(g, 0, 1.5695, 0.012, 0.0028), SKIN.sh + '0.4)', 0.004);
+    for (const d of [-1, 1]) {
+      g.beginPath(); ellipse(g, d * 0.0066, 1.5728, 0.003, 0.0016, d * 0.35); g.fillStyle = SKIN.deep + '0.6)'; g.fill();
+      g.beginPath(); g.moveTo(d * 0.0114, 1.5805); g.quadraticCurveTo(d * 0.0138, 1.5745, d * 0.0096, 1.5715); g.strokeStyle = SKIN.deep + '0.3)'; g.lineWidth = 0.0008; g.stroke();
+    }
+    // eyes + brows
+    for (const d of [-1, 1]) {
+      eye(g, S, d * 0.0325, 1.612, d, iris);
+      g.beginPath(); g.moveTo(d * 0.0135, 1.638); g.bezierCurveTo(d * 0.028, 1.6445, d * 0.044, 1.6475, d * 0.0605, 1.6385);
+      g.bezierCurveTo(d * 0.045, 1.6438, d * 0.028, 1.6398, d * 0.0138, 1.634); g.closePath(); g.fillStyle = H.brow; g.globalAlpha = 0.9; g.fill(); g.globalAlpha = 1;
+    }
+    // lips
+    const my = 1.5505, mw = 0.0255;
+    soft(g, S, () => ellipse(g, 0, my - 0.0105, 0.016, 0.003), SKIN.sh + '0.35)', 0.004);       // under the lower lip
+    const cy2 = my + 0.0026;   // corners lifted: a gentle smile
+    g.beginPath(); g.moveTo(-mw, cy2); g.bezierCurveTo(-0.015, my + 0.0066, -0.0065, my + 0.0092, -0.003, my + 0.0078); g.quadraticCurveTo(0, my + 0.006, 0.003, my + 0.0078);
+    g.bezierCurveTo(0.0065, my + 0.0092, 0.015, my + 0.0066, mw, cy2); g.bezierCurveTo(0.012, my - 0.0006, -0.012, my - 0.0006, -mw, cy2); g.closePath();
+    g.fillStyle = o.lipTop || '#b8545c'; g.fill();
+    g.beginPath(); g.moveTo(-mw, cy2); g.bezierCurveTo(-0.012, my - 0.0004, 0.012, my - 0.0004, mw, cy2); g.bezierCurveTo(0.017, my - 0.0112, -0.017, my - 0.0112, -mw, cy2); g.closePath();
+    g.fillStyle = lg(g, 0, my, 0, my - 0.01, [[0, o.lip || '#cf6c72'], [1, o.lipTop || '#b8545c']]); g.fill();
+    soft(g, S, () => ellipse(g, 0.001, my - 0.004, 0.008, 0.0018), 'rgba(255,228,224,0.7)', 0.0024);
+    g.beginPath(); g.moveTo(-mw - 0.0012, cy2 + 0.0006); g.bezierCurveTo(-0.012, my - 0.0004, 0.012, my - 0.0004, mw + 0.0012, cy2 + 0.0006); g.strokeStyle = 'rgba(96,36,40,0.75)'; g.lineWidth = 0.0009; g.lineCap = 'round'; g.stroke();
+    for (const d of [-1, 1]) soft(g, S, () => ellipse(g, d * (mw + 0.003), my + 0.0036, 0.003, 0.003), SKIN.sh + '0.35)', 0.003);
+    g.restore();
+  }
+
+  // Standing / seated woman, frontal. Heights for a 1.74 m woman (eye 1.62). o: { hair, outfit, arms }
+  function paintWoman(g, S, o) {
+    const H = HAIRS[o.hair === 'bun' ? 'brunette' : 'blonde'];
+    const gown = o.outfit === 'gown';
+    // ---------- hair behind the body
+    if (o.hair === 'long') {
+      const back = sym([[0, 1.778], [0.052, 1.773], [0.098, 1.738], [0.116, 1.68], [0.12, 1.6], [0.128, 1.52], [0.146, 1.44], [0.158, 1.36], [0.154, 1.28], [0.13, 1.225], [0.09, 1.21], [0.058, 1.25], [0, 1.31]]);
+      g.beginPath(); curve(g, back); g.fillStyle = lg(g, 0, 1.78, 0, 1.22, [[0, H.dark], [0.3, H.deep], [1, H.dark]]); g.fill();
+    } else {
+      g.beginPath(); curve(g, sym([[0, 1.764], [0.045, 1.758], [0.078, 1.728], [0.086, 1.675], [0.08, 1.62], [0.06, 1.58], [0, 1.57]])); g.fillStyle = H.deep; g.fill();
+      // low chignon peeking out behind the neck on one side
+      g.beginPath(); ellipse(g, 0.052, 1.538, 0.04, 0.036, 0.3); g.fillStyle = rg(g, 0.06, 1.55, 0.004, 0.045, [[0, H.light], [0.5, H.base], [1, H.deep]]); g.fill();
+    }
+    // ---------- body skin: neck, shoulders, chest (the outfit covers the rest)
+    const torso = sym([[0, 1.53], [0.034, 1.53], [0.037, 1.49], [0.043, 1.468], [0.085, 1.45], [0.145, 1.432], [0.178, 1.412], [0.19, 1.37], [0.172, 1.3], [0.16, 1.2], [0, 1.18]]);
+    g.beginPath(); curve(g, torso); g.fillStyle = lg(g, 0, 1.52, 0, 1.2, [[0, SKIN.mid], [0.25, SKIN.lt], [1, SKIN.mid]]); g.fill();
+    g.save(); g.beginPath(); curve(g, torso); g.clip();
+    soft(g, S, () => ellipse(g, 0, 1.512, 0.05, 0.03), SKIN.sh + '0.6)', 0.014);                 // shadow of the chin on the neck
+    for (const d of [-1, 1]) {
+      soft(g, S, () => ellipse(g, d * 0.047, 1.47, 0.008, 0.035), SKIN.sh + '0.25)', 0.008);    // neck sides
+      // collarbones: a light ridge with a soft shade below
+      soft(g, S, () => { g.moveTo(d * 0.014, 1.434); g.quadraticCurveTo(d * 0.07, 1.452, d * 0.135, 1.432); g.quadraticCurveTo(d * 0.07, 1.444, d * 0.014, 1.428); }, 'rgba(255,238,224,0.5)', 0.004);
+      soft(g, S, () => { g.moveTo(d * 0.016, 1.424); g.quadraticCurveTo(d * 0.07, 1.438, d * 0.13, 1.422); g.quadraticCurveTo(d * 0.07, 1.428, d * 0.016, 1.416); }, SKIN.sh + '0.3)', 0.005);
+      soft(g, S, () => ellipse(g, d * 0.165, 1.402, 0.02, 0.016), 'rgba(255,238,224,0.45)', 0.012);   // shoulder light
+    }
+    soft(g, S, () => ellipse(g, 0, 1.436, 0.008, 0.006), SKIN.sh + '0.35)', 0.004);              // notch between the collarbones
+    soft(g, S, () => ellipse(g, 0, 1.36, 0.05, 0.03), 'rgba(255,240,228,0.35)', 0.02);           // chest light
+    if (gown) soft(g, S, () => ellipse(g, 0, 1.285, 0.0035, 0.03), SKIN.sh + '0.3)', 0.007);     // a discreet hint of shape above the neckline
+    g.restore();
+    // ---------- arms
+    // one smooth contour per arm: shoulder → elbow → wrist toward the centre (hands meet in front of the hips)
+    const armPath = (d, pad = 0) => curve(g, [[0.146 - pad, 1.335], [0.168, 1.408 + pad], [0.196 + pad, 1.385], [0.203 + pad, 1.29], [0.202 + pad, 1.18], [0.194 + pad, 1.11], [0.15 + pad, 1.04], [0.082, 0.948 - pad],
+      [0.05, 0.975], [0.064, 1.0 + pad], [0.118 - pad, 1.068], [0.15 - pad, 1.135], [0.146 - pad, 1.24]].map(([x, y]) => [d * x, y]));
+    const arm = d => {
+      g.beginPath(); armPath(d); g.fillStyle = lg(g, d * 0.13, 0, d * 0.21, 0, [[0, SKIN.mid], [0.5, SKIN.lt], [1, SKIN.mid]]); g.fill();
+      g.save(); g.beginPath(); armPath(d); g.clip();
+      soft(g, S, () => curve(g, [[0.14, 1.33], [0.152, 1.24], [0.156, 1.135], [0.12, 1.06], [0.06, 0.99], [0.04, 1.0], [0.1, 1.09], [0.13, 1.16], [0.125, 1.3]].map(([x, y]) => [d * x, y])), SKIN.sh + '0.42)', 0.01);
+      soft(g, S, () => ellipse(g, d * 0.186, 1.3, 0.008, 0.07), 'rgba(255,240,228,0.5)', 0.008);
+      soft(g, S, () => ellipse(g, d * 0.176, 1.12, 0.016, 0.01), SKIN.sh + '0.22)', 0.008);
+      g.restore();
+      return [d * 0.066, 0.962];
+    };
+    // ---------- outfit
+    if (gown) {
+      // floor-length black satin column gown: thin straps, V neckline, fitted waist, soft flare at the hem
+      const C = o.cloth;
+      const dress = sym([[0, 1.262], [0.045, 1.336], [0.074, 1.352], [0.112, 1.345], [0.146, 1.322], [0.159, 1.272], [0.146, 1.2], [0.126, 1.105], [0.14, 1.02], [0.17, 0.93], [0.172, 0.78], [0.15, 0.5], [0.16, 0.2], [0.2, 0.012], [0, 0.0]]);
+      const path = () => { const p = dress; g.moveTo(p[0][0], p[0][1]); g.lineTo(p[1][0], p[1][1]); curve(g, p.slice(1, p.length - 1), false, false); g.lineTo(p[p.length - 1][0], p[p.length - 1][1]); g.closePath(); };
+      for (const d of [-1, 1]) { g.beginPath(); g.moveTo(d * 0.078, 1.452); g.lineTo(d * 0.09, 1.45); g.lineTo(d * 0.1, 1.345); g.lineTo(d * 0.07, 1.35); g.closePath(); g.fillStyle = C[1]; g.fill(); }
+      g.beginPath(); path(); g.fillStyle = lg(g, -0.18, 0, 0.18, 0, [[0, C[2]], [0.3, C[1]], [0.5, C[0]], [0.7, C[1]], [1, C[2]]]); g.fill();
+      g.save(); g.beginPath(); path(); g.clip();
+      // satin: long soft highlights following the body, deep folds in the skirt
+      for (const d of [-1, 1]) {
+        soft(g, S, () => ellipse(g, d * 0.084, 1.272, 0.03, 0.03), C[3] + '0.2)', 0.03);
+        soft(g, S, () => ellipse(g, d * 0.1, 0.96, 0.016, 0.1), C[3] + '0.22)', 0.024);
+        soft(g, S, () => ellipse(g, d * 0.07, 0.55, 0.01, 0.3), C[3] + '0.2)', 0.018);
+        soft(g, S, () => ellipse(g, d * 0.13, 0.3, 0.008, 0.25), 'rgba(0,0,0,0.6)', 0.012);
+        soft(g, S, () => ellipse(g, d * 0.132, 1.13, 0.012, 0.09), 'rgba(0,0,0,0.55)', 0.012);
+      }
+      soft(g, S, () => ellipse(g, 0, 1.2, 0.01, 0.07), 'rgba(0,0,0,0.5)', 0.014);
+      soft(g, S, () => ellipse(g, 0.0, 0.45, 0.006, 0.42), 'rgba(0,0,0,0.55)', 0.014);
+      soft(g, S, () => ellipse(g, 0.03, 0.75, 0.01, 0.2), C[3] + '0.25)', 0.014);
+      soft(g, S, () => ellipse(g, 0, 1.105, 0.13, 0.012), 'rgba(0,0,0,0.5)', 0.01);
+      g.restore();
+      // neckline edge catch-light
+      g.beginPath(); g.moveTo(-0.074, 1.352); g.lineTo(-0.045, 1.336); g.lineTo(0, 1.262); g.lineTo(0.045, 1.336); g.lineTo(0.074, 1.352); g.strokeStyle = C[3] + '0.5)'; g.lineWidth = 0.0014; g.lineJoin = 'round'; g.stroke();
+      // arms over the gown, hands holding a small gold clutch
+      const wl = arm(-1), wr = arm(1);
+      g.beginPath(); rr(g, -0.085, 0.885, 0.17, 0.085, 0.012); g.fillStyle = lg(g, -0.085, 0.97, 0.085, 0.885, [[0, '#f0d79a'], [0.45, '#c9a25a'], [1, '#8f6c30']]); g.fill();
+      g.beginPath(); rr(g, -0.085, 0.885, 0.17, 0.085, 0.012); g.strokeStyle = 'rgba(90,62,20,0.6)'; g.lineWidth = 0.0012; g.stroke();
+      g.beginPath(); g.moveTo(-0.08, 0.948); g.lineTo(0.08, 0.948); g.strokeStyle = 'rgba(255,240,200,0.6)'; g.lineWidth = 0.001; g.stroke();
+      for (const [d, [wx, wy]] of [[-1, wl], [1, wr]]) {
+        // hand: palm over the clutch edge, fingers wrapping the front
+        g.beginPath(); ellipse(g, wx - d * 0.012, wy - 0.022, 0.026, 0.03, d * 0.5); g.fillStyle = SKIN.lt; g.fill();
+        for (let k = 0; k < 4; k++) { g.beginPath(); limb(g, wx - d * (0.02 + k * 0.004), wy - 0.036 + k * 0.011, 0.0072, wx - d * (0.058 - k * 0.002), wy - 0.05 + k * 0.012, 0.006); g.fillStyle = k % 2 ? SKIN.lt : SKIN.hi; g.fill();
+          g.strokeStyle = SKIN.sh + '0.35)'; g.lineWidth = 0.0007; g.stroke(); }
+      }
+    } else {
+      // fitted blazer over an ivory silk top with a modest V; structured shoulders, notch lapels, one button
+      const C = o.cloth, T = o.top;
+      g.beginPath(); g.moveTo(-0.1, 1.4); g.lineTo(0, 1.305); g.lineTo(0.1, 1.4); g.lineTo(0.11, 1.1); g.lineTo(-0.11, 1.1); g.closePath();
+      g.fillStyle = lg(g, -0.1, 0, 0.1, 0, [[0, T[1]], [0.5, T[0]], [1, T[1]]]); g.fill();
+      soft(g, S, () => ellipse(g, 0, 1.24, 0.008, 0.05), 'rgba(120,100,80,0.22)', 0.01);
+      g.beginPath(); g.moveTo(-0.1, 1.4); g.lineTo(0, 1.305); g.lineTo(0.1, 1.4); g.strokeStyle = 'rgba(150,130,100,0.5)'; g.lineWidth = 0.0012; g.stroke();
+      const outer = [[0.095, 1.458], [0.15, 1.442], [0.188, 1.416], [0.199, 1.365], [0.182, 1.3], [0.164, 1.2], [0.144, 1.1], [0.156, 1.0], [0.18, 0.9], [0.182, 0.84]];
+      const jp = () => { for (const d of [-1, 1]) { g.moveTo(d * 0.082, 1.445); g.lineTo(d * 0.095, 1.458); curve(g, outer.map(([x, y]) => [d * x, y]), false, false); g.lineTo(0, 0.84); g.lineTo(0, 1.17); g.lineTo(d * 0.012, 1.17); g.lineTo(d * 0.058, 1.3); g.closePath(); } };
+      g.beginPath(); jp(); g.fillStyle = lg(g, -0.2, 0, 0.2, 0, [[0, C[2]], [0.28, C[1]], [0.5, C[0]], [0.72, C[1]], [1, C[2]]]); g.fill();
+      g.save(); g.beginPath(); jp(); g.clip();
+      for (const d of [-1, 1]) {
+        soft(g, S, () => ellipse(g, d * 0.09, 1.275, 0.04, 0.04), C[3] + '0.22)', 0.02);            // soft form light
+        soft(g, S, () => ellipse(g, d * 0.142, 1.13, 0.012, 0.1), 'rgba(0,0,0,0.5)', 0.012);         // waist shade
+        soft(g, S, () => ellipse(g, d * 0.158, 1.424, 0.028, 0.009), C[3] + '0.3)', 0.01);             // shoulder line
+      }
+      soft(g, S, () => ellipse(g, 0.004, 1.0, 0.004, 0.16), 'rgba(0,0,0,0.6)', 0.006);                // front closure
+      g.restore();
+      // lapels
+      for (const d of [-1, 1]) {
+        g.beginPath(); g.moveTo(d * 0.082, 1.44); g.lineTo(d * 0.058, 1.3); g.lineTo(d * 0.012, 1.17); g.lineTo(d * 0.06, 1.25); g.lineTo(d * 0.112, 1.33); g.lineTo(d * 0.1, 1.365); g.lineTo(d * 0.122, 1.39); g.lineTo(d * 0.1, 1.452); g.closePath();
+        g.fillStyle = lg(g, d * 0.02, 1.2, d * 0.12, 1.42, [[0, C[1]], [1, C[0]]]); g.fill(); g.strokeStyle = C[3] + '0.28)'; g.lineWidth = 0.0011; g.lineJoin = 'round'; g.stroke();
+      }
+      g.beginPath(); ellipse(g, 0.004, 1.13, 0.0085, 0.0085); g.fillStyle = rg(g, 0.002, 1.133, 0.001, 0.009, [[0, '#f6e2a6'], [1, '#9c7a3a']]); g.fill();
+      // gold bird pin on the lapel
+      g.beginPath(); g.moveTo(0.078, 1.352); g.lineTo(0.1, 1.362); g.lineTo(0.09, 1.35); g.lineTo(0.104, 1.34); g.lineTo(0.084, 1.343); g.closePath(); g.fillStyle = '#e8c27a'; g.fill();
+      if (o.arms !== 'none') for (const d of (o.arms === 'both' ? [-1, 1] : [o.arms === 'left' ? -1 : 1])) armSleeve(g, S, o, d);
+    }
+    // ---------- head
+    g.beginPath(); g.moveTo(-0.036, 1.54); g.lineTo(0.036, 1.54); g.lineTo(0.04, 1.47); g.lineTo(-0.04, 1.47); g.closePath();   // neck (re-drawn above collars)
+    if (!gown) { g.fillStyle = lg(g, 0, 1.52, 0, 1.47, [[0, SKIN.mid], [1, SKIN.lt]]); g.fill(); soft(g, S, () => ellipse(g, 0, 1.512, 0.036, 0.022), SKIN.sh + '0.55)', 0.012); }
+    for (const d of [-1, 1]) { g.beginPath(); ellipse(g, d * 0.0745, 1.612, 0.008, 0.019, d * 0.12); g.fillStyle = SKIN.mid; g.fill(); }   // ears (mostly under hair)
+    face(g, S, H, o);
+    // ---------- hair in front
+    if (o.hair === 'long') {
+      const Ro = [[-0.02, 1.766], [0.048, 1.762], [0.094, 1.724], [0.108, 1.652], [0.112, 1.572], [0.122, 1.492], [0.14, 1.412], [0.15, 1.332], [0.142, 1.262], [0.112, 1.206]];
+      const Ri = [[-0.02, 1.712], [0.014, 1.703], [0.044, 1.68], [0.0625, 1.64], [0.0695, 1.582], [0.074, 1.502], [0.078, 1.422], [0.086, 1.342], [0.094, 1.272], [0.1, 1.216]];
+      const Lo = [[-0.02, 1.768], [-0.068, 1.757], [-0.102, 1.718], [-0.113, 1.652], [-0.116, 1.572], [-0.126, 1.492], [-0.142, 1.412], [-0.152, 1.332], [-0.144, 1.262], [-0.114, 1.206]];
+      const Li = [[-0.02, 1.714], [-0.034, 1.706], [-0.052, 1.682], [-0.0635, 1.64], [-0.0705, 1.582], [-0.075, 1.502], [-0.079, 1.422], [-0.088, 1.342], [-0.096, 1.272], [-0.102, 1.216]];
+      // soft shadow of the hair on the face / shoulders
+      for (const [Oq, Iq] of [[Ro, Ri], [Lo, Li]]) soft(g, S, () => { for (let i = 0; i <= 20; i++) { const p = sample(Iq, i / 20); i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); } for (let i = 20; i >= 0; i--) { const p = sample(Oq, i / 20); g.lineTo(p[0], p[1]); } }, 'rgba(110,70,40,0.35)', 0.008);
+      lock(g, S, Ro, Ri, H, 11, 150, 0.004, 0.02);
+      lock(g, S, Lo, Li, H, 29, 150, 0.004, 0.02);
+      // crown sheen
+      soft(g, S, () => { g.moveTo(-0.02, 1.768); g.lineTo(-0.017, 1.768); g.lineTo(-0.019, 1.714); g.lineTo(-0.022, 1.714); }, 'rgba(110,80,30,0.7)', 0.003);   // the parting
+    } else {
+      // sleek side-parted hair swept back into a low chignon
+      const Ro = [[-0.022, 1.764], [0.04, 1.76], [0.078, 1.726], [0.087, 1.672], [0.085, 1.618], [0.079, 1.582]];
+      const Ri = [[-0.022, 1.71], [0.012, 1.702], [0.042, 1.682], [0.0615, 1.65], [0.0705, 1.612], [0.073, 1.586]];
+      const Lo = [[-0.022, 1.766], [-0.058, 1.757], [-0.084, 1.724], [-0.089, 1.672], [-0.086, 1.618], [-0.08, 1.582]];
+      const Li = [[-0.022, 1.712], [-0.034, 1.706], [-0.052, 1.688], [-0.066, 1.652], [-0.0725, 1.612], [-0.0745, 1.586]];
+      for (const [Oq, Iq] of [[Ro, Ri], [Lo, Li]]) soft(g, S, () => { for (let i = 0; i <= 20; i++) { const p = sample(Iq, i / 20); i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); } for (let i = 20; i >= 0; i--) { const p = sample(Oq, i / 20); g.lineTo(p[0], p[1]); } }, 'rgba(60,30,20,0.35)', 0.007);
+      lock(g, S, Ro, Ri, H, 5, 80, 0.0015);
+      lock(g, S, Lo, Li, H, 7, 70, 0.0015);
+      soft(g, S, () => { g.moveTo(-0.022, 1.766); g.lineTo(-0.019, 1.766); g.lineTo(-0.021, 1.712); g.lineTo(-0.024, 1.712); }, 'rgba(20,10,6,0.7)', 0.003);
+      soft(g, S, () => { g.moveTo(0.0, 1.742); g.quadraticCurveTo(0.045, 1.74, 0.07, 1.7); g.quadraticCurveTo(0.04, 1.728, 0.0, 1.742); }, 'rgba(200,150,110,0.45)', 0.006);
+    }
+    // ---------- jewellery
+    for (const d of [-1, 1]) { g.beginPath(); ellipse(g, d * 0.0765, 1.588, 0.0042, 0.0042); g.fillStyle = rg(g, d * 0.0755, 1.5895, 0.0005, 0.0045, [[0, '#fff6d8'], [0.5, '#e6c476'], [1, '#9a7732']]); g.fill();
+      if (gown) { g.beginPath(); ellipse(g, d * 0.0768, 1.574, 0.003, 0.0075); g.fillStyle = '#e6c476'; g.fill(); } }
+    g.beginPath(); g.moveTo(-0.042, 1.462); g.quadraticCurveTo(0, gown ? 1.372 : 1.392, 0.042, 1.462); g.strokeStyle = 'rgba(214,176,98,0.95)'; g.lineWidth = 0.0011; g.stroke();
+    g.beginPath(); ellipse(g, 0, gown ? 1.412 : 1.422, 0.0048, 0.0062); g.fillStyle = rg(g, -0.001, gown ? 1.414 : 1.424, 0.0005, 0.006, [[0, '#fff6d8'], [0.5, '#e6c476'], [1, '#9a7732']]); g.fill();
+  }
+
+  // blazer sleeve hanging at the side, forearm resting toward the lap (d = ±1)
+  function armSleeve(g, S, o, d) {
+    const C = o.cloth, sx = d * 0.168, sy = 1.385, ex = d * 0.19, ey = 1.12, wx = d * 0.1, wy = 0.94;
+    g.beginPath(); limb(g, sx, sy, 0.044, ex, ey, 0.038); g.fillStyle = lg(g, sx - 0.05, 0, sx + 0.05, 0, [[0, C[2]], [0.5, C[0]], [1, C[2]]]); g.fill();
+    g.beginPath(); limb(g, ex, ey, 0.038, wx, wy, 0.032); g.fillStyle = lg(g, 0, ey, 0, wy, [[0, C[1]], [1, C[2]]]); g.fill();
+    g.save(); g.beginPath(); limb(g, sx, sy, 0.044, ex, ey, 0.038); g.clip(); soft(g, S, () => limb(g, sx - d * 0.05, sy, 0.02, ex - d * 0.05, ey, 0.02), 'rgba(0,0,0,0.45)', 0.012); g.restore();
+  }
+
+  // The waving arm of the concierge as two sprites, drawn pointing down from their pivots (shoulder / elbow at the origin).
+  function paintArmUpper(g, S, o) {
+    const C = o.cloth;
+    g.beginPath(); limb(g, 0, 0, 0.044, 0, -0.265, 0.038); g.fillStyle = lg(g, -0.05, 0, 0.05, 0, [[0, C[2]], [0.5, C[0]], [1, C[2]]]); g.fill();
+  }
+  function paintArmFore(g, S, o) {
+    const C = o.cloth, T = o.top;
+    g.beginPath(); limb(g, 0, 0, 0.038, 0, -0.2, 0.031); g.fillStyle = lg(g, -0.045, 0, 0.045, 0, [[0, C[2]], [0.5, C[0]], [1, C[2]]]); g.fill();
+    g.beginPath(); rr(g, -0.03, -0.228, 0.06, 0.02, 0.004); g.fillStyle = T[0]; g.fill();          // cuff of the silk top
+    // open hand, palm to the visitor, fingers toward −y
+    const hy = -0.262;
+    g.beginPath(); rr(g, -0.034, hy - 0.04, 0.068, 0.085, 0.022); g.fillStyle = lg(g, -0.034, 0, 0.034, 0, [[0, SKIN.mid], [0.5, SKIN.hi], [1, SKIN.mid]]); g.fill();
+    const fl = [0.046, 0.054, 0.05, 0.04];
+    for (let k = 0; k < 4; k++) { const fx = -0.0255 + k * 0.017, a = (k - 1.5) * 0.07; g.beginPath(); limb(g, fx, hy - 0.034, 0.0086, fx + Math.sin(a) * fl[k], hy - 0.034 - Math.cos(a) * fl[k], 0.0074); g.fillStyle = lg(g, fx - 0.008, 0, fx + 0.008, 0, [[0, SKIN.mid], [0.5, SKIN.hi], [1, SKIN.mid]]); g.fill(); }
+    g.beginPath(); limb(g, 0.03, hy + 0.012, 0.0105, 0.062, hy - 0.022, 0.0078); g.fillStyle = SKIN.lt; g.fill();   // thumb
+    soft(g, S, () => ellipse(g, 0, hy - 0.004, 0.018, 0.02), SKIN.sh + '0.18)', 0.008);
+  }
+  const FIG_STYLES = {
+    mirror: { hair: 'long', outfit: 'gown', cloth: ['#3b3a40', '#18171b', '#060607', 'rgba(210,205,220,'] },
+    concierge: { hair: 'bun', outfit: 'blazer', arms: 'left', cloth: ['#2d3550', '#1a2036', '#0c0f1c', 'rgba(170,185,230,'], top: ['#fbf6ea', '#d9cfbb'], iris: ['#b08a5c', '#6e4a2a', '#2e1c10'], lip: '#c7656b', lipTop: '#aa4f58' },
+  };
+  return { paintWoman, paintArmUpper, paintArmFore, FIG_STYLES };
+})();
+// kind → { tex, w, y0, y1 }: the painted card (width, bottom and top in the figure's metres), cached
+const FIG_CARDS = { mirror: [0.5, 0, 1.8, 1000, 'mirror', 'paintWoman'], concierge: [0.5, 0.84, 1.8, 900, 'concierge', 'paintWoman'],
+  armU: [0.11, -0.32, 0.055, 900, 'concierge', 'paintArmUpper'], armF: [0.22, -0.37, 0.05, 900, 'concierge', 'paintArmFore'] };
+function figCard(kind) {
+  const [w, y0, y1, S, style, fn] = FIG_CARDS[kind];
+  const tex = cached('fig:' + kind, () => {
+    const c = canvas(Math.round(w * S), Math.round((y1 - y0) * S)), g = c.getContext('2d');
+    g.setTransform(S, 0, 0, -S, c.width / 2, y1 * S);
+    PAINT[fn](g, S, PAINT.FIG_STYLES[style]);
+    const t = texOf(c, { repeat: false }); t.anisotropy = 4; return t;
+  });
+  return { tex, w, y0, y1 };
+}
+
+const _mirM = new THREE.Matrix4();
+// the triangles of a geometry that reach in front of the plane x = xm (null if none)
+function frontOf(geo, xm) {
+  const g = geo.index ? geo.toNonIndexed() : geo, p = g.attributes.position, keep = [];
+  for (let i = 0; i < p.count; i += 3) if (Math.min(p.getX(i), p.getX(i + 1), p.getX(i + 2)) < xm) keep.push(i);
+  if (!keep.length) return null;
+  const out = new THREE.BufferGeometry();
+  for (const [k, a] of Object.entries(g.attributes)) {
+    const n = a.itemSize, arr = new a.array.constructor(keep.length * 3 * n);
+    keep.forEach((i, j) => arr.set(a.array.subarray(i * n, (i + 3) * n), j * 3 * n));
+    out.setAttribute(k, new THREE.BufferAttribute(arr, n, a.normalized));
+  }
+  return out;
+}
+// The visitor in the lift mirror: a standing woman in an evening gown. The card lies in the z–y plane (parallel to
+// the glass) at the mirrored camera position; it is the last thing drawn inside the mirror window, so it can blend
+// softly (premultiplied) without sorting against anything.
+const REFL = { eye: 1.612, neck: 1.47 };
+function makeReflection(st) {
+  const { tex, w, y0, y1 } = figCard('mirror'), R = REFL;
+  const g = new THREE.PlaneGeometry(w, y1 - y0, 6, 18); g.rotateY(Math.PI / 2); g.translate(0, (y0 + y1) / 2, 0);
+  const base = g.attributes.position.array.slice(), pos = g.attributes.position;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xf2ece4, side: THREE.DoubleSide, depthWrite: false, blending: THREE.CustomBlending,
+    blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor, ...st });
+  const mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false; mesh.name = 'vrc-lift-reflection';
+  const s = { yaw: 0, t0: Math.random() * 10 };
+  return {
+    mesh,
+    // cp / cd: camera position and view direction in car-local coordinates; xm: mirror plane
+    place(cp, cd, xm) {
+      mesh.visible = xm - cp.x < 3.2;
+      if (!mesh.visible) return;
+      const t = performance.now() / 1000 + s.t0, br = Math.sin(t * 1.5), sw = Math.sin(t * 0.43);
+      // she turns with the visitor: looking along the car instead of into the glass shows her turned a little away
+      const off = clamp(Math.atan2(cd.z, Math.max(0.05, cd.x)), -1.2, 1.2);
+      s.yaw += (off * 0.4 - s.yaw) * 0.1;
+      mesh.position.set(cp.x, cp.y - R.eye, cp.z + sw * 0.005);
+      mesh.rotation.set(sw * 0.005, s.yaw, 0);
+      // idle: breathing lifts chest and shoulders a few millimetres, the head tilts a touch
+      const tilt = Math.sin(t * 0.31 + 1) * 0.02 + s.yaw * 0.06;
+      for (let i = 0; i < pos.count; i++) {
+        const y = base[i * 3 + 1], z = base[i * 3 + 2];
+        const k = sstep(1.0, 1.36, y), hk = sstep(R.neck - 0.04, R.neck + 0.06, y);
+        let ny = y + 0.004 * br * k, nz = z * (1 + 0.008 * br * k * (1 - hk));
+        if (hk > 0) { const dy = ny - R.neck; nz -= dy * tilt * hk; ny += z * tilt * hk * 0.5; }
+        pos.setY(i, ny); pos.setZ(i, nz);
+      }
+      pos.needsUpdate = true;
+      mesh.updateMatrix(); mesh.updateMatrixWorld(true);
+    },
+  };
+}
+
 // Car interior (lift-local frame: +z = liftNormal, z = 0 on the landing wall line, x across the door):
 const CAR = { x: 0.8, zf: -0.18, zb: -1.9, h: 2.45 };
 const CAR_LUX = 4.5;   // the one shared car light (candela), moved to whichever car is active
@@ -968,8 +1362,11 @@ export class Lift {
       b.box('carFrame', xi, xi - sx * 0.02, 0, 0.12, zb, zf);   // kick
     }
     // mirror on the left (+x) wall, framed
-    b.box('mirror', x - 0.014, x - 0.018, 0.95, h - 0.14, zb + 0.12, zf - 0.12);
+    const MR = { x: x - 0.018, y0: 0.95, y1: h - 0.14, z0: zb + 0.12, z1: zf - 0.12 };   // the glass itself: _buildMirror()
+    b.box('carFrame', x - 0.012, x - 0.016, MR.y0, MR.y1, MR.z0, MR.z1);
     b.box('bronze', x - 0.012, x - 0.03, 0.92, 0.95, zb + 0.1, zf - 0.1);
+    b.box('bronze', x - 0.012, x - 0.024, MR.y1, MR.y1 + 0.02, zb + 0.1, zf - 0.1);
+    for (const zz of [MR.z0 - 0.02, MR.z1]) b.box('bronze', x - 0.012, x - 0.024, MR.y0, MR.y1, zz, zz + 0.02);
     // handrails (+x wall and back)
     const rail = (x0, x1, z0, z1) => { b.box('brass', x0, x1, 0.9, 0.94, z0, z1); };
     rail(x - 0.09, x - 0.05, zb + 0.15, zf - 0.15);
@@ -981,17 +1378,18 @@ export class Lift {
     // back: rear doors opening in a bronze wall (through-car; rear doors only open at the ground-floor lobbies)
     for (const sx of [-1, 1]) { s.box('carFrame', sx * 0.5, sx * x, 0, h, zb - 0.04, zb); b.box('bronzeCar', sx * 0.505, sx * (x - 0.005), 0.12, h - 0.06, zb, zb + 0.012); }
     s.box('carFrame', -0.5, 0.5, LIFT_H, h, zb - 0.04, zb);
-    // operating panel (COP) on the right (-x) wall, next to the door: black glass plate in a brass frame
-    const P = this.panel = { xs: -x + 0.026, zc: zf - 0.25, y0: 1.03, y1: 1.63 };
-    const pw = 0.145;
-    b.box('blackGlass', -x + 0.012, P.xs, P.y0, P.y1, P.zc - pw, P.zc + pw);
-    for (const [y0, y1, z0, z1] of [[P.y0 - 0.008, P.y0, P.zc - pw - 0.008, P.zc + pw + 0.008], [P.y1, P.y1 + 0.008, P.zc - pw - 0.008, P.zc + pw + 0.008],
-      [P.y0, P.y1, P.zc - pw - 0.008, P.zc - pw], [P.y0, P.y1, P.zc + pw, P.zc + pw + 0.008]]) b.box('brass', -x + 0.012, P.xs + 0.003, y0, y1, z0, z1);
-    // soft LED edge-light behind the COP plate (reads as a lit panel from the doorway)
-    b.box('ledSoft', -x + 0.011, -x + 0.013, P.y0 - 0.012, P.y1 + 0.012, P.zc - pw - 0.012, P.zc + pw + 0.012);
-    // screen bezel + hairline under the floor keys
-    b.box('bronzeDark', P.xs, P.xs + 0.002, 1.462, 1.532, P.zc - 0.085, P.zc + 0.085);
-    b.box('brass', P.xs, P.xs + 0.002, 1.1495, 1.1525, P.zc - 0.1, P.zc + 0.1);
+    // operating panel (COP) on the front return wall beside the doors (−x side), facing the back of the car:
+    // a tall black-glass column in a brass frame. zs = its face; the visitor reads it from `this.stand` at the back.
+    const P = this.panel = { xc: -0.652, zs: zf - 0.028, y0: 0.7, y1: 1.885, hw: 0.138 };
+    this.stand = { x: 0.14, z: zb + 0.42, look: [-0.24, 1.5, zf] };   // car-local standing spot + look-at point
+    b.box('blackGlass', P.xc - P.hw, P.xc + P.hw, P.y0, P.y1, P.zs, zf - 0.012);
+    for (const [y0, y1, x0, x1] of [[P.y0 - 0.008, P.y0, -P.hw - 0.008, P.hw + 0.008], [P.y1, P.y1 + 0.008, -P.hw - 0.008, P.hw + 0.008],
+      [P.y0, P.y1, -P.hw - 0.008, -P.hw], [P.y0, P.y1, P.hw, P.hw + 0.008]]) b.box('brass', P.xc + x0, P.xc + x1, y0, y1, P.zs - 0.003, zf - 0.012);
+    // soft LED edge-light behind the COP plate
+    b.box('ledSoft', P.xc - P.hw - 0.012, P.xc + P.hw + 0.012, P.y0 - 0.012, P.y1 + 0.012, zf - 0.0135, zf - 0.0115);
+    // screen bezel + hairline between the floor keys and the door keys
+    b.box('bronzeDark', P.xc - 0.108, P.xc + 0.108, 1.686, 1.776, P.zs - 0.002, P.zs);
+    b.box('brass', P.xc - 0.115, P.xc + 0.115, 0.9395, 0.9425, P.zs - 0.002, P.zs);
     // interior indicator above the door
     b.box('blackGlass', -0.22, 0.22, LIFT_H + 0.06, LIFT_H + 0.22, zf - 0.012, zf - 0.02);
     const shell = b.flush(this.car);
@@ -1000,41 +1398,96 @@ export class Lift {
     fl.flush(this.car, { floor: true });
     const ci = new THREE.Mesh(this._geos[0], this.indMat); ci.rotation.y = Math.PI; ci.position.set(0, LIFT_H + 0.14, zf - 0.022); this.car.add(ci);
     // small VILNYI emblem (gold bird + wordmark) above the floor screen
-    { const lg = new THREE.PlaneGeometry(0.17, 0.05); lg.rotateY(Math.PI / 2); this._geos.push(lg);
-      const lm = new THREE.Mesh(lg, M('copLogo')); lm.position.set(P.xs + 0.0025, 1.588, P.zc); this.car.add(lm); }
-    // small floor screen on the panel (same live indicator texture)
-    const sg = new THREE.PlaneGeometry(0.15, 0.056); sg.rotateY(Math.PI / 2); this._geos.push(sg);
-    const scr = new THREE.Mesh(sg, this.indMat); scr.position.set(P.xs + 0.0025, 1.497, P.zc); this.car.add(scr);
-    // keys: stainless face (engraved label from the atlas), brass rim, halo ring that lights up, generous invisible hit pad
-    const rimG = new THREE.CylinderGeometry(KEY_R + 0.0015, KEY_R + 0.0025, 0.006, 32); rimG.rotateZ(Math.PI / 2);
-    const ringG = new THREE.TorusGeometry(KEY_R + 0.0035, 0.0021, 8, 40); ringG.rotateY(Math.PI / 2);
-    const hitG = new THREE.BoxGeometry(0.03, KEY_PITCH - 0.004, KEY_PITCH - 0.004);
-    this._geos.push(rimG, ringG, hitG);
+    { const lg = new THREE.PlaneGeometry(0.21, 0.0615); lg.rotateY(Math.PI); this._geos.push(lg);
+      const lm = new THREE.Mesh(lg, M('copLogo')); lm.position.set(P.xc, 1.828, P.zs - 0.0025); this.car.add(lm); }
+    // floor screen on the panel (same live indicator texture)
+    const sg = new THREE.PlaneGeometry(0.2, 0.075); sg.rotateY(Math.PI); this._geos.push(sg);
+    const scr = new THREE.Mesh(sg, this.indMat); scr.position.set(P.xc, 1.731, P.zs - 0.0025); this.car.add(scr);
+    // keys: stainless face (engraved label from the atlas), brass rim, halo ring that lights up, generous invisible hit pad.
+    // Key groups are built facing +x and turned to face the back of the car (−z); pressing pushes them into the wall (+z).
+    const mkGeos = (R, hw, hh) => {
+      const rimG = new THREE.CylinderGeometry(R + 0.0015, R + 0.0025, 0.006, 40); rimG.rotateZ(Math.PI / 2);
+      const ringG = new THREE.TorusGeometry(R + 0.0035, 0.0024, 8, 48); ringG.rotateY(Math.PI / 2);
+      const hitG = new THREE.BoxGeometry(0.003, hh, hw);   // thin: a thick pad would shadow its neighbours when seen at an angle
+      this._geos.push(rimG, ringG, hitG); return { rimG, ringG, hitG, R };
+    };
+    const GF = mkGeos(KEY_R, KEY_PH, KEY_PV), GD = mkGeos(KEY_R2, KEY_PH, 0.11), GA = mkGeos(KEY_R3, 0.2, 0.1);
     this.buttons = new Map();
     const ids = { building: this.bId, stair: this.stair, core: this.core, doorIndex: this.doorIndex };
     PANEL_ROWS.forEach((row, ri) => row.forEach((k, colI) => {
-      const y = ri < 4 ? 1.395 - ri * KEY_PITCH : 1.1;
-      const z = P.zc + (1 - colI) * KEY_PITCH;          // facing the panel (-x), ascending numbers run left → right (= -z)
-      const g = new THREE.Group(); g.position.set(P.xs, y, z);
-      const fg = new THREE.CircleGeometry(KEY_R, 32); fg.rotateY(Math.PI / 2);
+      const fl = ri < 6, G = fl ? GF : ri === 6 ? GD : GA;
+      const y = fl ? 1.6 - ri * KEY_PV : ri === 6 ? 0.876 : 0.77;
+      // seen from the back of the car the viewer's right is −x: ascending numbers run left → right
+      const xk = ri < 7 ? P.xc + (0.5 - colI) * KEY_PH : P.xc;
+      const g = new THREE.Group(); g.position.set(xk, y, P.zs); g.rotation.y = Math.PI / 2;
+      const fg = new THREE.CircleGeometry(G.R, 40); fg.rotateY(Math.PI / 2);
       const cell = keyCell(k), uv = fg.attributes.uv, cu = (cell % 4) / 4, cv = 1 - (((cell / 4) | 0) + 1) / 4;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, cu + uv.getX(i) / 4, cv + uv.getY(i) / 4);
       this._geos.push(fg);
-      const rim = new THREE.Mesh(rimG, M('brass')); rim.position.x = 0.003;
+      const rim = new THREE.Mesh(G.rimG, M('brass')); rim.position.x = 0.003;
       const face = new THREE.Mesh(fg, M('keyFace')); face.position.x = 0.0062;
-      const ring = new THREE.Mesh(ringG, M('keyRing')); ring.position.x = 0.0012;
-      const hit = new THREE.Mesh(hitG, M('hidden')); hit.position.x = 0.01;
+      const ring = new THREE.Mesh(G.ringG, M('keyRing')); ring.position.x = 0.0012;
+      const hit = new THREE.Mesh(G.hitG, M('hidden')); hit.position.x = 0.008;
       g.add(rim, face, ring, hit);
       g.userData.action = typeof k === 'number' ? { type: 'liftButton', floor: k, ...ids }
         : k === 'bell' ? { type: 'liftAlarm', ...ids } : { type: 'liftDoor', open: k === 'open', ...ids };
       g.name = 'vrc-lift-key-' + (typeof k === 'number' ? floorLabel(k) : k);
-      this.car.add(g); this.buttons.set(k, { g, face, ring, x0: P.xs });
+      this.car.add(g); this.buttons.set(k, { g, face, ring, z0: P.zs });
     }));
     // doors
     const [L, R] = this._panelPair(this.car, zf + 0.06);
     const [L2, R2] = this._panelPair(this.car, zb - 0.06);
     this.carDoors = [L, R]; this.rearDoors = [L2, R2];
     this._shell = [...shell, ...walls];
+    this._buildMirror(MR);
+  }
+  // A real mirror without a second render pass: the glass is a stencil window onto a reflected copy of the car
+  // (same geometry and materials under a −x scale, so it costs ~20 draw calls and no extra lights or programs), with
+  // the visitor's reflection — a photographic figure on a soft-edged card — standing at the mirrored camera position.
+  // Order (all in the opaque queue, after the real scene): 10 stencil window · 11 backdrop, resets depth inside the
+  // window · 12 reflected car · 13 the figure · 14 depth back to the glass, so later transparent passes stay in front.
+  _buildMirror(MR) {
+    const ref = 1 + (Object.keys(BUILDINGS).indexOf(this.bId) & 1) * 8 + this.core * 2 + this.doorIndex;
+    const mats = this._mirMats = [], geos = this._geos;
+    const st = { stencilWrite: true, stencilRef: ref, stencilFunc: THREE.EqualStencilFunc };
+    const w = MR.z1 - MR.z0, hh = MR.y1 - MR.y0, zc = (MR.z0 + MR.z1) / 2, yc = (MR.y0 + MR.y1) / 2;
+    const pg = new THREE.PlaneGeometry(w, hh); pg.rotateY(-Math.PI / 2); geos.push(pg);
+    const mk = (m, order, parent = this.car) => { const o = new THREE.Mesh(pg, m); o.position.set(MR.x, yc, zc); o.renderOrder = order; mats.push(m); parent.add(o); return o; };
+    const win = mk(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, stencilWrite: true, stencilRef: ref, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }), 10);
+    mk(new THREE.MeshBasicMaterial({ colorWrite: false, depthFunc: THREE.AlwaysDepth, ...st }), 14);
+    // backdrop: what the reflection shows beyond the reflected car (through its open doors): a warm dim void
+    const bg = new THREE.BoxGeometry(2.0, 3.2, 5.2); geos.push(bg);
+    const bm = new THREE.MeshBasicMaterial({ color: 0x8a7a66, side: THREE.BackSide, depthFunc: THREE.AlwaysDepth, ...st }); mats.push(bm);
+    const back = new THREE.Mesh(bg, bm); back.position.set(MR.x + 1.0, 1.25, (CAR.zf + CAR.zb) / 2); back.renderOrder = 11; this.car.add(back);
+    // the reflected car
+    const mir = this.mirror = new THREE.Group(); mir.name = 'vrc-lift-mirror'; mir.scale.x = -1; mir.position.x = 2 * MR.x; this.car.add(mir);
+    const cache = new Map();
+    const sten = m => { let c = cache.get(m); if (!c) { c = m.clone(); Object.assign(c, st); c.name = m.name + '-mir'; cache.set(m, c); mats.push(c); } return c; };
+    const copy = o => { const c = new THREE.Mesh(o.geometry, sten(o.material)); c.position.copy(o.position); c.rotation.copy(o.rotation); c.renderOrder = 12; mir.add(c); return c; };
+    // (whatever lies behind the glass — the mirror wall itself — must not show up in front of it once reflected)
+    for (const o of this._shell) if (!o.material.transparent) {
+      const cg = frontOf(o.geometry, MR.x - 0.0005);
+      if (cg) { geos.push(cg); copy(o).geometry = cg; }
+    }
+    this._mirDoors = [...this.carDoors, ...this.rearDoors].map(o => [o, copy(o)]);
+    // key faces + floor screen of the reflected operating panel (one merged mesh + one quad)
+    const kf = [];
+    for (const { g, face } of this.buttons.values()) { g.updateMatrix(); face.updateMatrix(); kf.push(face.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(g.matrix, face.matrix))); }
+    const kg = mergeGeometries(kf, false); kf.forEach(g => g.dispose()); geos.push(kg);
+    const km = new THREE.Mesh(kg, sten(M('keyFace'))); km.renderOrder = 12; mir.add(km);
+    // the visitor's reflection
+    const fig = this.reflection = makeReflection(st); mats.push(fig.mesh.material); geos.push(fig.mesh.geometry);
+    fig.mesh.renderOrder = 13; mir.add(fig.mesh);
+    const cp = new THREE.Vector3(), cd = new THREE.Vector3();
+    // the reflected car is only submitted while the glass is on screen (decided one frame late: both hooks run mid-frame)
+    mir.visible = false;
+    this._shell[0].onBeforeRender = () => { mir.visible = !!this._mirSeen; this._mirSeen = false; };
+    win.onBeforeRender = (r, sc, cam) => {
+      this._mirSeen = true; mir.visible = true;
+      this.car.worldToLocal(cp.setFromMatrixPosition(cam.matrixWorld));
+      cam.getWorldDirection(cd).transformDirection(_mirM.copy(this.car.matrixWorld).invert());
+      fig.place(cp, cd, MR.x);
+    };
   }
   _setDoors(k, rearToo) {
     const off = 0.26 + 0.505 * k;
@@ -1042,6 +1495,7 @@ export class Lift {
     if (this.floor === this.homeFloor) sets.push(this.landDoors.slice(0, 2));
     if (rearToo) { sets.push(this.rearDoors); if (this.floor === this.homeFloor && this.landDoors.length > 2) sets.push(this.landDoors.slice(2)); }
     for (const [L, R] of sets) { L.position.x = -off; R.position.x = off; }
+    if (this._mirDoors) for (const [o, c] of this._mirDoors) c.position.x = o.position.x;
   }
   _solid(on) {
     const all = [...this.carDoors, ...this.rearDoors, ...this.landDoors];
@@ -1129,8 +1583,8 @@ export class Lift {
   press(k, holdMs = 0) {
     const b = this.buttons && this.buttons.get(k); if (!b) return;
     this._lightButton(k, true);
-    const x0 = b.x0;
-    tween(170, t => { b.g.position.x = x0 - 0.0035 * Math.sin(Math.PI * t); b.g.updateMatrixWorld(true); });
+    const z0 = b.z0;
+    tween(170, t => { b.g.position.z = z0 + 0.0035 * Math.sin(Math.PI * t); b.g.updateMatrixWorld(true); });
     if (holdMs) { clearTimeout(b._t); b._t = setTimeout(() => { if (this.target !== k) this._lightButton(k, false); }, holdMs); }
   }
   dispose() {
@@ -1138,6 +1592,7 @@ export class Lift {
     if (RIG.carOwner === this) { RIG.car.intensity = 0; RIG.carOwner = null; }
     this.group.traverse(o => { if (o.isMesh && o.geometry && !this._geos.includes(o.geometry)) o.geometry.dispose(); });
     this._geos.forEach(g => g.dispose());
+    if (this._mirMats) this._mirMats.forEach(m => m.dispose());
     this.indTex.dispose(); this.indMat.dispose();
     if (this.group.parent) this.group.parent.remove(this.group);
   }
@@ -1246,10 +1701,10 @@ function receptionChair(B, x, z, yaw) {   // counter-height swivel chair: bronze
   B.add('bronzeDark', boxGeo(-0.02, 0.02, 0.58, 0.8, -0.27, -0.24), m);
 }
 
-// ---- the concierge: a seated, stylised-realistic woman (dark suit, white blouse, hair in a bun) built from smooth
-// primitives with vertex colours. Parts that animate are separate meshes (5 draw calls, one shared material):
-// lower body (static), torso (breathing, slight turn), head (follows the visitor, nods), right upper arm + forearm (wave).
-const FIG = { skin: 0xe7bfa2, legs: 0xd9ab8d, suit: 0x1c1f28, satin: 0x2c303c, blouse: 0xf5f2ec, hair: 0x3b2618,
+// ---- the concierge: a seated young woman (fitted navy blazer over an ivory silk top, hair in a low chignon). Her
+// upper body is a painted card (see PAINT) that breathes, tilts her head, nods and turns toward the visitor; the waving
+// arm is two more cards; the lower body (pencil skirt, legs, heels) stays 3D for the views from beside the desk. 4 draw calls.
+const FIG = { skin: 0xe7bfa2, legs: 0xd9ab8d, suit: 0x161b2c, satin: 0x2c303c, blouse: 0xf5f2ec, hair: 0x3b2618,
   eye: 0x2a1c14, lip: 0xb5676b, gold: 0xd8b26c, shoe: 0x121212 };
 const _fc = new THREE.Color(), _V = (x, y, z) => new THREE.Vector3(x, y, z), _UP = new THREE.Vector3(0, 1, 0);
 function tinted(g, hex) {
@@ -1281,8 +1736,9 @@ function headShape(sx, sy, sz, cx, cy, cz) {   // one smooth skull: jaw tapers t
   }
   g.computeVertexNormals(); return g;
 }
+const FIG_MATS = {};
 function makeConcierge(x, z, yaw, bId, stair, ws = 1) {   // ws: which arm waves (+1: +x side, −1: −x side)
-  const S = 0.66, F = FIG, hc = S + 0.712;   // seat top, centre of the skull
+  const S = 0.66, F = FIG;   // seat top
   const root = new THREE.Group(); root.name = 'vrc-concierge';
   root.position.set(x, 0, z); root.rotation.y = yaw;
   root.userData.action = { type: 'concierge', building: bId, stair };
@@ -1297,84 +1753,54 @@ function makeConcierge(x, z, yaw, bId, stair, ws = 1) {   // ws: which arm waves
     lower.push([limb(_V(sx * 0.056, 0.352, 0.265), _V(sx * 0.056, 0.29, 0.26), 0.008, 0.006, 6), F.shoe]);
   }
   const legs = figMesh(lower, _V(0, 0, 0)); legs.userData.solid = true; root.add(legs);
-  // torso (pivot at the waist): jacket, blouse V with collar, lapel edges, gold pin, neck, resting left arm
-  const PT = _V(0, S + 0.12, -0.04);
-  const torsoG = new THREE.Group(); torsoG.position.copy(PT); root.add(torsoG);
-  const vee = new THREE.ConeGeometry(0.058, 0.2, 24); vee.rotateZ(Math.PI); vee.scale(1, 1, 0.28); vee.translate(0, S + 0.455, 0.057);
-  const collar = new THREE.TorusGeometry(0.045, 0.011, 8, 28); collar.rotateX(Math.PI / 2); collar.translate(0, S + 0.548, -0.012);
-  const arm = sx => [
-    [limb(_V(sx * 0.17, S + 0.5, -0.04), _V(sx * 0.19, S + 0.27, 0.03), 0.042, 0.036), F.suit],
-    [limb(_V(sx * 0.19, S + 0.27, 0.03), _V(sx * 0.11, S + 0.3, 0.3), 0.034, 0.028), F.suit],
-    [limb(_V(sx * 0.111, S + 0.299, 0.296), _V(sx * 0.108, S + 0.3, 0.306), 0.031), F.blouse],
-    [ell(0.03, 0.014, 0.054, sx * 0.095, S + 0.289, 0.362), F.skin],
-  ];
-  const tl = [
-    [ell(0.112, 0.14, 0.09, 0, S + 0.2, -0.035), F.suit], [ell(0.138, 0.175, 0.098, 0, S + 0.385, -0.03), F.suit],
-    [limb(_V(-0.145, S + 0.515, -0.04), _V(0.145, S + 0.515, -0.04), 0.05), F.suit],
-    [vee, F.blouse], [collar, F.blouse],
-    [ell(0.008, 0.008, 0.006, 0, S + 0.31, 0.06, 10, 8), F.satin], [ell(0.01, 0.01, 0.006, 0.07, S + 0.455, 0.064, 10, 8), F.gold],
-    [limb(_V(0, S + 0.5, -0.016), _V(0, hc - 0.075, -0.01), 0.042, 0.036), F.skin],
-    ...arm(-ws),
-  ];
-  const torso = figMesh(tl, PT); torso.position.set(0, 0, 0); torso.userData.solid = true; torsoG.add(torso);
-  // head (pivot at the top of the neck): one skull, hair cap tipped forward to a soft hairline, a low bun
-  const PH = _V(0, hc - 0.095, -0.006);
-  const head = new THREE.Group(); head.position.copy(PH).sub(PT); torsoG.add(head);
-  const hairM = new THREE.Matrix4().makeTranslation(0, hc + 0.008, -0.008).multiply(new THREE.Matrix4().makeScale(0.085, 0.108, 0.099));
-  const cap = new THREE.SphereGeometry(1, 32, 18, 0, TAU, 0, 1.18); cap.rotateX(0.24); cap.applyMatrix4(hairM);
-  const back = new THREE.SphereGeometry(1, 32, 18, Math.PI - 0.32, Math.PI + 0.64, 0, 1.95); back.applyMatrix4(hairM);
-  const brow = sx => [[limb(_V(sx * 0.015, hc + 0.03, 0.086), _V(sx * 0.032, hc + 0.036, 0.08), 0.0028, 0.0026, 6), F.hair], [limb(_V(sx * 0.032, hc + 0.036, 0.08), _V(sx * 0.049, hc + 0.029, 0.069), 0.0026, 0.0016, 6), F.hair]];
-  const eye = sx => [[ell(0.0115, 0.0068, 0.0045, sx * 0.03, hc + 0.007, 0.083, 14, 8), F.eye], [limb(_V(sx * 0.017, hc + 0.0125, 0.084), _V(sx * 0.044, hc + 0.0115, 0.077), 0.0019, 0.0015, 6), F.eye]];
-  const hl = [
-    [headShape(0.078, 0.105, 0.092, 0, hc, 0), F.skin],
-    [cap, F.hair], [back, F.hair],
-    [ell(0.046, 0.043, 0.038, 0, hc + 0.03, -0.11), F.hair], [ell(0.028, 0.028, 0.026, 0, hc + 0.03, -0.14, 12, 8), F.hair],
-    ...eye(-1), ...eye(1), ...brow(-1), ...brow(1),
-    [limb(_V(0, hc + 0.008, 0.087), _V(0, hc - 0.022, 0.095), 0.0055, 0.0085, 8), F.skin], [ell(0.011, 0.0085, 0.009, 0, hc - 0.026, 0.094, 12, 8), F.skin],
-    [ell(0.0155, 0.0045, 0.006, 0, hc - 0.047, 0.081, 14, 8), F.lip], [ell(0.0135, 0.0055, 0.0065, 0, hc - 0.0555, 0.08, 14, 8), F.lip],
-    [ell(0.004, 0.0035, 0.004, -0.0185, hc - 0.0455, 0.076, 8, 6), F.lip], [ell(0.004, 0.0035, 0.004, 0.0185, hc - 0.0455, 0.076, 8, 6), F.lip],
-    [ell(0.011, 0.02, 0.014, -0.076, hc - 0.002, -0.004), F.skin], [ell(0.011, 0.02, 0.014, 0.076, hc - 0.002, -0.004), F.skin],
-    [ell(0.0075, 0.0075, 0.0075, -0.079, hc - 0.027, 0.002, 10, 8), F.gold], [ell(0.0075, 0.0075, 0.0075, 0.079, hc - 0.027, 0.002, 10, 8), F.gold],
-  ];
-  const headM = figMesh(hl, PH); headM.position.set(0, 0, 0); head.add(headM);
-  // waving arm: shoulder → elbow (upper), elbow → hand (fore); rests on the work top, lifts for a small wave
-  const [aU, aF, aC, aH] = arm(ws);
-  const PS = _V(ws * 0.17, S + 0.5, -0.04), PE = _V(ws * 0.19, S + 0.27, 0.03);
-  const upper = new THREE.Group(); upper.position.copy(PS).sub(PT); torsoG.add(upper);
-  const upM = figMesh([aU], PS); upM.position.set(0, 0, 0); upper.add(upM);
-  const fore = new THREE.Group(); fore.position.copy(PE).sub(PS); fore.rotation.order = 'ZXY'; upper.add(fore);
-  const foM = figMesh([aF, aC, aH], PE); foM.position.set(0, 0, 0); fore.add(foM);
+  // upper body: the painted card (blazer, face, hair) + her waving arm as two more cards hinged at shoulder and elbow.
+  // The card swivels toward the visitor like someone turning on a swivel chair; cut-out edges are smoothed by MSAA
+  // (alpha to coverage), so the cards write depth and need no sorting.
+  const DY = S - 0.88, B = figCard('concierge');   // figure metres → seated: her hips come down to the seat
+  const cardMat = t => FIG_MATS[t.uuid] || (FIG_MATS[t.uuid] = new THREE.MeshBasicMaterial({ name: 'vrc-figure-card', map: t, color: 0xf4efe8, side: THREE.DoubleSide, alphaTest: 0.5, alphaToCoverage: true }));
+  const up = new THREE.Group(); up.position.set(0, DY, 0.02); up.scale.x = ws; root.add(up);   // mirrored block: the other arm waves
+  const bg = new THREE.PlaneGeometry(B.w, B.y1 - B.y0, 6, 12); bg.translate(0, (B.y0 + B.y1) / 2, 0);
+  const base = bg.attributes.position.array.slice(), pos = bg.attributes.position;
+  const body = new THREE.Mesh(bg, cardMat(B.tex)); body.name = 'vrc-concierge-body'; up.add(body);
+  const sprite = (kind, z) => { const c = figCard(kind), g = new THREE.PlaneGeometry(c.w, c.y1 - c.y0); g.translate(0, (c.y0 + c.y1) / 2, z); return new THREE.Mesh(g, cardMat(c.tex)); };
+  const upper = new THREE.Group(); upper.position.set(0.168, 1.385, 0); up.add(upper); upper.add(sprite('armU', 0.004));
+  const fore = new THREE.Group(); fore.position.set(0, -0.265, 0); upper.add(fore); fore.add(sprite('armF', 0.008));
+  const hc = 1.61 + DY, NECK = 1.47;
 
   const st = { t: Math.random() * 10, hy: 0, hp: 0, wave: 0, nod: 0 };
-  const v = new THREE.Vector3(), headY = head.position.y;
+  const v = new THREE.Vector3();
   return {
     group: root, bId, stair, height: hc,
-    greet() { if (st.wave <= 0) st.wave = 2.4; st.nod = 0.9; },
+    greet() { if (st.wave <= 0) st.wave = 2.6; st.nod = 0.9; },
     // viewer: world-space eye position (or null). Returns the horizontal distance to her (m).
     update(dt, viewer) {
       st.t += dt; const t = st.t;
-      let ty = Math.sin(t * 0.21) * 0.32 + Math.sin(t * 0.57 + 1) * 0.1 - 0.15, tp = 0.1, d = Infinity;   // idle: calm glances, now and then at her screen
+      let ty = Math.sin(t * 0.21) * 0.16 + Math.sin(t * 0.57 + 1) * 0.05 - 0.06, tp = 0.03, d = Infinity;   // idle: calm glances around
       if (viewer) {
         root.worldToLocal(v.copy(viewer)); d = Math.hypot(v.x, v.z);
-        if (d < 6 && v.z > -0.4) { ty = Math.atan2(v.x, v.z); tp = -Math.atan2(v.y - hc, Math.max(0.6, d)) * 0.7; }
+        if (d < 6 && v.z > -0.4) { ty = Math.atan2(v.x, v.z); tp = -Math.atan2(v.y - hc, Math.max(0.6, d)) * 0.5; }
       }
-      ty = clamp(ty, -1.25, 1.25);
       const k = 1 - Math.exp(-dt * 3.2);
-      st.hy += (ty - st.hy) * k; st.hp += (tp - st.hp) * k;
-      const tw = clamp(st.hy * 0.3, -0.32, 0.32);
-      torsoG.rotation.y = tw;
-      head.rotation.y = clamp(st.hy - tw, -0.95, 0.95);
+      st.hy += (clamp(ty, -1.0, 1.0) - st.hy) * k; st.hp += (tp - st.hp) * k;
+      up.rotation.y = st.hy;
       let nod = 0;
-      if (st.nod > 0) { st.nod = Math.max(0, st.nod - dt); nod = 0.17 * Math.sin(Math.PI * (1 - st.nod / 0.9)); }
-      head.rotation.x = clamp(st.hp, -0.3, 0.35) + nod;
-      head.rotation.z = Math.sin(t * 0.37) * 0.025;
-      const b = Math.sin(t * 1.65);   // breathing
-      torso.scale.set(1 + 0.005 * b, 1 + 0.007 * b, 1 + 0.012 * b);
-      head.position.y = headY + 0.0035 * b;
+      if (st.nod > 0) { st.nod = Math.max(0, st.nod - dt); nod = Math.sin(Math.PI * (1 - st.nod / 0.9)); }
+      // breathing, a small tilt of the head, the nod (the head dips and foreshortens a little)
+      const b = Math.sin(t * 1.65), tilt = Math.sin(t * 0.37) * 0.03 + ws * st.hy * 0.04, dip = clamp(st.hp, -0.2, 0.3) * 0.25 + nod * 0.085;
+      for (let i = 0; i < pos.count; i++) {
+        const x = base[i * 3], y = base[i * 3 + 1];
+        const ck = sstep(1.02, 1.36, y), hk = sstep(NECK - 0.04, NECK + 0.05, y);
+        let nx = x * (1 + 0.007 * b * ck * (1 - hk)), ny = y + 0.004 * b * ck;
+        if (hk > 0) { const dy = y - NECK; nx += dy * tilt * hk; ny -= (dy * dip + x * tilt * 0.6) * hk; }
+        pos.setX(i, nx); pos.setY(i, ny);
+      }
+      pos.needsUpdate = true;
+      upper.position.y = 1.385 + 0.004 * b;
       let e = 0;
-      if (st.wave > 0) { st.wave = Math.max(0, st.wave - dt); const p = 1 - st.wave / 2.4; e = sstep(0, 0.2, p) * (1 - sstep(0.75, 1, p)); }
-      upper.rotation.set(-0.3 * e, 0, ws * 0.5 * e);
-      fore.rotation.set(-1.7 * e, 0, ws * e * (-0.85 + 0.28 * Math.sin(t * 9.5)));
+      if (st.wave > 0) { st.wave = Math.max(0, st.wave - dt); const p = 1 - st.wave / 2.6; e = sstep(0, 0.22, p) * (1 - sstep(0.76, 1, p)); }
+      // rest: the arm hangs, forearm toward her lap (behind the desk); wave: elbow out, forearm up, hand swinging
+      upper.rotation.z = 0.06 + 0.5 * e;
+      fore.rotation.z = -0.5 + e * (0.5 + 2.45 + 0.3 * Math.sin(t * 9.5));
       return d;
     },
   };

@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TYPES, GEOM, LEVELS } from '../data.js';
 import { getMaterials, tickTv } from './materials.js';
 import { F, FX } from './furniture.js';
+import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js';
 
 const CH = LEVELS.ceiling;            // clear ceiling height 2.7
 const LH = LEVELS.typicalH;           // storey height 3.0 (duplex upper floor at y = 3.0)
@@ -1108,11 +1109,17 @@ function buildOutdoor(ctx, L) {
   if (kind === 'loggia') {
     // side walls + soffit
     const h = cut ? 1.1 : CH;
-    for (const [a, b] of [[0, 0.12], [W - 0.12, W]]) { box(sg, m.exterior, a, y0, D, b, y0 + h, v1); collider(ctx.cg, a, y0, D, b, y0 + 2.2, v1); }
-    if (!cut) { box(sg, m.exterior, 0, y0 + CH, D, W, y0 + CH + 0.25, v1); downlight(ctx, W / 2, y0 + CH, D + BD / 2); }
+    // Nothing here may be coplanar with the facade (exterior.js), which stays visible around the unit: its privacy fins
+    // have faces at u = ±0.12 from the unit edge and the slab of the floor above has its underside at exactly y0 + CH
+    // and its front edge at v1. Coplanar faces z-fight (flickering tiles on phone GPUs), so the loggia's own side walls
+    // stand 1.5 cm proud of the fins and its soffit hangs 1.5 cm below the slab and stops short of the slab edge.
+    const wt = 0.135, sy = y0 + CH - 0.015;
+    for (const [a, b] of [[0, wt], [W - wt, W]]) { box(sg, m.exterior, a, y0, D, b, y0 + h, v1); collider(ctx.cg, a, y0, D, b, y0 + 2.2, v1); }
+    if (!cut) { box(sg, m.exterior, 0, sy, D, W, y0 + CH + 0.25, v1 - 0.02); downlight(ctx, W / 2, sy, D + BD / 2); }
   } else {
     for (const u of [0.05, W - 0.05]) { railGlass(u - 0.008, D + 0.02, u + 0.008, v1 - 0.05); box(sg, m.frame, u - 0.02, fy + railH - 0.04, D, u + 0.02, fy + railH, v1 - 0.05); }
-    if (!cut && !(P.duplex && L.lv === 0)) box(sg, m.exterior, 0, y0 + 2.78, D, W, y0 + 2.96, v1);   // soffit (slab above)
+    // soffit (slab above) — kept strictly inside the facade's own slab (u 0.12…W-0.12, v D…v1), never coplanar with it
+    if (!cut && !(P.duplex && L.lv === 0)) box(sg, m.exterior, 0.14, y0 + 2.78, D + 0.01, W - 0.14, y0 + 2.96, v1 - 0.02);
   }
   // furniture
   const bp = ctx.doorU[L.lv] ?? W / 2;
@@ -1511,16 +1518,25 @@ function furnishLiving(ctx, L, g, r) {
   const w = a1 - a0, d = b1 - zb0;
   const kitSide = ctx.kitchenSide, kitBack = ctx.kitchen && !(kf && kf.front === 'back') ? ctx.kitchen : null;
   const vEnd = b1 - 0.5;                                   // keep a walking aisle along the windows
+  const wantIsl = ctx.opts.island !== false && kitBack && !kitSide;
   if (d >= 4.3) {
-    // dining at the back (by the kitchen), lounge by the windows
-    const dd = 2.0;
-    dining(ctx, L, g, [a0, zb0, kitSide ? kitSide.u : a1, zb0 + dd], kitBack);
+    // dining at the back (by the kitchen), lounge by the windows; where the run is long enough the kitchen island
+    // takes the left part of it and the table moves along (see islandBeside)
+    const dd = 2.0, dz = [a0, zb0, kitSide ? kitSide.u : a1, zb0 + dd];
+    dining(ctx, L, g, dz, kitBack, wantIsl ? islandBeside(ctx, L, g, dz, kitBack) : null);
     lounge(ctx, L, g, [a0, zb0 + dd + 0.35, a1, vEnd], kitSide ? 'u0' : 'u1', true);
   } else if (w >= 6.2) {
     // side by side: lounge on the left (TV on the left wall), dining next to the kitchen on the right
     const wl = Math.max(3.7, w * 0.54);
-    lounge(ctx, L, g, [a0, zb0 + 0.55, a0 + wl, vEnd], 'u0', false);
-    dining(ctx, L, g, [a0 + wl + 0.2, zb0 + 0.55, kitSide ? kitSide.u : a1, vEnd], null);
+    const lg = lounge(ctx, L, g, [a0, zb0 + 0.55, a0 + wl, vEnd], 'u0', false);
+    let du0 = a0 + wl + 0.2;
+    if (duplexLow) {
+      // top-floor duplexes: island in front of the run (clear of the stair foot), and — where the room between the
+      // sofa and the dining table takes it with cue room all round — the snooker table
+      if (wantIsl) { const uL = Math.max(kitBack.u0 + 0.95, P.stair.s1 + 1.1), uR = a1 - 0.95; if (uR - uL >= 1.4) placeIsland(ctx, L, g, uL, uR, (kitBack.u0 + a1) / 2); }
+      if (ctx.opts.snooker !== false) { const gt = placeSnooker(ctx, L, g, lg.back, a1, P.stair.v1 + 0.06, b1 - 0.3); if (gt) du0 = gt.u1; }
+    }
+    dining(ctx, L, g, [du0, zb0 + 0.55, kitSide ? kitSide.u : a1, vEnd], null);
   } else {
     lounge(ctx, L, g, [a0, Math.max(zb0, vEnd - 3.3), kitSide ? kitSide.u - 0.2 : a1, vEnd], kitSide ? 'u0' : 'u1', true);
   }
@@ -1573,16 +1589,72 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   }
   ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
   ctx.livingEye = { u: farWall + t * 0.6, v: v0 };
+  return { sofaU, t, back: sofaU - t * 0.52 };       // back: the far side of the sofa (and of the lamp beside it)
 }
-function dining(ctx, L, g, z, kitBack) {
+// ---------------- kitchen island (kitchen along the corridor wall)
+const ISL_D = 0.86, ISL_AISLE = 0.95;
+// Island of the given u-range [uL, uR] (≥ 1.4 m), parallel to the run and 0.95 m in front of it, centred on `uc` as far
+// as the range allows; worktop + sink towards the run, stools towards the living.
+function placeIsland(ctx, L, g, uL, uR, uc) {
+  const { m, P } = ctx, len = Math.min(2.4, Math.floor((uR - uL) * 20 + 1e-6) / 20);
+  if (len < 1.4) return null;
+  const u = clamp(uc ?? (uL + uR) / 2, uL + len / 2, uR - len / 2), v0 = P.vc + 0.63 + ISL_AISLE, v = v0 + ISL_D / 2;
+  put(g, F.island(m, { len, depth: ISL_D }), u, v, '+v');
+  ctx.island = { u: +u.toFixed(2), v: +v.toFixed(2), len, depth: ISL_D, level: L.lv, u0: +(u - len / 2).toFixed(3), u1: +(u + len / 2).toFixed(3) };
+  return ctx.island;
+}
+// Flats with the dining table in front of the run: the island stands on the left part of the run, the table to its
+// right with a 0.9 m passage between them (each end of the island stays open, 0.95 m to the wall on the left).
+// Returns the dining override {tl, tu} or null when the run is too short for both.
+function islandBeside(ctx, L, g, z, kit) {
+  const [u0, , u1, ] = z, zw = u1 - u0;
+  if (zw < 2.2) return null;
+  const narrow = zw < 4.4, tl0 = narrow ? clamp(zw - 1.85, 1.2, 1.6) : clamp(zw - 1.4, 1.2, 2.0), uL = Math.max(u0, kit.u0) + ISL_AISLE;
+  for (const tl of [...new Set([tl0, Math.min(tl0, 1.6), 1.2])]) {
+    const tuMax = u1 - 0.85 - tl / 2, room = tuMax - tl / 2 - 0.05 - 0.9 - uL;        // island length that still fits
+    if (room < 1.4) continue;
+    const len = Math.min(2.4, Math.floor(room * 20 + 1e-6) / 20);
+    const tu0 = narrow ? tuMax : clamp((Math.max(u0, kit.u0) + Math.min(u1, kit.u1)) / 2, u0 + tl / 2 + 0.8, u1 - tl / 2 - 0.8);
+    const tu = Math.min(tuMax, Math.max(tu0, uL + len + 0.9 + 0.05 + tl / 2)), uR = tu - tl / 2 - 0.05 - 0.9;
+    if (!placeIsland(ctx, L, g, uL, uR)) continue;
+    return { tl, tu };
+  }
+  return null;
+}
+// ---------------- snooker table (duplex living): between the sofa back and the dining zone, long axis along the
+// facade. Sizes tried: 8 ft, then 7 ft, with ≥ 1.2 m (7 ft: at least 1.1 m) of cue room on every side; the dining
+// zone keeps ≥ 2.25 m. Returns {u1: where the dining zone may start} or null.
+function placeSnooker(ctx, L, g, uA, uB, vA, vB) {
+  const { m, P } = ctx;
+  for (const [size, c] of [[8, 1.2], [7, 1.2], [7, 1.1]]) {
+    const { len, wid } = tableOuter(size);
+    if (wid + 2 * c > vB - vA + 0.02) continue;
+    const spare = uB - uA - len - 2 * c - 2.25;
+    if (spare < -0.011) continue;
+    // spare room: first a comfortable dining zone (up to 3.6 m), then wider aisles (up to 1.6 m)
+    const cc = c + clamp((spare - 1.35) / 2, 0, 1.6 - c), u = uA + cc + len / 2, v = (vA + vB) / 2;
+    const tb = buildSnookerTable(m, { size, ceiling: CH, cut: ctx.cut }); tb.userData.piece = 'snooker';
+    put(g, tb, u, v, '+v');
+    ctx.game = tb.userData.game;         // (no extra room light: the daylight fill of the bay and the lounge / dining lights reach it)
+    ctx.snooker = { size, ft: size, level: L.lv, u: +u.toFixed(2), v: +v.toFixed(2), outer: [len, wid], clear: { ends: +cc.toFixed(2), sides: +((vB - vA - wid) / 2).toFixed(2) } };
+    // cue stand tucked under the high end of the stair (inside the closed under-stair zone: no walking space lost)
+    const s = P.stair, ru = s.s0 + 0.62, head = ((s.s1 - (ru + 0.3)) / s.tread) * s.rise - 0.06;
+    if (head >= 1.6) put(g, buildCueRack(m), ru, s.v1 - 0.17, '+v');
+    else put(g, buildCueRack(m), u, vB - 0.02, '-v');
+    return { u1: u + len / 2 + cc };
+  }
+  return null;
+}
+function dining(ctx, L, g, z, kitBack, ov = null) {
   const { m, P } = ctx;
   const [u0, v0, u1, v1] = z, zw = u1 - u0, zd = v1 - v0;
   if (zw < 2.2 || zd < 1.7) return;
   const along = zw >= zd;                               // table axis along u (usual) or along v
   const narrow = (along ? zw : zd) < 4.4;
-  const tl = narrow ? clamp((along ? zw : zd) - 1.85, 1.2, 1.6) : clamp((along ? zw : zd) - 1.4, 1.2, 2.0), tw = narrow ? 0.85 : 0.95;
+  const tl = ov ? ov.tl : narrow ? clamp((along ? zw : zd) - 1.85, 1.2, 1.6) : clamp((along ? zw : zd) - 1.4, 1.2, 2.0), tw = narrow || tl < 1.7 ? 0.85 : 0.95;
   let tu = (u0 + u1) / 2, tv = (v0 + v1) / 2;
   if (kitBack && along) tu = narrow ? u1 - 0.85 - tl / 2 : clamp((Math.max(u0, kitBack.u0) + Math.min(u1, kitBack.u1)) / 2, u0 + tl / 2 + 0.8, u1 - tl / 2 - 0.8);
+  if (ov) tu = ov.tu;                                   // moved along the run to leave the island its place
   if (along && kitBack) tv = clamp(v0 + 1.2, v0 + 0.95, v1 - 0.8);
   const grpT = new THREE.Group();
   put(grpT, F.diningTable(m, { len: tl, width: tw }), 0, 0, '+v');
@@ -1971,6 +2043,9 @@ function build(unit, styleId, opts = {}) {
   };
   if (opts.startOnBalcony && doors.length) mainDoor()?.toggle(true, { instant: true });
   const tvs = opts.cutaway ? [] : wireTvs(ctx, root);
+  // play pieces (island tap / chopping board / salad bowl, snooker table, chalk): proxies become tap targets
+  root.traverse(o => { if (o.userData.playPart) o.userData.action = { type: 'aptDoor', unitId: unit.id, part: o.userData.playPart }; });
+  const game = opts.cutaway ? null : ctx.game || null;
   // curtains start closed and open (room by room) when the visitor enters: on window 'vrc:apt-enter' {unitId},
   // on apt.openCurtains(), or — as a fallback — the first time a frame is rendered from inside the apartment.
   // opts.curtains: 'open' (built open, e.g. stills / panoramas) | 'closed' (no automatic opening) | 'auto' (default)
@@ -2003,6 +2078,7 @@ function build(unit, styleId, opts = {}) {
     baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     if (ctx.door) ctx.door.leaf.geometry.dispose();
     if (movers) movers.dispose();
+    if (ctx.game) ctx.game.dispose();
   };
   const views = cameraViews(ctx, P);
   return {
@@ -2021,6 +2097,9 @@ function build(unit, styleId, opts = {}) {
     // TVs (living + master bedroom): [{room, mesh, on, toggle(on)}]; on while the apartment is shown
     tvs, setTvs: (on) => Promise.all(tvs.map(t => t.toggle(on))),
     laundry: ctx.laundry,
+    // kitchen island {u, v, len, depth, level} and snooker table {size (ft), u, v, outer, clear} if this plan has them;
+    // game: the table's controller — walk.js calls game.frame(walker, dt) every frame (play prompt, play mode)
+    island: ctx.island || null, snooker: ctx.snooker || null, game,
     closeBalconyDoors: () => Promise.all(doors.filter(d => d.open).map(d => d.toggle(false))),
     dispose: disposeAll,
   };

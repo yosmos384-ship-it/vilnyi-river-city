@@ -4,7 +4,7 @@
 // A group may carry userData.solidBox = {w,d,h,x?,z?} (local footprint for walking collisions) or userData.noSolid.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ------------------------------------------------------------------ geometry helpers (cached, shared)
 const GC = new Map();
@@ -1948,20 +1948,209 @@ function kitchenRun(m, len = 3, o = {}) {
 function j2(m, r) { return r() < 0.5 ? m.ceramic : m.ceramic2; }
 function bread(p, m, x, y, z) { sph(p, 0.07, m.bread, x, y + 0.03, z, [1.6, 0.6, 0.9], 12); }
 
+// Kitchen island: stone worktop with waterfall ends and a real undermount prep sink (the worktop is cut around the
+// basin) under a high-arc tap on the working side (−z); drawer stacks and the sink cupboard open towards −z (same
+// movers / contents as kitchenRun); bar stools stand under the overhang on the living side (+z).
+// Everything that plays lives in ONE unbaked group (userData.keep): the tap's water, the chef's knife and a single
+// instanced mesh for the vegetables and their slices. Invisible proxies carry userData.playPart ('tap' | 'chop' |
+// 'salad') + userData.toggle — apartment.js turns playPart into the walkthrough's tap action.
+let WATER = null;
+function islandKnifeGeo() {
+  return cg('islKnife', () => {
+    const sh = new THREE.Shape();           // blade profile in (length, height): heel at 0, tip at 0.2, edge down
+    sh.moveTo(0, 0.024); sh.lineTo(0.13, 0.022); sh.quadraticCurveTo(0.185, 0.016, 0.205, -0.02); sh.quadraticCurveTo(0.12, -0.026, 0, -0.024); sh.lineTo(0, 0.024);
+    const blade = new THREE.ExtrudeGeometry(sh, { depth: 0.002, bevelEnabled: false, curveSegments: 6 });
+    blade.translate(0, 0, -0.001); blade.rotateY(-HALF);                    // length → +z, thin in x
+    const parts = [[blade, '#d9dcde'], [new THREE.BoxGeometry(0.02, 0.03, 0.115).translate(0, 0.004, -0.0625).toNonIndexed(), '#1b1816'],
+      [new THREE.BoxGeometry(0.014, 0.04, 0.012).translate(0, 0, -0.004).toNonIndexed(), '#b9bbbd']];
+    for (const [geo, hex] of parts) { const c = new THREE.Color(hex), n = geo.attributes.position.count, arr = new Float32Array(n * 3); for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; } geo.setAttribute('color', new THREE.BufferAttribute(arr, 3)); geo.deleteAttribute('uv'); }
+    const out = mergeGeometries(parts.map(q => q[0])); parts.forEach(q => q[0].dispose()); return out;
+  });
+}
+// vegetables: [kind, whole scale, whole colour, slices, slice scale, slice colour]
+const VEG = [
+  ['tomato', [0.034, 0.03, 0.034], '#c8321f', 7, [0.031, 0.0045, 0.031], '#dc4a30'],
+  ['cucumber', [0.085, 0.019, 0.019], '#3c7a31', 10, [0.019, 0.0035, 0.019], '#b9dc8e'],
+  ['pepper', [0.036, 0.043, 0.036], '#e6b422', 8, [0.034, 0.0045, 0.009], '#f0c53a'],
+  ['lettuce', [0.068, 0.052, 0.068], '#8fc45a', 9, [0.05, 0.004, 0.038], '#b4de78'],
+  ['tomato', [0.032, 0.029, 0.032], '#c23a22', 7, [0.03, 0.0045, 0.03], '#dc4a30'],
+];
 function island(m, o = {}) {
-  const L = o.len || 1.8, W = o.width || 0.9, s = m.fam, g = new THREE.Group(), H = 0.9;
-  box(g, L - 0.04, 0.1, W - 0.3, m.darkPlastic, 0, 0, -0.1);
-  box(g, L - 0.04, H - 0.14, W - 0.3, m.lacquer, 0, 0.1, -0.13);
-  const n = Math.max(2, Math.round(L / 0.6)), dw = (L - 0.04) / n;
-  for (let i = 0; i < n; i++) { const x = -L / 2 + 0.02 + dw * (i + 0.5); box(g, dw - 0.006, H - 0.16, 0.02, m.lacquer, x, 0.11, -W / 2 + 0.02); shaker(g, m, dw - 0.006, H - 0.16, x, 0.11, -W / 2 + 0.0095, null, -1); handle(g, m, x, H - 0.1, -W / 2 + 0.03 - 0.03, 0.3); }
-  const top = s === 'nordic' ? m.woodLight : m.counter;
-  box(g, L, 0.04, W, top, 0, H - 0.04, 0);
-  if (s !== 'nordic') for (const sx of [-1, 1]) box(g, 0.04, H - 0.04, W, top, sx * (L / 2 - 0.02), 0, 0); // waterfall ends
-  bowl(g, m, -L * 0.25, H, 0.05, 0.15, s === 'riviera' ? m.ceramic2 : m.ceramic, true);
-  vase(g, m, L * 0.25, H, -0.05, 0.3, s === 'milano' ? m.ceramic2 : m.pot2, true);
-  const st = o.stools ?? Math.max(2, Math.floor(L / 0.6));
-  for (let i = 0; i < st; i++) { const sx = stool(m); sx.position.set(-L / 2 + L / st * (i + 0.5), 0, W / 2 + 0.22); sx.rotation.y = Math.PI; g.add(sx); }
-  g.userData.solidBox = { w: L, d: W, h: H };
+  const L = o.len || 2.0, D = o.depth || 0.86, g = new THREE.Group(), H = 0.9, T = 0.03, plinth = 0.1, KD = 0.62;
+  const front = m.lacquer, carcass = m.darkPlastic, inM = m.cabinetIn, dsM = m.fam === 'milano' ? m.darkPlastic : m.plastic, top = m.counter;
+  const bl = L - 0.06, zOff = -(D / 2 - KD / 2);
+  // ---- working side: a 62 cm base unit facing −z (built front = +z in a group turned by π)
+  const wk = grp(g, 0, 0, zOff, Math.PI);
+  const zF = KD / 2 - 0.02, zBk = -KD / 2 + 0.016, dI = zF - zBk, zc = (zF + zBk) / 2;
+  box(wk, bl, plinth, KD - 0.06, carcass, 0, 0, -0.03);
+  box(wk, bl, H - plinth - T, 0.016, inM, 0, plinth, -KD / 2 + 0.008);
+  const n = Math.max(2, Math.round(bl / 0.62)), mw = bl / n;
+  box(wk, bl, 0.018, dI, inM, 0, plinth, zc); box(wk, bl - mw, 0.018, dI, inM, mw / 2, H - T - 0.018, zc);   // top rail: not over the basin
+  const fy = plinth + 0.003, fh = H - plinth - T - 0.006, yIn = plinth + 0.018;
+  for (let i = 1; i < n; i++) box(wk, 0.018, H - plinth - T - 0.036, dI - 0.004, inM, -bl / 2 + i * mw, plinth + 0.018, zc - 0.002);
+  const drawer = (xm, y, w, hs, fill, seed = 1) => {
+    const h = hs - 0.006, dr = drawerMv(wk, xm, y, zF, h < 0.16 ? 0.34 : 0.4);
+    box(dr, w - 0.006, h, 0.02, front, 0, 0, 0.01); shaker(dr, m, w - 0.006, h, 0, 0, 0.0205);
+    handle(dr, m, 0, m.styleId === 'paris' ? h / 2 : hs - 0.05, 0.02, Math.min(0.3, w * 0.5));
+    const bw = w - 0.06, bd = dI - 0.05, bh = Math.max(0.05, h - 0.06);
+    box(dr, bw, 0.01, bd, inM, 0, 0.02, -bd / 2 - 0.006);
+    for (const sx of [-1, 1]) box(dr, 0.012, bh, bd, dsM, sx * (bw / 2 - 0.006), 0.02, -bd / 2 - 0.006);
+    box(dr, bw, bh, 0.012, dsM, 0, 0.02, -bd);
+    if (fill && DFILL[fill]) DFILL[fill](grp(dr, 0, 0.03, -0.02), m, bw - 0.03, bd - 0.03, bh, seed);
+  };
+  const FILLS = [['pots', 'crockery', 'utensils'], ['pantry', 'trays', 'cutlery'], ['pans', 'crockery', 'spices']];
+  const xs = -bl / 2 + mw / 2, zs = 0.03;                    // sink module (wk frame) and basin centre
+  const BW = Math.min(0.5, mw - 0.14), BD2 = 0.36, BH = 0.19; // basin opening
+  for (let i = 0; i < n; i++) {
+    const a = -bl / 2 + i * mw, xm = a + mw / 2;
+    if (i === 0) {
+      rod(wk, 0.02, 0.2, m.chrome, xm, H - T - BH - 0.1, zs); rod(wk, 0.018, 0.3, m.chrome, xm, H - T - BH - 0.2, zs - 0.15, [HALF, 0, 0]);
+      const comp = compartment(wk, (c) => underSink(c, m, mw - 0.06, yIn, zBk, zF), xm, 0, 0);
+      for (const [x0, x1, side] of mw > 0.65 ? [[a, xm, -1], [xm, a + mw, 1]] : [[a, a + mw, -1]]) {
+        const mv = hinged(wk, x0 + 0.003, x1 - 0.003, fy, zF, side, comp), w = x1 - x0 - 0.006;
+        box(mv, w, fh, 0.02, front, mv.userData.cx, 0, 0.01); shaker(mv, m, w, fh, mv.userData.cx, 0, 0.0205);
+        if (m.styleId === 'paris') handle(mv, m, mv.userData.cx - side * (w / 2 - 0.028), fh - 0.1, 0.02); else handle(mv, m, mv.userData.cx, fh - 0.05, 0.02, Math.min(0.3, w * 0.5));
+      }
+    } else {
+      const hs = [fh * 0.4, fh * 0.35, fh * 0.25], fl = FILLS[(i - 1) % FILLS.length];
+      let yy = fy; for (let k = 0; k < 3; k++) { drawer(xm, yy, mw, hs[k], fl[k], 31 + i * 3 + k); yy += hs[k]; }
+    }
+  }
+  // ---- living side: finished back panel under the overhang, stone waterfall ends, worktop cut around the basin
+  const zB = zOff + KD / 2;                                   // carcass back (island frame)
+  box(g, bl, H - T - 0.06, 0.02, m.fam === 'nordic' ? m.woodLight : m.fam === 'milano' ? m.woodDark : front, 0, 0.06, zB + 0.01);
+  box(g, bl, 0.06, 0.02, carcass, 0, 0, zB - 0.01);
+  if (m.fam !== 'nordic') box(g, bl, 0.012, 0.004, m.metal, 0, 0.06, zB + 0.021);
+  for (const sx of [-1, 1]) box(g, 0.03, H - T, D, top, sx * (L / 2 - 0.015), 0, 0);
+  const sxI = -xs, szI = zOff - zs;                           // basin centre in the island frame
+  const x0 = sxI - BW / 2, x1 = sxI + BW / 2, z0 = szI - BD2 / 2, z1 = szI + BD2 / 2, yT = H - T;
+  box(g, x0 + L / 2, T, D, top, (x0 - L / 2) / 2, yT, 0); box(g, L / 2 - x1, T, D, top, (x1 + L / 2) / 2, yT, 0);
+  box(g, BW, T, z0 + D / 2, top, sxI, yT, (z0 - D / 2) / 2); box(g, BW, T, D / 2 - z1, top, sxI, yT, (z1 + D / 2) / 2);
+  box(g, BW + 0.02, 0.004, BD2 + 0.02, m.steel, sxI, yT - BH, szI);
+  for (const sz of [-1, 1]) box(g, BW + 0.02, BH, 0.004, m.steel, sxI, yT - BH, szI + sz * (BD2 / 2 + 0.008));
+  for (const sx of [-1, 1]) box(g, 0.004, BH, BD2 + 0.02, m.steel, sxI + sx * (BW / 2 + 0.008), yT - BH, szI);
+  cyl(g, 0.026, 0.026, 0.004, m.chrome, sxI, yT - BH + 0.004, szI, 16);                        // waste
+  // high-arc tap on the living side of the basin, spout towards the cook; soap dispenser beside it
+  const tz = z1 + 0.07, th = 0.36;
+  const tp = tap(g, m, sxI, H, tz, th); tp.rotation.y = Math.PI;
+  cyl(g, 0.017, 0.015, 0.05, m.tap, sxI, H + th - 0.085, tz - 0.16, 14);                          // spray head
+  cyl(g, 0.02, 0.022, 0.012, m.tap, sxI + 0.16, H, tz, 14); rod(g, 0.009, 0.1, m.tap, sxI + 0.16, H + 0.06, tz); rod(g, 0.006, 0.07, m.tap, sxI + 0.16, H + 0.105, tz - 0.03, [HALF, 0, 0], 8);
+  // ---- prep set: board (cook's side), the vegetables in a row behind it, the salad bowl towards the bar
+  const bX = Math.max(-L / 2 + 0.36, Math.min(sxI - 0.72, L / 2 - 0.36)), bZ = -D / 2 + 0.25, vZ = bZ + 0.25, wZ = Math.min(D / 2 - 0.16, vZ + 0.2), bowlR = 0.13;
+  rbox(g, 0.44, 0.022, 0.3, 0.008, m.fam === 'milano' ? m.woodDark : m.woodLight, bX, H, bZ);
+  bowl(g, m, bX, H, wZ, bowlR, m.ceramic, false);
+  if (L >= 1.75) vase(g, m, -L / 2 + 0.2, H, D / 2 - 0.22, 0.26, m.fam === 'milano' ? m.ceramic2 : m.pot2, true);
+  // ---- bar stools
+  const st = o.stools === false ? 0 : (o.stools ?? Math.max(1, Math.floor((L - 0.2) / 0.62)));
+  for (let i = 0; i < st; i++) { const sg2 = stool(m); sg2.position.set(-L / 2 + L / st * (i + 0.5), 0, D / 2 + 0.17); sg2.rotation.y = Math.PI; g.add(sg2); }
+  g.userData.solidBox = st ? { w: L, d: D + 0.28, h: H, z: 0.14 } : { w: L, d: D, h: H };
+  g.userData.ao = { w: L, d: D };
+
+  // ================= interactive (unbaked) parts
+  const dyn = grp(g, 0, 0, 0); dyn.userData.keep = true; dyn.name = 'island-dyn';
+  const alive = () => !!dyn.parent;
+  const tween = (ms, fn) => new Promise(res => {
+    const t0 = performance.now();
+    const step = () => { if (!alive()) return res(false); const k = Math.min(1, (performance.now() - t0) / ms); fn(k); if (k < 1) requestAnimationFrame(step); else res(true); };
+    step();
+  });
+  const proxy = (part, w, h, d, x, y, z, toggle) => {
+    const px = new THREE.Mesh(UB(), m.collider); px.scale.set(w, h, d); px.position.set(x, y + h / 2, z); px.name = 'island-' + part;
+    px.userData.playPart = part; px.userData.piece = 'island'; px.userData.open = false; px.userData.toggle = toggle; dyn.add(px); return px;
+  };
+  // -- water: a thin stream from the spray head into the basin + a rippling splash
+  if (!WATER) { WATER = new THREE.MeshPhysicalMaterial({ color: '#dcecf6', roughness: 0.04, transparent: true, opacity: 0.6, envMapIntensity: 1.3, depthWrite: false }); WATER.name = 'water'; }
+  const wTop = H + th - 0.088, wBot = yT - BH + 0.006, wLen = wTop - wBot;
+  const water = grp(dyn, sxI, 0, tz - 0.16); water.visible = false; water.name = 'tap-water';
+  const stream = new THREE.Mesh(cg('islStream', () => new THREE.CylinderGeometry(0.0055, 0.0075, 1, 8, 1, true).translate(0, -0.5, 0)), WATER);
+  stream.position.y = wTop; stream.scale.y = 0.001; stream.raycast = () => {}; stream.renderOrder = 2; water.add(stream);
+  const splash = new THREE.Mesh(cg('islSplash', () => new THREE.RingGeometry(0.004, 0.034, 18).rotateX(-HALF)), WATER);
+  splash.position.y = wBot; splash.visible = false; splash.raycast = () => {}; splash.renderOrder = 2; water.add(splash);
+  stream.onBeforeRender = () => { const t = performance.now() * 0.03; stream.scale.x = stream.scale.z = 1 + 0.14 * Math.sin(t * 1.7); const k = 1 + 0.3 * Math.sin(t); splash.scale.set(k, 1, k); };
+  let running = false, wTok = 0;
+  const tapPx = proxy('tap', 0.26, th + 0.06, 0.3, sxI + 0.05, H, tz - 0.07, (on) => {
+    const want = on === undefined ? !running : !!on; if (want === running) return Promise.resolve();
+    running = want; tapPx.userData.open = tapPx.userData._open = want; const tok = ++wTok;
+    if (want) { water.visible = true; splash.visible = false; stream.position.y = wTop; return tween(190, k => { if (tok !== wTok) return; stream.scale.y = Math.max(0.001, wLen * k); if (k === 1) splash.visible = true; }); }
+    splash.visible = false;                                   // closing: the tail of the stream falls away
+    return tween(160, k => { if (tok !== wTok) return; stream.position.y = wTop - wLen * k; stream.scale.y = Math.max(0.001, wLen * (1 - k)); if (k === 1) water.visible = false; });
+  });
+  // -- vegetables + slices: one instanced mesh (unit sphere, per-instance scale / colour)
+  const nS = VEG.reduce((a, v) => a + v[3], 0), nI = VEG.length + nS;
+  const food = new THREE.InstancedMesh(cg('islFood', () => { const sg3 = new THREE.SphereGeometry(1, 14, 9); sg3.setAttribute('color', new THREE.BufferAttribute(new Float32Array(sg3.attributes.position.count * 3).fill(1), 3)); return sg3; }), m.food, nI);
+  food.name = 'island-food'; food.frustumCulled = false; food.raycast = () => {}; dyn.add(food);
+  const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3(), E = new THREE.Euler(), col = new THREE.Color();
+  const setI = (i, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => { M4.compose(P3.set(x, y, z), Q.setFromEuler(E.set(rx, ry, rz)), S3.set(sx, sy, sz)); food.setMatrixAt(i, M4); food.instanceMatrix.needsUpdate = true; };
+  const rnd = rngM(71 + Math.round(L * 10));
+  const restX = (k) => bX - 0.3 + [0.0, 0.16, 0.34, 0.5, 0.07][k], restZ = (k) => vZ + [0.0, 0.01, 0, 0.02, -0.075][k];
+  const slices = [];                                          // per vegetable: [{i, ry, bx, bz, bh}]
+  { let si = VEG.length;
+    VEG.forEach((v, k) => { food.setColorAt(k, col.set(v[2])); const arr = []; for (let j = 0; j < v[3]; j++, si++) { food.setColorAt(si, col.set(v[5]).offsetHSL(0, 0, (rnd() - 0.5) * 0.06)); const a = rnd() * 6.283; arr.push({ i: si, ry: rnd() * 3, a, rr: Math.sqrt(rnd()), tilt: (rnd() - 0.5) * 0.7 }); } slices.push(arr); });
+    food.instanceColor.needsUpdate = true; }
+  const whole = (k, kx = 1, x = restX(k), y = H, z = restZ(k)) => { const s = VEG[k][1]; setI(k, x, y + s[1] * 0.96, z, Math.max(1e-5, s[0] * kx), kx ? s[1] : 1e-5, kx ? s[2] : 1e-5); };
+  const hideAll = () => { for (const arr of slices) for (const q of arr) setI(q.i, bX, H - 0.2, bZ, 1e-5, 1e-5, 1e-5); };
+  hideAll(); VEG.forEach((v, k) => whole(k));
+  // -- chef's knife (rests on the board, edge down)
+  const knife = new THREE.Mesh(islandKnifeGeo(), m.goods); knife.name = 'island-knife'; knife.raycast = () => {}; dyn.add(knife);
+  const kRest = [bX + 0.15, H + 0.022 + 0.0105, bZ - 0.03];     // lying flat on the board
+  const kPose = (x, y, z, pitch = 0, yaw = 0, roll = 0) => { knife.position.set(x, y, z); knife.rotation.set(pitch, yaw, roll, 'YXZ'); };
+  kPose(...kRest, 0, 0.12, HALF);
+  const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+  let next = 0, busy = false, queued = 0, piled = 0, resetT = 0;
+  const yB = H + 0.022;                                       // board top
+  const chopOne = async (k) => {
+    const v = VEG[k], sw = v[1], arr = slices[k], x0 = restX(k), z0 = restZ(k), cx = bX - 0.02, len = sw[0] * 2;
+    // the vegetable hops onto the board, the knife comes over it
+    await tween(300, t => { const e = ease(t); whole(k, 1, x0 + (cx - x0) * e, H + (yB - H) * e + Math.sin(t * Math.PI) * 0.07, z0 + (bZ - z0) * e); });
+    const kz = bZ - 0.09, kLo = yB + 0.03, kHi = sw[1] * 2 + 0.07;
+    const from = knife.position.clone(), fy0 = knife.rotation.y;
+    await tween(260, t => { const e = ease(t); kPose(from.x + (cx + len / 2 - from.x) * e, from.y + (kLo + kHi - from.y) * e + Math.sin(t * Math.PI) * 0.05, from.z + (kz - from.z) * e, 0.3 * e, fy0 * (1 - e), HALF * (1 - e)); });
+    for (let j = 0; j < arr.length; j++) {
+      const q = arr[j], f1 = (j + 1) / arr.length, xc = cx + len / 2 - len * f1;      // cut line moves from +x to −x
+      const ok = await tween(125, t => {
+        const down = t < 0.55 ? ease(t / 0.55) : 1 - ease((t - 0.55) / 0.45);
+        kPose(xc + 0.004, kLo + kHi * (1 - down), kz, 0.3 * (1 - down), 0);
+        if (t >= 0.55 && !q.cut) {
+          q.cut = true;
+          whole(k, 1 - f1, cx - len * f1 / 2, yB, bZ);
+          const ss = v[4]; q.px = cx + len / 2 + 0.02 + (arr.length - j) * 0.012; q.pz = bZ + (q.rr - 0.5) * 0.03; q.py = yB + Math.max(ss[0], ss[2]) * 0.62;
+          setI(q.i, q.px, q.py, q.pz, ss[0], ss[1], ss[2], 0, q.ry * 0.15, 1.0);
+        }
+      });
+      if (!ok) return false;
+    }
+    whole(k, 0);
+    // knife back to its rest, slices sail into the bowl
+    const kf = knife.position.clone(), kp = knife.rotation.x;
+    tween(320, t => { const e = ease(t); kPose(kf.x + (kRest[0] - kf.x) * e, kf.y + (kRest[1] - kf.y) * e + Math.sin(t * Math.PI) * 0.04, kf.z + (kRest[2] - kf.z) * e, kp * (1 - e), 0.12 * e, HALF * e); });
+    await Promise.all(arr.map((q, j) => new Promise(res => setTimeout(res, j * 55)).then(() => {
+      // landing spot: the pile rises with every slice and stays inside the bowl's inner wall at that height
+      const ss = v[4], h = H + 0.03 + piled * 0.0013, rm = Math.max(0, Math.min(0.085, (h - H - 0.0104) / 0.0366 * 0.103 - 0.024)) * q.rr; piled++;
+      const tx = bX + Math.cos(q.a) * rm, tz2 = wZ + Math.sin(q.a) * rm;
+      return tween(380, t => { const e = ease(t); setI(q.i, q.px + (tx - q.px) * e, q.py + (h - q.py) * e + Math.sin(t * Math.PI) * 0.12, q.pz + (tz2 - q.pz) * e, ss[0], ss[1], ss[2], q.tilt * e, q.ry + t * 4, 1.0 * (1 - e) + q.tilt * 0.6 * e); });
+    })));
+    return alive();
+  };
+  const reset = async () => {
+    clearTimeout(resetT); if (busy || (!next && !piled)) return; busy = true;
+    const mats = []; for (const arr of slices) for (const q of arr) { q.cut = false; food.getMatrixAt(q.i, M4); mats.push([q.i, M4.clone()]); }
+    await tween(260, t => { for (const [i, mm] of mats) { mm.decompose(P3, Q, S3); S3.multiplyScalar(Math.max(1e-4, 1 - t)); M4.compose(P3, Q, S3); food.setMatrixAt(i, M4); } food.instanceMatrix.needsUpdate = true; });
+    hideAll(); next = 0; piled = 0; queued = 0;
+    await tween(320, t => { const e = ease(t) * (1 + 0.25 * Math.sin(t * Math.PI)); VEG.forEach((v, k) => whole(k, Math.max(0.02, e))); });
+    VEG.forEach((v, k) => whole(k)); busy = false; chopPx.userData.open = bowlPx.userData.open = false;
+  };
+  const pump = async () => {
+    if (busy) return; busy = true; clearTimeout(resetT);
+    while (queued > 0 && next < VEG.length && alive()) { queued--; if (!(await chopOne(next))) break; next++; chopPx.userData.open = bowlPx.userData.open = true; }
+    queued = 0; busy = false;
+    if (next >= VEG.length && alive()) resetT = setTimeout(reset, 45000);       // a full bowl clears itself after a while
+  };
+  const chopPx = proxy('chop', 0.74, 0.14, 0.46, bX + 0.04, H, (bZ + vZ) / 2 - 0.02, () => {
+    if (next >= VEG.length && !busy) return reset();
+    queued = Math.min(VEG.length - next, queued + 1); return pump();
+  });
+  const bowlPx = proxy('salad', 0.3, 0.16, 0.24, bX, H, wZ + 0.02, () => (next || piled) ? reset() : (queued = 1, pump()));
+  g.userData.island = dyn.userData.island = { len: L, depth: D, stools: st, get chopped() { return next; }, get running() { return running; }, get busy() { return busy; }, parts: { tap: tapPx, chop: chopPx, salad: bowlPx }, food, knife, water };
   return g;
 }
 

@@ -1954,17 +1954,18 @@ export class Walkthrough {
     await this._facePanel(inf);
   }
 
-  // Standing spot in front of the car operating panel (≈ 0.52 m from it), looking at its centre.
+  // Standing spot at the back of the car, looking toward the doors with the operating panel (on the front return wall)
+  // in view beside them: the whole car reads at once — walls, ceiling light, doors, floor indicator and the keys.
   _panelStand(inf) {
-    const L = inf && inf.lift, pn = L && L.panel;
-    if (!pn || !L.car) return null;
+    const L = inf && inf.lift, sd = L && L.stand;
+    if (!sd || !L.car) return null;
     L.car.updateMatrixWorld(true);
-    const D = 0.52;
-    const stand = L.car.localToWorld(new THREE.Vector3(pn.xs + D, 0, pn.zc));
-    const look = new THREE.Vector3(-1, 0, 0).transformDirection(L.car.matrixWorld);
-    return { x: stand.x, z: stand.z, yaw: yawFromDir(look.x, look.z), pitch: Math.atan2(1.285 - this.player.eye, D) };
+    const stand = L.car.localToWorld(new THREE.Vector3(sd.x, 0, sd.z));
+    const look = new THREE.Vector3(sd.look[0] - sd.x, 0, sd.look[2] - sd.z), dist = look.length();
+    look.normalize().transformDirection(L.car.matrixWorld);
+    return { x: stand.x, z: stand.z, yaw: yawFromDir(look.x, look.z), pitch: Math.atan2(sd.look[1] - this.player.eye, dist) };
   }
-  // Turn smoothly to face the button panel (and zoom in on phones so the keys are finger-sized).
+  // Step to the back of the car and turn toward the doors / panel (portrait phones narrow the view a little).
   async _facePanel(inf, dur = 950) {
     const s = this._panelStand(inf);
     this._occupy(inf);
@@ -1984,7 +1985,7 @@ export class Walkthrough {
     if (on) {
       if (this._zoomSaved == null) this._zoomSaved = this._zoomS;
       const a = this.camera.aspect || 1;
-      const want = (0.66 * a) / this._baseTanH;              // ≈ ±0.34 m of wall visible vertically at 0.52 m → finger-sized keys
+      const want = (0.875 * a) / this._baseTanH;             // portrait phones: ≈ 44° across → the car front fills the width, keys finger-sized
       if (want < this._zoomS) this._tweenZoom(want, dur);
     } else if (this._zoomSaved != null) {
       const to = this._zoomSaved; this._zoomSaved = null;
@@ -2327,6 +2328,7 @@ export class Walkthrough {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (this._ghosts && this._ghosts.length) this._reconcileGhosts();
     this._update(dt);
+    if (this.apt && this.apt.game) this.apt.game.frame(this, dt);   // snooker table (snooker.js): "Play" prompt; in play mode it owns the camera (walking is held by this.busy)
     try { this.env && this.env.update && this.env.update(dt, this.camera); } catch (e) { if (!this._envErr) { console.warn(e); this._envErr = true; } }
     this.renderer.render(this.scene, this.camera);
   }
