@@ -817,6 +817,14 @@ function coveCeiling(ctx, L, r, [a0, b0, a1, b1]) {
   box(sg, m.led, a0 + band + 0.002, y - 0.03, cv0 + band, a0 + band + 0.012, y - 0.018, b1 - band);
   box(sg, m.led, a1 - band - 0.012, y - 0.03, cv0 + band, a1 - band - 0.002, y - 0.018, b1 - band);
   box(sg, m.led, a0 + band, y - 0.03, cv0 + band + 0.002, a1 - band, y - 0.018, cv0 + band + 0.012);
+  if (m.styleId === 'paris') {
+    // plaster crown on the inner lip of the bulkhead (the LED cove sits behind it)
+    for (const [d, h0, h1] of [[0.045, 0, 0.03], [0.028, 0.03, 0.06], [0.012, 0.06, 0.085]]) {
+      const u0 = a0 + band - d, u1 = a1 - band + d, v0 = cv0 + band - d, v1 = b1 - band + d, ya = yb + h0 - 0.012, yc = yb + h1 - 0.012;
+      box(sg, m.moulding, u0, ya, v0, u1, yc, cv0 + band); box(sg, m.moulding, u0, ya, b1 - band, u1, yc, v1);
+      box(sg, m.moulding, u0, ya, cv0 + band, a0 + band, yc, b1 - band); box(sg, m.moulding, a1 - band, ya, cv0 + band, u1, yc, b1 - band);
+    }
+  }
   // downlights in the bands
   const n = Math.max(2, Math.round((a1 - a0) / 1.3));
   for (let i = 0; i < n; i++) { const u = a0 + (a1 - a0) * (i + 0.5) / n; downlight(ctx, u, yb, b1 - band / 2 - 0.05); FX.fxFlat(sg, m.glowFaint, 'disc', u, L.y + 0.005, b1 - 0.6, 1.5, 1.5); }
@@ -843,8 +851,16 @@ function buildEntrance(ctx) {
   box(sg, m.stone, u0, 0, 0, u1, 0.004, CW);   // threshold
   // leaf: ONE mesh (two material groups), hinged on the right jamb, swings inward (+v)
   const lw = ENTRY_W - 0.04, lh = ENTRY_H - 0.02, lt = 0.06;
-  const leafG = new THREE.BoxGeometry(lw, lh, lt).toNonIndexed();
+  let leafG = new THREE.BoxGeometry(lw, lh, lt).toNonIndexed();
   leafG.translate(-lw / 2, lh / 2, 0);
+  if (m.styleId === 'paris') {
+    // panelled inner face: two raised moulding frames
+    const bits = [leafG], fr = (y0, y1) => { const w = lw - 0.3, sw = 0.028, z = lt / 2 + 0.004;
+      for (const [bw, bh, bx, by] of [[w, sw, 0, y0 + sw / 2], [w, sw, 0, y1 - sw / 2], [sw, y1 - y0 - 2 * sw, -(w - sw) / 2, (y0 + y1) / 2], [sw, y1 - y0 - 2 * sw, (w - sw) / 2, (y0 + y1) / 2]]) {
+        const b = new THREE.BoxGeometry(bw, bh, 0.008).toNonIndexed(); b.translate(-lw / 2 + bx, by, z); bits.push(b); } };
+    fr(0.18, 0.94); fr(1.16, lh - 0.18);
+    leafG = mergeGeometries(bits); bits.forEach(b => b.dispose());
+  }
   const parts = [leafG];
   const hdl = [];
   for (const side of [1, -1]) {
@@ -901,6 +917,7 @@ function buildInteriorDoor(ctx, L, d) {
   // leaf opened ~95° into the room (+z side), hinge at x = hinge*w/2
   const lf = FX.grp(g, d.hinge * (w / 2 - 0.02), 0, TW / 2 + 0.02, d.hinge < 0 ? -HALF * 1.02 : HALF * 1.02);
   FX.box(lf, w - 0.04, h - 0.02, 0.04, m.doorLeaf, -d.hinge * (w - 0.04) / 2, 0.005, 0.02);
+  if (m.styleId === 'paris') for (const z of [-0.002, 0.042]) { const cx = -d.hinge * (w - 0.04) / 2; FX.mouldFrame(lf, m.moulding, cx, 0.16, 0.9, w - 0.26, z, 0.024, 0.008); FX.mouldFrame(lf, m.moulding, cx, 1.02, h - 0.16, w - 0.26, z, 0.024, 0.008); }
   FX.box(lf, 0.13, 0.018, 0.02, m.metal, -d.hinge * (w - 0.1), 1.02, 0.055);
   FX.box(lf, 0.13, 0.018, 0.02, m.metal, -d.hinge * (w - 0.1), 1.02, -0.015);
   if (d.axis === 'u') { g.position.set(d.p, y0, d.c); g.rotation.y = d.into > 0 ? 0 : PI; }
@@ -1130,7 +1147,8 @@ function finishWalls(ctx, L) {
   const y0 = L.y;
   const baths = L.rooms.filter(r => r.kind === 'bath').map(r => ({ r, c: clearRect(P, r) }));
   const inBath = (u, v) => baths.find(b => u > b.c[0] - 0.08 && u < b.c[2] + 0.08 && v > b.c[1] - 0.08 && v < b.c[3] + 0.08);
-  const skM = m.skirting, sh = 0.08, st = 0.014;
+  const paris = m.styleId === 'paris';
+  const skM = m.skirting, sh = paris ? 0.13 : 0.08, st = paris ? 0.018 : 0.014;
   const halls = L.rooms.filter(r => r.kind === 'hall').map(r => r.poly);
   for (const s of ctx.segs[L.lv] || []) {
     for (const f of s.faces) {
@@ -1160,6 +1178,7 @@ function finishWalls(ctx, L) {
       if (bath) continue;
       if (s.axis === 'u') box(sg, skM, s.a0, y0, Math.min(off, off + f * st), s.a1, y0 + sh, Math.max(off, off + f * st));
       else box(sg, skM, Math.min(off, off + f * st), y0, s.a0, Math.max(off, off + f * st), y0 + sh, s.a1);
+      if (paris && !ctx.cut) boiserie(ctx, L, s, f, off, inBath);
       // entrance halls: LED line under a floating skirting washes the floor
       if (!ctx.cut && len > 0.5 && halls.some(poly => pointInPoly([pu, pv], poly))) {
         const e = st + 0.004;
@@ -1194,6 +1213,50 @@ function finishWalls(ctx, L) {
       }
     };
     ['back', 'front', 'left', 'right'].forEach(clad);
+  }
+}
+
+// Paris: Haussmann wall dressing on one wall face — plaster cornice under the ceiling, a chair rail, and moulded
+// panel frames below and above it (boiserie). The face is first cut into free stretches where partitions meet it;
+// trims stop short of door casings and the cornice carries on over door heads. The band between 0.95 and 1.15 m stays
+// clear (wall switches live there). All of it is one material → one baked draw call.
+function boiserie(ctx, L, s, f, off, inBath) {
+  const { m, sg, P } = ctx, y0 = L.y, M = m.moulding, top = y0 + CH;
+  const cuts = [];
+  for (const q of ctx.segs[L.lv] || []) {
+    if (q.axis === s.axis || q.c < s.a0 - 0.01 || q.c > s.a1 + 0.01) continue;
+    const p = off + f * 0.03;
+    if (p > q.a0 - 0.02 && p < q.a1 + 0.02) cuts.push([q.c - q.t / 2, q.c + q.t / 2]);
+  }
+  cuts.sort((a, b) => a[0] - b[0]);
+  const runs = []; let a = s.a0;
+  for (const [c0, c1] of cuts) { if (c0 - a > 0.02) runs.push([a, c0]); a = Math.max(a, c1); }
+  if (s.a1 - a > 0.02) runs.push([a, s.a1]);
+  // how far a door opening reaches beyond a run end (0 = no door there)
+  const doorAt = (x) => {
+    for (const d of L.doors) if (d.axis === s.axis && Math.abs(d.c - s.c) < 0.09 && Math.abs(Math.abs(x - d.p) - DOOR_W / 2) < 0.04) return DOOR_W / 2;
+    if (L.lv === 0 && s.axis === 'u' && Math.abs(s.c - CW / 2) < 0.02 && Math.abs(Math.abs(x - P.doorU) - ENTRY_W / 2) < 0.04) return ENTRY_W / 2;
+    return 0;
+  };
+  const B = (a0, a1, ya, yb, d) => { if (a1 - a0 < 0.01) return; if (s.axis === 'u') box(sg, M, a0, ya, Math.min(off, off + f * d), a1, yb, Math.max(off, off + f * d)); else box(sg, M, Math.min(off, off + f * d), ya, a0, Math.max(off, off + f * d), yb, a1); };
+  const frame = (a0, a1, ya, yb) => { const w = 0.026, d = 0.009; if (a1 - a0 < 0.12 || yb - ya < 0.12) return; B(a0, a1, ya, ya + w, d); B(a0, a1, yb - w, yb, d); B(a0, a0 + w, ya + w, yb - w, d); B(a1 - w, a1, ya + w, yb - w, d); };
+  for (const [r0, r1] of runs) {
+    const mid = (r0 + r1) / 2, [pu, pv] = s.axis === 'u' ? [mid, off + f * 0.1] : [off + f * 0.1, mid];
+    if (inBath(pu, pv) || pv > P.vF + 0.01 || pv < 0) continue;
+    const d0 = Math.abs(r0 - s.a0) < 0.01 ? doorAt(r0) : 0, d1 = Math.abs(r1 - s.a1) < 0.01 ? doorAt(r1) : 0;
+    // cornice: cyma-like stack of three steps + a small bead below
+    const c0 = r0 - d0, c1 = r1 + d1;
+    B(c0, c1, top - 0.03, top, 0.075); B(c0, c1, top - 0.062, top - 0.03, 0.05); B(c0, c1, top - 0.092, top - 0.062, 0.026); B(c0, c1, top - 0.122, top - 0.11, 0.014);
+    const e0 = r0 + (d0 ? 0.075 : 0), e1 = r1 - (d1 ? 0.075 : 0), len = e1 - e0;
+    if (len < 0.3) continue;
+    B(e0, e1, y0 + 0.885, y0 + 0.93, 0.02); B(e0, e1, y0 + 0.87, y0 + 0.885, 0.011);           // chair rail
+    if (len < 0.56) continue;
+    const mg = 0.13, gap = 0.12, n = Math.max(1, Math.round((len - 2 * mg + gap) / 1.12)), pw = (len - 2 * mg - (n - 1) * gap) / n;
+    for (let i = 0; i < n; i++) {
+      const x0 = e0 + mg + i * (pw + gap), x1 = x0 + pw;
+      frame(x0, x1, y0 + 0.24, y0 + 0.79);
+      frame(x0, x1, y0 + 1.17, top - 0.25);
+    }
   }
 }
 
@@ -1480,7 +1543,12 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   const rugU = Math.min(3.0, Math.abs(tvWall - sofaU) + 0.1), rugV = Math.min(sofaLen + 0.9, zd + 0.2);
   put(g, F.rug(m, { w: rugV, d: rugU }), sofaU + t * (rugU / 2 - 0.35), lc, '+u');
   const tvLen = Math.min(2.2, zd - 0.45);
-  put(g, F.tvUnit(m, { len: tvLen }), tvWall - t * 0.3, lc, fromTV);
+  // paris: where the wall behind the sofa is free the Carrara chimneypiece stands there under a tall gilt overmantel
+  // mirror (and the TV wall gets its console); otherwise it stands against the marble chimney breast under the TV
+  const sblP = Math.min(1.8, zd - 0.4);
+  const mantelFar = m.styleId === 'paris' && !ctx.cut && farIsWall && floating && Math.abs(farWall - sofaU) > 1.1 && sblP >= 1.45;
+  if (m.styleId === 'paris' && !mantelFar) put(g, F.fireplace(m, { w: clamp(Math.min(3.2, zd + 0.3) - 1.25, 1.4, 1.7), tv: true }), tvWall - t * 0.232, lc, fromTV);
+  else put(g, F.tvUnit(m, { len: tvLen }), tvWall - t * 0.3, lc, fromTV);
   if (!ctx.cut) { put(g, F.tv(m, { w: 1.45, live: true, glowZ: s === 'riviera' ? -0.012 : -0.043 }), tvWall - t * 0.1, lc, fromTV, 1.0); (ctx.tvRooms ||= []).push('living'); }
   featureWall(ctx, g, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3));
   busy(ctx, L, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3) / 2 + 0.05, 0, CH);
@@ -1496,8 +1564,12 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   put(g, F.plant(m, { h: 1.7, seed: 4 }), tvWall - t * 0.3, v1 + 0.2, '+v');       // facade corner of the TV wall
   if (farIsWall && !floating) artOn(ctx, g, farWall, lc, toTV, 1.1, 0.8, 0, 1.7);
   else if (farIsWall && Math.abs(farWall - sofaU) > 1.1) {
+    if (mantelFar) { put(g, F.fireplace(m, { w: clamp(sblP - 0.1, 1.4, 1.6), mirror: true, ceil: CH }), farWall + t * 0.172, lc, toTV); busy(ctx, L, farWall, lc, toTV, 0.95, 0, 2.5); }
+    else {
     const sbl = Math.min(1.8, zd - 0.4); halo(ctx, put(g, F.sideboard(m, { len: sbl }), farWall + t * 0.24, lc, toTV), -sbl / 2 + 0.25, -0.235, 1.2);
-    artOn(ctx, g, farWall, lc, toTV, 1.2, 0.9, 0, 1.8);
+    if (m.styleId === 'paris') { hang(ctx, g, F.mirror(m, { w: 0.95, h: 1.35 }), farWall, 0.98, lc, toTV); busy(ctx, L, farWall, lc, toTV, 0.55, 0.9, 2.4); }   // tall arched brass mirror over the sideboard
+    else artOn(ctx, g, farWall, lc, toTV, 1.2, 0.9, 0, 1.8);
+    }
   }
   ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
   ctx.livingEye = { u: farWall + t * 0.6, v: v0 };
@@ -1536,7 +1608,27 @@ function featureWall(ctx, g, uWall, vc, face, len) {
   const { m } = ctx;
   if (ctx.cut) return;
   const s = m.fam, H = CH - 0.02, grp = new THREE.Group();
-  if (m.styleId === 'monaco') {
+  if (m.styleId === 'paris') {
+    // chimney-breast of book-matched Carrara (plinth, brass-edged slab, stepped marble crown) behind the TV, flanked by
+    // boiserie bays with tall antiqued-mirror panels in brass frames and globe sconces
+    const Hv = CH - 0.16, mw = Math.min(len - 0.1, clamp(len - 1.25, 1.4, 1.7) + 0.22), sw = (len - mw) / 2, M = m.moulding;
+    FX.box(grp, len, Hv, 0.014, M, 0, 0, 0.007);
+    FX.box(grp, mw, Hv - 0.02, 0.06, m.marble, 0, 0, 0.03);
+    FX.box(grp, mw + 0.07, 0.11, 0.085, m.marble, 0, 0, 0.0425);
+    FX.box(grp, mw + 0.05, 0.03, 0.08, m.marble, 0, Hv - 0.13, 0.04); FX.box(grp, mw + 0.1, 0.04, 0.1, m.marble, 0, Hv - 0.1, 0.05); FX.box(grp, mw + 0.03, 0.06, 0.07, m.marble, 0, Hv - 0.06, 0.035);
+    for (const sx of [-1, 1]) FX.box(grp, 0.012, Hv - 0.24, 0.066, m.brass, sx * (mw / 2 - 0.05), 0.11, 0.033);
+    FX.box(grp, mw - 0.1, 0.012, 0.066, m.brass, 0, Hv - 0.142, 0.033);
+    FX.mouldFrame(grp, m.brass, 0, 0.975, 1.0 + 1.45 * 0.565 + 0.025, 1.5, 0.07, 0.022, 0.02);     // the TV sits in a brass picture frame
+    if (sw > 0.36) for (const sx of [-1, 1]) {
+      const x = sx * (mw / 2 + sw / 2 + 0.02), pw = Math.min(0.62, sw - 0.2);
+      FX.mouldFrame(grp, M, x, 0.2, 0.8, pw + 0.06, 0.02, 0.026, 0.012);
+      FX.box(grp, pw + 0.1, 0.04, 0.03, M, x, 0.88, 0.02);
+      FX.box(grp, pw, Hv - 1.42, 0.006, m.mirror, x, 1.08, 0.017);
+      FX.mouldFrame(grp, m.brass, x, 1.06, Hv - 0.32, pw + 0.04, 0.022, 0.02, 0.016);
+      FX.mouldFrame(grp, M, x, 1.0, Hv - 0.26, pw + 0.16, 0.02, 0.026, 0.012);
+      if (pw > 0.36) FX.sconce(grp, m, x, 1.68, 0.02);
+    }
+  } else if (m.styleId === 'monaco') {
     // Art-Deco panelling: fluted walnut bays framed by polished brass pilasters, a brass plinth band and a stepped
     // brass crown; a hidden LED behind the crown grazes the reeds
     const bays = Math.max(2, Math.round(len / 0.75)), bw = len / bays, n = Math.max(6, Math.round((bw - 0.05) / 0.055));
@@ -1657,6 +1749,21 @@ function featureWallBed(ctx, g, u, v, face, len) {
   if (ctx.cut) return;
   if (ctx.curLevel) busy(ctx, ctx.curLevel, u, v, face, len / 2 + 0.05, 0, CH);
   const s = m.fam, grp = new THREE.Group(), H = CH - 0.02;
+  if (m.styleId === 'paris') {
+    // boiserie in a blush-greige infill: a wide centre panel behind the headboard between two slim ones (double
+    // mouldings), a chair rail, and a pair of brass globe sconces
+    const Hb = CH - 0.13, M = m.moulding, cw = clamp(len * 0.56, 1.0, len - 0.2), swd = (len - cw) / 2 - 0.16;
+    FX.box(grp, len, Hb, 0.012, m.wallAccent, 0, 0, 0.006);
+    FX.box(grp, len, 0.13, 0.02, m.skirting, 0, 0, 0.01);
+    FX.mouldFrame(grp, M, 0, 0.26, Hb - 0.14, cw, 0.018, 0.034, 0.014); FX.mouldFrame(grp, M, 0, 0.33, Hb - 0.21, cw - 0.14, 0.016, 0.014, 0.008);
+    if (swd > 0.2) for (const sx of [-1, 1]) {
+      const x = sx * (cw / 2 + 0.1 + swd / 2);
+      FX.mouldFrame(grp, M, x, 0.26, Hb - 0.14, swd, 0.018, 0.034, 0.014); FX.mouldFrame(grp, M, x, 0.33, Hb - 0.21, swd - 0.14, 0.016, 0.014, 0.008);
+      if (swd > 0.3) FX.sconce(grp, m, x, 1.55, 0.014);
+    }
+    put(g, grp, u, v, face, 0);
+    return;
+  }
   if (m.styleId === 'monaco') {
     // navy velvet channel-upholstered wall panel in a brass frame, flanked by walnut
     FX.box(grp, len, H, 0.02, m.woodDark, 0, 0, 0.01);

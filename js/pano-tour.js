@@ -482,7 +482,7 @@ export async function openPanoTour(container, opts = {}) {
   async function enterScene(key, { pointId, room, yaw, style } = {}) {
     const d = sceneDefs[key]; if (!d) return;
     const styles = stylesOf(key);
-    const near = { monaco: 'milano', kyoto: 'nordic' }[style || opts.styleId];   // designs without renders → the nearest rendered one
+    const near = { monaco: 'milano', kyoto: 'nordic', paris: 'riviera' }[style || opts.styleId];   // designs without renders → the nearest rendered one
     const st = style && styles.includes(style) ? style : (key === 'apt' ? (styles.includes(opts.styleId) ? opts.styleId : styles.includes(near) ? near : styles.includes(S.style) ? S.style : styles[0]) : styles[0]);
     const prevKey = S.key; S.key = key; S.style = st;
     const P = pts();

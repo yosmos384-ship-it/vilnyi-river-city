@@ -86,6 +86,22 @@ export const STYLES = [
     palette: { floor: '#d4bf9c', wall: '#e9e1d4', accent: '#3b2f26', metal: '#4a3a2a', fabric: '#d8cebe', light: '#ffcf96' },
     lightColor: 0xffca8e, lightTemp: 2800,
   },
+  {
+    id: 'paris', family: 'riviera',
+    name: { en: 'Paris', ro: 'Paris', he: 'פריז', ru: 'Париж', uk: 'Париж', fr: 'Paris', it: 'Parigi', de: 'Paris' },
+    blurb: {
+      en: 'Haussmann chic: white boiserie and ceiling cornices, point-de-Hongrie oak parquet, Carrara marble, a marble fireplace, a curved bouclé sofa, pale-blue and blush velvet, antique brass and crystal chandeliers.',
+      ro: 'Șic haussmannian: lambriuri albe și cornișe de tavan, parchet de stejar point de Hongrie, marmură de Carrara, șemineu din marmură, canapea curbată din bouclé, catifea bleu pal și roz pudrat, alamă antichizată și candelabre cu cristale.',
+      he: 'שיק פריזאי בסגנון הוסמן: חיפויי קיר לבנים עם פרופילים קלאסיים וקרניזים, פרקט אלון בדוגמת שברון, שיש קררה, אח משיש, ספה מעוגלת מבד בוקלה, קטיפה בתכלת רך ובוורוד עתיק, פליז עתיק ונברשות קריסטל.',
+      ru: 'Османовский шик: белые буазери и потолочные карнизы, дубовый паркет «французская ёлка», каррарский мрамор, мраморный камин, изогнутый диван из букле, бархат нежно-голубой и пудрово-розовый, состаренная латунь и хрустальные люстры.',
+      uk: 'Османівський шик: білі буазері та стельові карнизи, дубовий паркет «французька ялинка», каррарський мармур, мармуровий камін, вигнутий диван із букле, оксамит ніжно-блакитний і пудрово-рожевий, зістарена латунь і кришталеві люстри.',
+      fr: 'Le chic haussmannien : boiseries blanches et corniches, parquet de chêne en point de Hongrie, marbre de Carrare, cheminée en marbre, canapé courbe en bouclé, velours bleu pâle et rose poudré, laiton vieilli et lustres à pampilles de cristal.',
+      it: 'Chic haussmanniano: boiserie bianche e cornici a soffitto, parquet di rovere a spina ungherese, marmo di Carrara, camino in marmo, divano curvo in bouclé, velluto azzurro polvere e rosa cipria, ottone anticato e lampadari di cristallo.',
+      de: 'Haussmann-Chic: weiße Wandvertäfelung und Deckenstuck, Eichenparkett im französischen Fischgrät, Carrara-Marmor, Marmorkamin, geschwungenes Bouclé-Sofa, Samt in Taubenblau und Puderrosa, Altmessing und Kristalllüster.',
+    },
+    palette: { floor: '#c9a877', wall: '#f1ede5', accent: '#9db3c6', metal: '#b8935a', fabric: '#ebe4d6', light: '#ffd4a2' },
+    lightColor: 0xffdbb8, lightTemp: 3000,
+  },
 ];
 
 // ---------------------------------------------------------------- noise + canvas helpers
@@ -375,6 +391,52 @@ function woodTile(base, seed, size = 512, { rings = 56, contrast = 0.22 } = {}) 
   c.height_ = pixels(size, (u, v, x, y) => { const r = Hh[y * size + x]; return [r, r, r]; });
   return c;
 }
+// Point de Hongrie (French chevron) parquet: planks cut at 45° meeting on straight seams, alternating direction per
+// column. Tile = 2 columns × n planks → seamless. Returns colour, normal and roughness canvases.
+function chevron(base, seed, size = 1024) {
+  const c = canvas(size), ctx = c.getContext('2d'), hc = canvas(size), hctx = hc.getContext('2d'), rc = canvas(size), rctx = rc.getContext('2d');
+  const strip = grainStrip(base, seed, 2048, 256, { rings: 6, figure: 0.6, contrast: 0.27, streaks: 0.1 });
+  const Wc = size / 2, n = 6, p = size / n, Lp = Wc * Math.SQRT2, T = p / Math.SQRT2, kMin = -Math.ceil(Wc / p) - 1;
+  const path = (x, col, k) => { const dir = col ? -1 : 1, x0 = col * Wc, yA = k * p + (col ? Wc : 0); x.beginPath(); x.moveTo(x0, yA); x.lineTo(x0 + Wc, yA + dir * Wc); x.lineTo(x0 + Wc, yA + dir * Wc + p); x.lineTo(x0, yA + p); x.closePath(); return [x0, yA, dir]; };
+  for (let col = 0; col < 2; col++) for (let k = kMin; k <= n; k++) {
+    const km = ((k % n) + n) % n, s0 = seed * 37 + col * 211 + km * 17, r = rng(s0), tone = 0.84 + r() * 0.24, rough = 165 + r() * 70;
+    const sx = r() * (strip.width - Lp - T - 2), sy = r() * (strip.height - T - 1);
+    for (const [x, kind] of [[ctx, 0], [hctx, 1], [rctx, 2]]) {
+      x.save(); const [x0, yA, dir] = path(x, col, k); x.clip();
+      if (kind === 2) { x.fillStyle = `rgb(${rough | 0},${rough | 0},${rough | 0})`; x.fill(); x.restore(); continue; }
+      if (kind === 1) { x.fillStyle = '#b4b4b4'; x.fill(); x.globalAlpha = 0.18; }
+      x.translate(x0, yA); x.rotate(dir * Math.PI / 4);
+      x.drawImage(strip, sx, sy, Lp + 2 * T, T + 1, -T, -0.5, Lp + 2 * T, T + 1);
+      if (kind === 0 && tone !== 1) { x.fillStyle = tone < 1 ? `rgba(20,10,4,${(1 - tone).toFixed(3)})` : `rgba(255,244,228,${((tone - 1) * 0.6).toFixed(3)})`; x.fillRect(-T, -1, Lp + 2 * T, T + 2); }
+      x.restore();
+    }
+  }
+  for (let col = 0; col < 2; col++) for (let k = kMin; k <= n; k++) {       // micro-bevel on every plank edge
+    path(ctx, col, k); ctx.globalAlpha = 0.5; ctx.strokeStyle = rgbStr(base, 0.36); ctx.lineWidth = 1.3; ctx.stroke();
+    path(hctx, col, k); hctx.strokeStyle = '#000'; hctx.lineWidth = 2.4; hctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  rctx.globalAlpha = 0.25; rctx.drawImage(hc, 0, 0); rctx.globalAlpha = 1;
+  return { map: c, normal: normalFromHeight(hc, 3), rough: rc };
+}
+// Parisian bistro mosaic: white octagonal tiles with small black cabochon insets at every corner (n tiles per side).
+function cabochonTex(n = 8, size = 512, white = '#f3f1ec', black = '#1b1b1c', grout = '#c9c6bf') {
+  const c = canvas(size), ctx = c.getContext('2d'), bump = canvas(size), b = bump.getContext('2d'), t = size / n, q = t * 0.2, gw = Math.max(1.5, size / 300), r = rng(n * 7 + 3);
+  ctx.fillStyle = grout; ctx.fillRect(0, 0, size, size); b.fillStyle = '#2a2a2a'; b.fillRect(0, 0, size, size);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = i * t, y = j * t, g = gw / 2, k = 0.97 + r() * 0.05;
+    for (const [cx, fs] of [[ctx, rgbStr(hex(white), k)], [b, '#fff']]) {
+      cx.fillStyle = fs; cx.beginPath();
+      cx.moveTo(x + q + g, y + g); cx.lineTo(x + t - q - g, y + g); cx.lineTo(x + t - g, y + q + g); cx.lineTo(x + t - g, y + t - q - g);
+      cx.lineTo(x + t - q - g, y + t - g); cx.lineTo(x + q + g, y + t - g); cx.lineTo(x + g, y + t - q - g); cx.lineTo(x + g, y + q + g); cx.closePath(); cx.fill();
+    }
+  }
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const x = i * t, y = j * t, d = q - gw * 1.2;
+    for (const [cx, fs] of [[ctx, black], [b, '#f0f0f0']]) { cx.fillStyle = fs; cx.beginPath(); cx.moveTo(x, y - d); cx.lineTo(x + d, y); cx.lineTo(x, y + d); cx.lineTo(x - d, y); cx.closePath(); cx.fill(); }
+  }
+  return { map: c, bump };
+}
 // Tile grid; pattern: 'grid' | 'stack' | 'brick' | 'chevron'
 function tileTex({ size = 512, tilesX = 4, tilesY = 4, colors, grout, groutW = 3, pattern = 'grid', seed = 1, glaze = 0.08, surface }) {
   const c = canvas(size), ctx = c.getContext('2d'), r = rng(seed);
@@ -571,6 +633,7 @@ function rugTex(style, size = 1024) {
     riviera: [hex('#cdb897'), hex('#bda582'), hex('#8e7658'), hex('#dccbaa')],
     monaco: [hex('#1c2538'), hex('#26304a'), hex('#c7a05c'), hex('#e8dcc4')],
     kyoto: [hex('#d9cfbf'), hex('#cfc3b0'), hex('#9c8c76'), hex('#e6ddcf')],
+    paris: [hex('#ece5d8'), hex('#dfd5c5'), hex('#b9a48a'), hex('#d8b3ad')],
   }[style];
   return pixels(size, (u, v, x, y) => {
     const e = Math.min(u, v, 1 - u, 1 - v);                                   // distance to the edge (uv)
@@ -592,6 +655,19 @@ function rugTex(style, size = 1024) {
       }
       col = mix(col, P[2], Math.min(1, g));
       if (e < 0.02) col = mix(P[1], P[2], 0.25);
+    } else if (style === 'paris') {
+      // Aubusson-inspired, faded: cream wool field with a soft abrash, a taupe double border, a blush inner band,
+      // an oval medallion of fine concentric lines and quarter-fans in the corners
+      const w = n2(u, v), line = (d, c, t) => sm(t, t * 0.4, Math.abs(d - c));
+      col = mix(P[0], P[1], sm(0.35, 0.8, w) * 0.8 + (n1(u, v) - 0.5) * 0.3);
+      if (e > 0.05 && e < 0.1) col = mix(col, P[3], 0.55 + (w - 0.5) * 0.4);
+      let g = Math.max(line(e, 0.045, 0.004), line(e, 0.105, 0.004), line(e, 0.022, 0.006) * 0.7);
+      const dd = Math.hypot((u - 0.5) / 0.3, (v - 0.5) / 0.36);
+      for (let k = 1; k <= 3; k++) g = Math.max(g, line(dd, 0.33 * k, 0.012) * (0.5 + 0.15 * k));
+      if (dd < 0.33) col = mix(col, P[3], 0.4);
+      const cu = Math.min(u, 1 - u) - 0.105, cv = Math.min(v, 1 - v) - 0.105, cr = Math.hypot(cu / 0.75, cv);
+      if (cu > 0 && cv > 0) { for (let k = 1; k <= 2; k++) g = Math.max(g, line(cr, 0.07 * k, 0.004) * 0.8); if (cr < 0.07) col = mix(col, P[3], 0.4); }
+      col = mix(col, P[2], Math.min(1, g) * 0.85);
     } else if (style === 'kyoto') {
       // hand-loomed wool & jute, tatami-like grid of fine raised lines, a wide undyed border
       const rib = 0.5 + 0.5 * Math.sin(y * Math.PI * 2 / 5);
@@ -634,6 +710,7 @@ function artTex(style, variant, w = 512, h = 640) {
     riviera: ['#efe4d0', '#b5623b', '#6b6f48', '#d9b98a', '#2f4f5f'],
     monaco: ['#14171f', '#c9a25e', '#1f4a3a', '#ece3d2', '#26304a'],
     kyoto: ['#efe8da', '#1e1b18', '#a8483a', '#8c8172', '#d9cdb8'],
+    paris: ['#f3eee4', '#1c1a19', '#8ea6bb', '#d9b0aa', '#b8935a'],
   }[style];
   ctx.fillStyle = pal[0]; ctx.fillRect(0, 0, w, h);
   if (style === 'monaco') {
@@ -648,6 +725,21 @@ function artTex(style, variant, w = 512, h = 640) {
     ctx.fillStyle = pal[1]; ctx.fillRect(w * 0.08, cy, w * 0.84, 5);
     for (let k = 0; k < 3; k++) { ctx.fillStyle = k % 2 ? pal[4] : pal[2]; ctx.fillRect(w * (0.14 + k * 0.08), cy + 14 + k * 16, w * (0.72 - k * 0.16), 12); }
     ctx.strokeStyle = pal[1]; ctx.lineWidth = 3; ctx.strokeRect(w * 0.05, h * 0.04, w * 0.9, h * 0.92); ctx.lineWidth = 1.2; ctx.strokeRect(w * 0.075, h * 0.06, w * 0.85, h * 0.88);
+  } else if (style === 'paris') {
+    // Left-Bank gallery piece: paper-cut shapes in blush and pale blue with one continuous ink line (a face / a figure)
+    ctx.fillStyle = pal[0]; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = pal[3]; ctx.beginPath(); ctx.ellipse(w * (0.4 + (variant % 3) * 0.08), h * 0.42, w * 0.27, h * 0.25, 0.3 + variant, 0, 6.283); ctx.fill();
+    ctx.fillStyle = pal[2]; ctx.beginPath(); ctx.moveTo(w * 0.52, h * 0.5); ctx.bezierCurveTo(w * 0.9, h * 0.42, w * 0.86, h * 0.86, w * 0.56, h * 0.82); ctx.bezierCurveTo(w * 0.44, h * 0.8, w * 0.42, h * 0.56, w * 0.52, h * 0.5); ctx.fill();
+    ctx.fillStyle = pal[4]; ctx.beginPath(); ctx.arc(w * (0.7 - (variant % 2) * 0.42), h * 0.2, w * 0.055, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = pal[1]; ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+    const ph = variant * 1.7;
+    ctx.moveTo(w * 0.3, h * 0.2);
+    ctx.bezierCurveTo(w * 0.52, h * (0.12 + 0.03 * Math.sin(ph)), w * 0.64, h * 0.28, w * 0.5, h * 0.36);
+    ctx.bezierCurveTo(w * 0.4, h * 0.42, w * 0.44, h * 0.5, w * 0.56, h * 0.5);
+    ctx.bezierCurveTo(w * 0.36, h * 0.56, w * 0.24, h * 0.7, w * 0.34, h * 0.84);
+    ctx.bezierCurveTo(w * 0.46, h * 0.94, w * 0.7, h * 0.9, w * 0.74, h * (0.7 + 0.04 * Math.cos(ph)));
+    ctx.stroke();
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(w * 0.36, h * 0.3); ctx.quadraticCurveTo(w * 0.42, h * 0.27, w * 0.46, h * 0.3); ctx.stroke();
   } else if (style === 'kyoto') {
     // sumi-e on rice paper: an ensō brush circle, or ink mountains in mist, with a red seal
     ctx.fillStyle = pal[0]; ctx.fillRect(0, 0, w, h);
@@ -809,6 +901,7 @@ fxAtlas = memoTex('fxAtlas', fxAtlas); bloomTex = memoTex('bloomTex', bloomTex);
 limewashTex = memoTex('limewashTex', limewashTex); caneTex = memoTex('caneTex', caneTex); rattanWeave = memoTex('rattanWeave', rattanWeave);
 rugTex = memoTex('rugTex', rugTex); artTex = memoTex('artTex', artTex); leafTex = memoTex('leafTex', leafTex);
 paperBooksTex = memoTex('paperBooksTex', paperBooksTex); normalFromHeight = memoTex('normalFromHeight', normalFromHeight);
+chevron = memoTex('chevron', chevron); cabochonTex = memoTex('cabochonTex', cabochonTex);
 checkerMarble = memoTex('checkerMarble', checkerMarble); washiTex = memoTex('washiTex', washiTex); flutedH = memoTex('flutedH', flutedH);
 
 /** Worker side: generate every texture of a style; returns [[key, [[path, canvas]]]] for all keys the style uses. */
@@ -1025,6 +1118,19 @@ export function getMaterials(styleId = 'milano') {
     m.wallBath = phys({ map: tex(cal, { repeat: 1 / 1.6 }), roughnessMap: tex(cal.rough_, { srgb: false, repeat: 1 / 1.6 }), roughness: 1, clearcoat: 0.45, clearcoatRoughness: 0.2, envMapIntensity: 0.95 });
     m.counter = m.marbleDark;
     m.stone = m.marble;
+  } else if (styleId === 'paris') {
+    // point-de-Hongrie light oak (72 cm tile: two 36 cm columns of 8.5 cm planks), satin-oiled
+    const ch = chevron(hex('#b88f5f'), 19), R = 1 / 0.72;
+    m.floor = std({ map: tex(ch.map, { repeat: R }), normalMap: tex(ch.normal, { srgb: false, repeat: R }), normalScale: new THREE.Vector2(0.85, 0.85), roughnessMap: tex(ch.rough, { srgb: false, repeat: R }), roughness: 0.6, envMapIntensity: 0.62 });
+    // Carrara: cool white ground, soft blue-grey feathered veins with a wide haze and a fine crossing network
+    const car = marbleTex(1024, '#f4f6f8', '#858e98', { seed: 52, vein2: '#c3c9cf', strength: 0.52, network: 0.75, width: 0.9, levels: [0, 0.37], scale: 2, turb: 0.46, turb2: 0.5, haze: 0.85, cloud: 1.15 });
+    m.marble = phys({ map: tex(car, { repeat: 1 / 1.5 }), roughnessMap: tex(car.rough_, { srgb: false, repeat: 1 / 1.5 }), roughness: 1, clearcoat: 0.6, clearcoatRoughness: 0.08, envMapIntensity: 1.0 });
+    m.wallBath = m.marble;                       // the same slab on the bath walls (one material → one draw call)
+    // bath floor: black-and-white cabochon mosaic (7.5 cm octagons, black insets)
+    const mo = cabochonTex(8, 1024);
+    m.floorBath = phys({ map: tex(mo.map, { repeat: 1 / 0.6 }), normalMap: nrm(mo.bump, 1.3, 1 / 0.6), roughness: 0.3, clearcoat: 0.4, clearcoatRoughness: 0.2, envMapIntensity: 0.85 });
+    m.counter = m.marble;
+    m.stone = m.marble;
   } else if (styleId === 'kyoto') {
     // wide, pale white-oiled oak with a quiet grain
     const wp = widePlanks(hex('#c8a77c'), 17), R = 1 / 2.4;
@@ -1064,33 +1170,36 @@ export function getMaterials(styleId = 'milano') {
   }
   // outdoor deck: large-format porcelain
   {
-    const col = V({ milano: ['#6d6a66', '#65625e'], nordic: ['#a9a6a0', '#a19e98'], riviera: ['#cdb89a', '#c5b091'], monaco: ['#5e5b57', '#56534f'], kyoto: ['#b9b1a4', '#b2aa9c'] });
+    const col = V({ milano: ['#6d6a66', '#65625e'], nordic: ['#a9a6a0', '#a19e98'], riviera: ['#cdb89a', '#c5b091'], monaco: ['#5e5b57', '#56534f'], kyoto: ['#b9b1a4', '#b2aa9c'], paris: ['#bdb8ae', '#b5b0a5'] });
     const st = stoneTex(512, col[0], col[1], { bands: 2, seed: 30, contrast: 0.3 });
     const ot = tileTex({ size: 512, tilesX: 2, tilesY: 4, colors: col, grout: '#555', groutW: 2, surface: st, pattern: 'brick' });
     m.floorOut = std({ map: tex(ot.map, { repeat: 1 / 1.2 }), normalMap: nrm(ot.bump, 1.5, 1 / 1.2), roughness: 0.75 });
   }
 
   // ---------- walls / ceiling
-  const wallCol = V({ milano: '#bcb3a7', nordic: '#f1efea', riviera: '#eadcc6', monaco: '#d3c6b1', kyoto: '#e4dacb' });
-  m.wall = std({ color: wallCol, map: styleId === 'riviera' || styleId === 'kyoto' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: smudge(0.4), roughness: 1.5, envMapIntensity: 0.24 });
-  m.ceiling = std({ color: V({ milano: '#e9e3da', nordic: '#f3f1ed', riviera: '#eee5d7', monaco: '#ece4d6', kyoto: '#efe8dc' }), roughness: 0.95, envMapIntensity: 0.2 });
+  const wallCol = V({ milano: '#bcb3a7', nordic: '#f1efea', riviera: '#eadcc6', monaco: '#d3c6b1', kyoto: '#e4dacb', paris: '#f4f1ea' });
+  m.wall = std({ color: wallCol, map: m.fam === 'riviera' && styleId !== 'paris' || styleId === 'kyoto' ? lime : plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: smudge(0.4), roughness: 1.5, envMapIntensity: 0.24 });
+  m.ceiling = std({ color: V({ milano: '#e9e3da', nordic: '#f3f1ed', riviera: '#eee5d7', monaco: '#ece4d6', kyoto: '#efe8dc', paris: '#f6f4ee' }), roughness: 0.95, envMapIntensity: 0.2 });
+  if (styleId === 'paris') { m.wall.envMapIntensity = 0.5; m.ceiling.envMapIntensity = 0.4; m.wall.emissive = new THREE.Color('#f4f1ea'); m.wall.emissiveIntensity = 0.14; }   // ivory rooms: more of the ambient fill, never grey in the shade
   m.cutCap = std({ color: '#f4f2ee', roughness: 0.9 });
-  m.skirting = std({ color: V({ milano: '#2a2522', nordic: '#f4f2ee', riviera: '#e2d2b8', monaco: '#1b2333', kyoto: '#cdb895' }), roughness: 0.45, envMapIntensity: 0.6 });
+  m.skirting = std({ color: V({ milano: '#2a2522', nordic: '#f4f2ee', riviera: '#e2d2b8', monaco: '#1b2333', kyoto: '#cdb895', paris: '#f5f3ed' }), roughness: 0.45, envMapIntensity: 0.6 });
   m.exterior = std({ color: '#ece8e0', map: plaster, roughness: 0.85 });
 
   // ---------- woods
-  const woodBase = V({ milano: '#5a3a26', nordic: '#d2b893', riviera: '#9b7552', monaco: '#4f3322', kyoto: '#c9ad85' });
+  const woodBase = V({ milano: '#5a3a26', nordic: '#d2b893', riviera: '#9b7552', monaco: '#4f3322', kyoto: '#c9ad85', paris: '#b38e62' });
   // tile ≈ 0.9 m; the grain runs along the texture's u → along world X/Z (horizontal) after the bake's world-UV projection
   // o.vertical: grain runs up the texture (cabinet fronts, doors, wall panels are veneered with vertical grain; the
   // bake's world-UV projection maps texture v to world Y on vertical faces)
   const rot90 = (src) => { const d = canvas(src.height, src.width), x = d.getContext('2d'); x.translate(d.width, 0); x.rotate(Math.PI / 2); x.drawImage(src, 0, 0); if (src.__tk) d.__tk = src.__tk + '|rot90'; return d; };
   const woodM = (col, seed, rough, rep = 1.1, o = {}) => { let c = woodFurnitureTex(hex(col), seed, 512, o); if (o.vertical) { const r = rot90(c); r.rough_ = rot90(c.rough_); r.height_ = rot90(c.height_); c = r; } return std({ map: tex(c, { repeat: rep }), normalMap: tex(normalFromHeight(c.height_, 1.4), { srgb: false, repeat: rep }), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: tex(c.rough_, { srgb: false, repeat: rep }), roughness: rough, envMapIntensity: 0.6 }); };
   m.wood = woodM(woodBase, 5, 0.6);
-  m.woodDark = woodM(V({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35', monaco: '#3a2418', kyoto: '#3e322a' }), 6, 0.55, 1.1, { contrast: 0.3, vertical: true });
+  m.woodDark = woodM(V({ milano: '#3c271b', nordic: '#8a6d50', riviera: '#6e4f35', monaco: '#3a2418', kyoto: '#3e322a', paris: '#5a3f2e' }), 6, 0.55, 1.1, { contrast: 0.3, vertical: true });
   m.woodLight = woodM(styleId === 'kyoto' ? '#dcc8a6' : '#d8c3a2', 9, 0.72, 1.1, { contrast: 0.16, rings: 64 });
   m.teak = woodM('#8c6440', 10, 0.9, 2);
   // feature wall: milano = fluted walnut; nordic = oak slats; riviera = limewash plaster arch niche
-  m.wallAccent = m.fam === 'milano' ? m.woodDark : m.fam === 'nordic' ? m.woodLight : std({ color: '#dcc6a6', map: lime, normalMap: nPlaster, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95 });
+  m.wallAccent = m.fam === 'milano' ? m.woodDark : m.fam === 'nordic' ? m.woodLight
+    : styleId === 'paris' ? std({ color: '#e4d7d0', map: plaster, normalMap: nPlaster, normalScale: new THREE.Vector2(0.3, 0.3), roughness: 0.9, envMapIntensity: 0.4, emissive: new THREE.Color('#e4d7d0'), emissiveIntensity: 0.12 })   // blush-greige panel infill
+    : std({ color: '#dcc6a6', map: lime, normalMap: nPlaster, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95 });
 
   // ---------- lacquer / cabinetry
   const lac = V({ milano: '#1f1e1d', nordic: '#efede8', riviera: '#6f7350' });
@@ -1100,14 +1209,17 @@ export function getMaterials(styleId = 'milano') {
   // monaco: deep midnight-navy piano lacquer; kyoto: vertical-grain white-oak veneer
   if (styleId === 'monaco') m.lacquer = phys({ color: '#18213a', roughnessMap: smudge(0.9), roughness: 0.35, clearcoat: 0.9, clearcoatRoughness: 0.12, envMapIntensity: 0.8 });
   if (styleId === 'kyoto') m.lacquer = woodM('#5e4b3b', 15, 0.6, 1.1, { contrast: 0.2, rings: 72, vertical: true });   // smoked oak joinery
-  m.lacquer2 = m.fam === 'nordic' ? m.woodLight : m.fam === 'milano' ? m.wood : phys({ color: '#e8dcc6', roughness: 0.6, clearcoat: 0.2 });
-  m.doorLeaf = m.fam === 'milano' ? m.woodDark : styleId === 'kyoto' ? m.woodLight : std({ color: V({ nordic: '#f4f2ee', riviera: '#e9dcc6' }), roughness: 0.6 });
-  m.frame = std({ color: V({ milano: '#1d1c1b', nordic: '#262626', riviera: '#5a4a3a', monaco: '#1a1c22', kyoto: '#33291f' }), roughness: 0.45, metalness: 0.4 });
+  // paris: cream hand-painted shaker fronts (kitchen, vanity), ivory joinery elsewhere
+  if (styleId === 'paris') m.lacquer = phys({ color: '#e3d9c6', roughnessMap: smudge(0.9), roughness: 0.7, clearcoat: 0.25, clearcoatRoughness: 0.45, envMapIntensity: 0.55 });
+  m.lacquer2 = m.fam === 'nordic' ? m.woodLight : m.fam === 'milano' ? m.wood : phys({ color: styleId === 'paris' ? '#eee9df' : '#e8dcc6', roughness: 0.6, clearcoat: 0.2 });
+  m.doorLeaf = m.fam === 'milano' ? m.woodDark : styleId === 'kyoto' ? m.woodLight : std({ color: V({ nordic: '#f4f2ee', riviera: '#e9dcc6', paris: '#f3f0ea' }), roughness: 0.6 });
+  m.frame = std({ color: V({ milano: '#1d1c1b', nordic: '#262626', riviera: '#5a4a3a', monaco: '#1a1c22', kyoto: '#33291f', paris: '#2e2a25' }), roughness: 0.45, metalness: 0.4 });
   m.doorFrame = m.fam === 'milano' ? m.woodDark : m.skirting;
 
   // ---------- metals
   m.brass = styleId === 'monaco'
     ? std({ color: '#d6ad66', metalness: 1, roughness: 0.24, envMapIntensity: 1.35 })   // brighter brushed gold-brass
+    : styleId === 'paris' ? std({ color: '#a07c48', metalness: 1, roughness: 0.42, roughnessMap: smudge(1.5), envMapIntensity: 0.95 })   // antique (aged) brass
     : std({ color: '#c49a5c', metalness: 1, roughness: 0.3, envMapIntensity: 1.2 });
   // kyoto: dark oil-rubbed bronze takes the place of matte black everywhere (handles, legs, taps, frames)
   m.blackMetal = styleId === 'kyoto'
@@ -1135,6 +1247,7 @@ export function getMaterials(styleId = 'milano') {
     nordic: { sofa: ['#c6c1b8', linen], chair: ['#ece6da', boucle], accent: '#7d8c7a', c1: '#8a9b86', c2: '#d6b98c', c3: '#8ea1ad', throw: '#9c948a', duvet: '#f3f1ec', head: '#cfc8bd', curtain: '#f1eee7', sheer: '#faf8f4', towel: '#f1efea', towel2: '#aab4a8', outdoor: '#d9d5cd' },
     riviera: { sofa: ['#efe7d8', boucle], chair: ['#e5dac6', boucle], accent: '#b5623b', c1: '#b0674a', c2: '#7b7f52', c3: '#e2c69a', throw: '#b99477', duvet: '#f1e9dc', head: '#e3d6c1', curtain: '#e6dac5', sheer: '#f7f1e6', towel: '#efe6d5', towel2: '#b5623b', outdoor: '#ece2cf' },
     monaco: { sofa: ['#17463a', velvet], chair: ['#24365f', velvet], accent: '#a8823f', c1: '#c49a4c', c2: '#e6dbc6', c3: '#1c2947', throw: '#c8b28a', duvet: '#efe8dc', head: '#2a3d68', curtain: '#2f3b5a', sheer: '#efe7d8', towel: '#f1ece2', towel2: '#17463a', outdoor: '#4a4c52' },
+    paris: { sofa: ['#ece5d7', boucle], chair: ['#b9cbda', velvet], accent: '#d2a59f', c1: '#b9cbda', c2: '#e6c8c1', c3: '#f0eadd', throw: '#c9baa8', duvet: '#f5f1e9', head: '#ebcfc8', curtain: '#e9e2d3', sheer: '#fbf8f1', towel: '#f6f3ee', towel2: '#d6b0aa', outdoor: '#e6dfd0' },
     kyoto: { sofa: ['#d6ccbb', linen], chair: ['#ebe4d6', boucle], accent: '#6e7259', c1: '#8b8f74', c2: '#b07b5a', c3: '#4b4540', throw: '#a69a88', duvet: '#f2ede4', head: '#cbbfa9', curtain: '#ece5d8', sheer: '#f8f4ec', towel: '#ece6da', towel2: '#8b8f74', outdoor: '#cfc6b6' },
   }[styleId];
   const NF = { [velvet.uuid]: nVelvet, [boucle.uuid]: nBoucle, [linen.uuid]: nLinen };
@@ -1148,10 +1261,12 @@ export function getMaterials(styleId = 'milano') {
     ? phys({ color: P.chair[0], roughness: 0.48, map: tex(fabricTex('velvet', 12), { repeat: 3 }), normalMap: nVelvet, clearcoat: 0.15, clearcoatRoughness: 0.5, envMapIntensity: 0.7 }) // cognac leather
     : styleId === 'monaco'   // midnight-navy velvet (chairs, armchairs, stools)
     ? phys({ color: P.chair[0], map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color('#7f93c4'), sheenRoughness: 0.34, envMapIntensity: 0.5 })
+    : styleId === 'paris'    // pale French-blue silk velvet
+    ? phys({ color: P.chair[0], map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color('#e6f0f8'), sheenRoughness: 0.34, envMapIntensity: 0.5 })
     : std({ color: P.chair[0], map: P.chair[1] || fab, normalMap: nOf(P.chair[1]), roughness: 0.95, envMapIntensity: 0.4 });
   m.leather = std({ color: styleId === 'nordic' ? '#6b4a33' : '#7a4526', roughness: 0.5, map: tex(fabricTex('velvet', 13), { repeat: 3 }), normalMap: nVelvet });
-  m.cushionA = m.fam === 'milano'
-    ? phys({ color: P.c1, map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color(styleId === 'monaco' ? '#f0cf86' : '#d9a066'), sheenRoughness: 0.4 })
+  m.cushionA = m.fam === 'milano' || styleId === 'paris'
+    ? phys({ color: P.c1, map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color(styleId === 'monaco' ? '#f0cf86' : styleId === 'paris' ? '#e6f0f8' : '#d9a066'), sheenRoughness: 0.4 })
     : std({ color: P.c1, map: velvet, normalMap: nVelvet, roughness: 0.9 });
   m.cushionB = std({ color: P.c2, map: linen, normalMap: nLinen, roughness: 0.95 });
   m.cushionC = std({ color: P.c3, map: fab, normalMap: nWeave, roughness: 0.95 });
@@ -1159,6 +1274,7 @@ export function getMaterials(styleId = 'milano') {
   m.linen = std({ color: '#f6f3ee', map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95, envMapIntensity: 0.5 });
   m.duvet = std({ color: P.duvet, map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.95, envMapIntensity: 0.5, side: THREE.DoubleSide });
   m.headboard = m.fam === 'milano' ? (styleId === 'monaco' ? phys({ color: P.head, map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color('#7f93c4'), sheenRoughness: 0.34, envMapIntensity: 0.5 }) : std({ color: P.head, map: velvet, normalMap: nVelvet, roughness: 0.9 }))
+    : styleId === 'paris' ? phys({ color: P.head, map: velvet, normalMap: nVelvet, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color('#f2d2cc'), sheenRoughness: 0.36, envMapIntensity: 0.5 })   // blush velvet
     : std({ color: P.head, map: linen, normalMap: nLinen, roughness: 0.9 });
   m.curtain = std({ color: P.curtain, map: linen, normalMap: nLinen, roughness: 0.95, side: THREE.DoubleSide });
   // sheers are back-lit by the daylight behind them: a little emissive makes them glow like real voile
@@ -1166,16 +1282,27 @@ export function getMaterials(styleId = 'milano') {
   // motorised blackout layer: milano charcoal-taupe velvet drapes, nordic a pale linen roller blind, riviera sage linen drapes
   m.blackout = m.fam === 'milano'
     ? std({ color: styleId === 'monaco' ? '#2a3550' : '#4d4641', map: velvet, normalMap: nVelvet, roughness: 0.9, side: THREE.DoubleSide, envMapIntensity: 0.4 })
-    : std({ color: V({ nordic: '#b8b0a3', riviera: '#a29a76', kyoto: '#c9bca6' }), map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95, side: THREE.DoubleSide, envMapIntensity: 0.4 });
+    : std({ color: V({ nordic: '#b8b0a3', riviera: '#a29a76', kyoto: '#c9bca6', paris: '#ebe5d8' }), map: linen, normalMap: nLinen, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95, side: THREE.DoubleSide, envMapIntensity: 0.4 });
   m.towel = std({ color: P.towel, map: tex(fabricTex('boucle', 15), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.towel2 = std({ color: P.towel2, map: tex(fabricTex('boucle', 16), { repeat: 6 }), normalMap: nBoucle, roughness: 1 });
   m.outdoorFabric = std({ color: P.outdoor, map: fab, normalMap: nWeave, roughness: 0.95 });
   m.rug = std({ map: tex(rugTex(styleId), { repeat: 1 }), normalMap: nRug, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 1, envMapIntensity: 0.2 });
-  { const ct = caneTex('#d9b98a'); m.cane = std({ map: tex(ct, { repeat: 9 }), normalMap: nrm(ct.height_, 2.2, 9), normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.62, envMapIntensity: 0.45 }); }
+  if (styleId !== 'paris') { const ct = caneTex('#d9b98a'); m.cane = std({ map: tex(ct, { repeat: 9 }), normalMap: nrm(ct.height_, 2.2, 9), normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.62, envMapIntensity: 0.45 }); }
   m.rattan = std({ color: '#b98f5a', map: tex(fabricTex('jute', 18), { repeat: 4 }), normalMap: nBoucle, roughness: 0.85 });
   // woven shades keep their own sphere UVs (a world-UV projection shows patch seams on a sphere)
-  { const rw = rattanWeave('#c9a172'); m.rattanShade = std({ color: '#ffffff', map: tex(rw, { repeat: 1 }), emissiveMap: tex(rw.glow_, { repeat: 1 }), emissive: new THREE.Color(S.lightColor), emissiveIntensity: 1.6, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.4 }); }
+  if (styleId !== 'paris') { const rw = rattanWeave('#c9a172'); m.rattanShade = std({ color: '#ffffff', map: tex(rw, { repeat: 1 }), emissiveMap: tex(rw.glow_, { repeat: 1 }), emissive: new THREE.Color(S.lightColor), emissiveIntensity: 1.6, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.4 }); }
   m.accentFabric = std({ color: P.accent, map: velvet, normalMap: nVelvet, roughness: 0.9 });
+  if (styleId === 'paris') {
+    // riviera's cane insets become recessed, slightly deeper-toned door panels (ivory joinery / cream kitchen)
+    m.cane = m.skirting;
+    m.panelIn = std({ color: '#e7decd', roughnessMap: smudge(0.9), roughness: 1.2, envMapIntensity: 0.5 });
+    m.rattan = m.lacquer2;
+    // plaster mouldings: boiserie frames, chair rails, cornices, ceiling roses (satin white, a touch brighter than the wall)
+    // — the skirting's paint, also used for the interior door leaves: all the white joinery bakes into one mesh
+    m.moulding = m.skirting; m.doorLeaf.dispose(); m.doorLeaf = m.skirting;
+    // smoked-glass globes (unlit) and shelves
+    m.smoked = phys({ color: '#6b5846', roughness: 0.06, transparent: true, opacity: 0.5, envMapIntensity: 1.5, depthWrite: false });
+  }
   // Cloth gets a sheen lobe (the soft bright rim fabric shows at grazing angles — the single biggest cue that reads
   // "textile" instead of "painted plastic"). Standard PBR extension (KHR_materials_sheen) → survives glTF export.
   const sheenify = (k, amt = 0.8, sr = 0.55) => {
@@ -1188,13 +1315,17 @@ export function getMaterials(styleId = 'milano') {
   for (const k of ['fabric', 'fabricAccent', 'cushionA', 'cushionB', 'cushionC', 'throw', 'linen', 'duvet', 'headboard', 'curtain', 'blackout', 'accentFabric', 'outdoorFabric']) sheenify(k);
   for (const k of ['towel', 'towel2']) sheenify(k, 0.5, 0.8);
   sheenify('rattanShade', 0.3, 0.7);
+  if (styleId === 'paris') {   // one blush velvet (chairs, headboard, cushions) and one pale-blue velvet → fewer draw calls
+    m.accentFabric.dispose(); m.cushionB.dispose(); m.cushionA.dispose();
+    m.accentFabric = m.cushionB = m.headboard; m.cushionA = m.fabricAccent;
+  }
 
   // ---------- ceramics, table, food
   m.porcelain = phys({ color: '#fbfbfa', roughness: 0.12, clearcoat: 0.8, clearcoatRoughness: 0.1, envMapIntensity: 0.9 });
-  m.ceramic = phys({ color: V({ milano: '#f3efe8', nordic: '#f4f3ef', riviera: '#f1e8d8', monaco: '#f6f2ea', kyoto: '#e9e1d3' }), roughness: styleId === 'kyoto' ? 0.55 : 0.2, clearcoat: styleId === 'kyoto' ? 0.15 : 0.6 });
-  m.ceramic2 = phys({ color: V({ milano: '#1f1f21', nordic: '#b7c1bd', riviera: '#a4664c', monaco: '#13392f', kyoto: '#3a3633' }), roughness: styleId === 'kyoto' ? 0.6 : 0.3, clearcoat: styleId === 'kyoto' ? 0.1 : 0.5 });
+  m.ceramic = phys({ color: V({ milano: '#f3efe8', nordic: '#f4f3ef', riviera: '#f1e8d8', monaco: '#f6f2ea', kyoto: '#e9e1d3', paris: '#f8f6f1' }), roughness: styleId === 'kyoto' ? 0.55 : 0.2, clearcoat: styleId === 'kyoto' ? 0.15 : 0.6 });
+  m.ceramic2 = phys({ color: V({ milano: '#1f1f21', nordic: '#b7c1bd', riviera: '#a4664c', monaco: '#13392f', kyoto: '#3a3633', paris: '#a9bccd' }), roughness: styleId === 'kyoto' ? 0.6 : 0.3, clearcoat: styleId === 'kyoto' ? 0.1 : 0.5 });
   m.cutlery = std({ color: m.fam === 'milano' ? '#d6b27a' : '#dcdcdc', metalness: 1, roughness: 0.18, envMapIntensity: 1.3 });
-  m.napkin = std({ color: V({ milano: '#6b6258', nordic: '#dcd6cb', riviera: '#b98a6c', monaco: '#17463a', kyoto: '#b8ad9a' }), map: linen, roughness: 1 });
+  m.napkin = std({ color: V({ milano: '#6b6258', nordic: '#dcd6cb', riviera: '#b98a6c', monaco: '#17463a', kyoto: '#b8ad9a', paris: '#d9b3ad' }), map: linen, roughness: 1 });
   m.fruit = std({ color: '#e0892c', roughness: 0.55 });
   m.fruit2 = std({ color: '#b7c43d', roughness: 0.5 });
   m.fruit3 = std({ color: '#8e1f24', roughness: 0.4 });
@@ -1210,6 +1341,7 @@ export function getMaterials(styleId = 'milano') {
   // wardrobe of garments / a fridge of groceries bakes into a handful of draw calls.
   m.cabinetIn = m.fam === 'milano' ? woodM('#4a3326', 17, 0.6, 1.1, { contrast: 0.22, vertical: true })
     : styleId === 'kyoto' ? woodM('#dcc9a8', 19, 0.7, 1.1, { contrast: 0.1, rings: 72, vertical: true })
+    : styleId === 'paris' ? woodM('#b89a72', 19, 0.7, 1.1, { contrast: 0.12, rings: 72, vertical: true })     // oiled-oak carcasses
     : styleId === 'nordic' ? std({ color: '#efebe4', roughnessMap: smudge(0.9), roughness: 0.75, envMapIntensity: 0.5 })
     : std({ color: '#e9dfcd', map: linen, roughness: 0.85, envMapIntensity: 0.5 });
   m.clothes = std({ vertexColors: true, map: fab, normalMap: nWeave, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.95, envMapIntensity: 0.35 });
@@ -1222,23 +1354,24 @@ export function getMaterials(styleId = 'milano') {
   m.hanger = m.fam === 'milano' ? m.woodDark : m.woodLight;
 
   // ---------- plants
-  m.leaf = std({ map: tex(leafTex(V({ riviera: '#6a7a48', kyoto: '#4a5a2e' }) || '#35602d')), roughness: 0.42, side: THREE.DoubleSide, envMapIntensity: 0.7 });
-  m.leaf2 = std({ map: tex(leafTex(V({ riviera: '#8a9868', kyoto: '#6b7a3c' }) || '#4f7a35')), roughness: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.6 });
+  m.leaf = std({ map: tex(leafTex(V({ riviera: '#6a7a48', kyoto: '#4a5a2e', paris: '#3d6a36' }) || '#35602d')), roughness: 0.42, side: THREE.DoubleSide, envMapIntensity: 0.7 });
+  m.leaf2 = std({ map: tex(leafTex(V({ riviera: '#8a9868', kyoto: '#6b7a3c', paris: '#5a8644' }) || '#4f7a35')), roughness: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.6 });
   m.stem = std({ color: '#5b4632', roughness: 0.8 });
   m.soil = std({ color: '#2b2018', roughness: 1 });
-  m.pot = phys({ color: V({ milano: '#1c1b1b', nordic: '#e9e6e0', riviera: '#a86a4c', monaco: '#13392f', kyoto: '#2f2b28' }), roughness: 0.45, clearcoat: 0.3 });
-  m.pot2 = std({ color: V({ milano: '#8a7d6d', nordic: '#b6aea3', riviera: '#d9c6a5', monaco: '#e9e1d2', kyoto: '#c9bba3' }), roughness: 0.8 });
-  m.flower = std({ color: V({ milano: '#f3efe6', nordic: '#f6f2ea', riviera: '#f0c9a2', monaco: '#f6efe2', kyoto: '#f2c8cf' }), roughness: 0.8, side: THREE.DoubleSide });
+  m.pot = phys({ color: V({ milano: '#1c1b1b', nordic: '#e9e6e0', riviera: '#a86a4c', monaco: '#13392f', kyoto: '#2f2b28', paris: '#f2eee6' }), roughness: 0.45, clearcoat: 0.3 });
+  m.pot2 = std({ color: V({ milano: '#8a7d6d', nordic: '#b6aea3', riviera: '#d9c6a5', monaco: '#e9e1d2', kyoto: '#c9bba3', paris: '#e9e3d6' }), roughness: 0.8 });
+  if (styleId === 'paris') { m.pot.dispose(); m.pot2.dispose(); m.pot = m.pot2 = m.ceramic; }      // white glazed pots = the tableware ceramic
+  m.flower = std({ color: V({ milano: '#f3efe6', nordic: '#f6f2ea', riviera: '#f0c9a2', monaco: '#f6efe2', kyoto: '#f2c8cf', paris: '#edc1c6' }), roughness: 0.8, side: THREE.DoubleSide });
 
   // ---------- art
   m.art = [0, 1, 2].map(i => std({ map: tex(artTex(styleId, i), { repeat: 1 }), roughness: 0.9, envMapIntensity: 0.3 }));
-  m.artFrame = m.fam === 'nordic' ? (styleId === 'kyoto' ? m.woodDark : m.woodLight) : m.fam === 'milano' ? m.brass : m.woodDark;
+  m.artFrame = m.fam === 'nordic' ? (styleId === 'kyoto' ? m.woodDark : m.woodLight) : m.fam === 'milano' || styleId === 'paris' ? m.brass : m.woodDark;
 
   // ---------- light emitters (these are what makes the scene read "lit")
   const L = new THREE.Color(S.lightColor);
   m.lightEmit = std({ color: '#ffffff', emissive: L, emissiveIntensity: 2.6, roughness: 1 });
   m.led = std({ color: '#ffffff', emissive: L, emissiveIntensity: 3.2, roughness: 1 });
-  m.lampShade = std({ color: V({ milano: '#dccdb4', nordic: '#ece5d8', riviera: '#e6d3b4', monaco: '#e8d9bc', kyoto: '#efe6d4' }), map: linen, emissive: L.clone().lerp(new THREE.Color('#ff9a4a'), 0.2), emissiveMap: linen, emissiveIntensity: 0.5, roughness: 0.9, side: THREE.DoubleSide, envMapIntensity: 0.3 });
+  m.lampShade = std({ color: V({ milano: '#dccdb4', nordic: '#ece5d8', riviera: '#e6d3b4', monaco: '#e8d9bc', kyoto: '#efe6d4', paris: '#f3ecdf' }), map: linen, emissive: L.clone().lerp(new THREE.Color('#ff9a4a'), 0.2), emissiveMap: linen, emissiveIntensity: 0.5, roughness: 0.9, side: THREE.DoubleSide, envMapIntensity: 0.3 });
   // opal glass globes: smooth milky glass lit from inside (no fabric weave)
   m.opal = std({ color: '#f3eee6', emissive: L.clone().lerp(new THREE.Color('#ffffff'), 0.25), emissiveIntensity: 0.85, roughness: 0.25, envMapIntensity: 0.5 });
   m.bulb = std({ color: '#fff', emissive: L, emissiveIntensity: 4 });
@@ -1249,7 +1382,7 @@ export function getMaterials(styleId = 'milano') {
     // clipped niwaki / bonsai foliage pads: clumpy bouclé-like relief in deep pine green
     m.foliage = std({ color: '#4a5a2e', map: tex(fabricTex('boucle', 23), { repeat: 9 }), normalMap: nrm(weaveHeight('boucle', 9), 3.5, 9), normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.85, envMapIntensity: 0.4 });
   }
-  if (styleId === 'monaco') {
+  if (styleId === 'monaco' || styleId === 'paris') {
     // chandelier crystal: opaque, very glossy cut glass that catches the lamps (no transparency → no sorting cost)
     m.crystalLit = phys({ color: '#f2f5f8', roughness: 0.03, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.02, emissive: L.clone().lerp(new THREE.Color('#ffffff'), 0.4), emissiveIntensity: 0.2, envMapIntensity: 2.4 });
   }
@@ -1262,12 +1395,12 @@ export function getMaterials(styleId = 'milano') {
   // glow / glowFaint: additive warm light pools, downlight scallops, lamp halos, cove wash; daylight: window spill
   const fx = tex(fxAtlas(), { repeat: 1 }); fx.wrapS = fx.wrapT = THREE.ClampToEdgeWrapping;
   const dec = (o) => new THREE.MeshBasicMaterial({ map: fx, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, ...o });
-  const aoK = V({ milano: 0.8, nordic: 0.6, riviera: 0.66, monaco: 0.78, kyoto: 0.62 });
+  const aoK = V({ milano: 0.8, nordic: 0.6, riviera: 0.66, monaco: 0.78, kyoto: 0.62, paris: 0.6 });
   m.ao = dec({ color: 0x000000, opacity: aoK });
   m.aoSoft = dec({ color: 0x000000, opacity: aoK * 0.42 });
   // room-depth falloff: rooms darken away from the glazing (ceiling, floor, side walls) — the look of real daylight
-  m.shade = dec({ color: 0x000000, opacity: V({ milano: 0.5, nordic: 0.36, riviera: 0.42, monaco: 0.46, kyoto: 0.38 }) });
-  const gk = V({ milano: 1, nordic: 0.7, riviera: 0.8, monaco: 1, kyoto: 0.9 });
+  m.shade = dec({ color: 0x000000, opacity: V({ milano: 0.5, nordic: 0.36, riviera: 0.42, monaco: 0.46, kyoto: 0.38, paris: 0.36 }) });
+  const gk = V({ milano: 1, nordic: 0.7, riviera: 0.8, monaco: 1, kyoto: 0.9, paris: 0.74 });
   // Additive light is tinted a little redder than the lamps: ACES compresses the red channel first when bright
   // light piles up on warm plaster, which otherwise drifts the pools towards a sickly yellow-green.
   const GL = L.clone().lerp(new THREE.Color('#ff9f5c'), 0.35);
@@ -1301,7 +1434,7 @@ export function getMaterials(styleId = 'milano') {
   // term floods every surface with the same grey-white fill — the "washed-out" look. Keep it mostly for reflections:
   // matt surfaces take a fraction of it (the warm point lights, light decals and AO decals do the shaping), glossy
   // ones more, metals / mirrors / glass all of it.
-  const envK = V({ milano: 1, nordic: 1.4, riviera: 1.12, monaco: 1.08, kyoto: 1.25 });   // the bright Scandinavian look keeps more fill
+  const envK = V({ milano: 1, nordic: 1.4, riviera: 1.12, monaco: 1.08, kyoto: 1.25, paris: 1.35 });   // the bright Scandinavian look keeps more fill
   for (const v of Object.values(m)) {
     if (!v || !v.isMaterial || v.userData.decal || !('envMapIntensity' in v)) continue;
     if (v.metalness >= 0.5 || v.transparent) continue;

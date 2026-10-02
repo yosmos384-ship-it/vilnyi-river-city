@@ -311,6 +311,8 @@ export const I18N = {
     'style.monaco.d': 'שיש נרו מרקינה וקלקטה, פליז מוברש, אגוז מחורץ וקטיפה באמרלד ונייבי.',
     'style.kyoto.n': 'קיוטו',
     'style.kyoto.d': 'טרוורטין בהיר, רצועות אלון, נייר וואשי, פשתן ותאורה עקיפה חמימה.',
+    'style.paris.n': 'פריז',
+    'style.paris.d': 'חיפויי קיר לבנים, פרקט אלון שברון, שיש קררה, אח משיש, בוקלה, קטיפה בתכלת ובוורוד עתיק, פליז עתיק וקריסטל.',
 
     'room.living': 'סלון',
     'room.kitchen': 'מטבח',
@@ -707,6 +709,8 @@ export const I18N = {
     'style.monaco.d': 'Nero Marquina and Calacatta marble, brushed brass, fluted walnut, emerald and navy velvet.',
     'style.kyoto.n': 'Kyoto',
     'style.kyoto.d': 'Pale travertine, oak slats, washi paper, linen and warm indirect light.',
+    'style.paris.n': 'Paris',
+    'style.paris.d': 'White boiserie, chevron oak parquet, Carrara marble, a marble fireplace, bouclé, pale-blue and blush velvet, antique brass and crystal.',
 
     'room.living': 'Living room',
     'room.kitchen': 'Kitchen',
@@ -1102,6 +1106,8 @@ export const I18N = {
     'style.monaco.d': 'Marmură Nero Marquina și Calacatta, alamă periată, nuc canelat, catifea smarald și bleumarin.',
     'style.kyoto.n': 'Kyoto',
     'style.kyoto.d': 'Travertin deschis, lamele de stejar, hârtie washi, in și lumină indirectă caldă.',
+    'style.paris.n': 'Paris',
+    'style.paris.d': 'Lambriuri albe, parchet de stejar chevron, marmură de Carrara, șemineu din marmură, bouclé, catifea bleu pal și roz pudrat, alamă antichizată și cristal.',
 
     'room.living': 'Living',
     'room.kitchen': 'Bucătărie',
@@ -1498,6 +1504,8 @@ export const I18N = {
     'style.monaco.d': 'Мрамор Неро Маркина и Калакатта, латунь, рифлёный орех, изумрудный и тёмно-синий бархат.',
     'style.kyoto.n': 'Киото',
     'style.kyoto.d': 'Светлый травертин, дубовые рейки, бумага васи, лён и тёплый рассеянный свет.',
+    'style.paris.n': 'Париж',
+    'style.paris.d': 'Белые буазери, дубовый паркет «французская ёлка», каррарский мрамор, мраморный камин, букле, нежно-голубой и пудровый бархат, состаренная латунь и хрусталь.',
 
     'room.living': 'Гостиная',
     'room.kitchen': 'Кухня',
@@ -1893,6 +1901,8 @@ export const I18N = {
     'style.monaco.d': 'Мармур Неро Маркіна і Калакатта, латунь, рифлений горіх, смарагдовий і темно-синій оксамит.',
     'style.kyoto.n': 'Кіото',
     'style.kyoto.d': 'Світлий травертин, дубові рейки, папір васі, льон і тепле розсіяне світло.',
+    'style.paris.n': 'Париж',
+    'style.paris.d': 'Білі буазері, дубовий паркет «французька ялинка», каррарський мармур, мармуровий камін, букле, ніжно-блакитний і пудровий оксамит, зістарена латунь і кришталь.',
 
     'room.living': 'Вітальня',
     'room.kitchen': 'Кухня',
@@ -2288,6 +2298,8 @@ export const I18N = {
     'style.monaco.d': 'Marbres Nero Marquina et Calacatta, laiton brossé, noyer cannelé, velours émeraude et bleu nuit.',
     'style.kyoto.n': 'Kyoto',
     'style.kyoto.d': 'Travertin clair, tasseaux de chêne, papier washi, lin et lumière indirecte chaleureuse.',
+    'style.paris.n': 'Paris',
+    'style.paris.d': 'Boiseries blanches, parquet de chêne en point de Hongrie, marbre de Carrare, cheminée en marbre, bouclé, velours bleu pâle et rose poudré, laiton vieilli et cristal.',
 
     'room.living': 'Séjour',
     'room.kitchen': 'Cuisine',
@@ -2683,6 +2695,8 @@ export const I18N = {
     'style.monaco.d': 'Marmi Nero Marquina e Calacatta, ottone spazzolato, noce cannettato, velluto smeraldo e blu notte.',
     'style.kyoto.n': 'Kyoto',
     'style.kyoto.d': 'Travertino chiaro, listelli di rovere, carta washi, lino e luce indiretta calda.',
+    'style.paris.n': 'Parigi',
+    'style.paris.d': 'Boiserie bianche, parquet di rovere a spina ungherese, marmo di Carrara, camino in marmo, bouclé, velluto azzurro polvere e rosa cipria, ottone anticato e cristallo.',
 
     'room.living': 'Soggiorno',
     'room.kitchen': 'Cucina',
@@ -3078,6 +3092,8 @@ export const I18N = {
     'style.monaco.d': 'Nero-Marquina- und Calacatta-Marmor, gebürstetes Messing, kannelierter Nussbaum, Samt in Smaragd und Nachtblau.',
     'style.kyoto.n': 'Kyoto',
     'style.kyoto.d': 'Heller Travertin, Eichenlamellen, Washi-Papier, Leinen und warmes indirektes Licht.',
+    'style.paris.n': 'Paris',
+    'style.paris.d': 'Weiße Wandvertäfelung, Eichenparkett im französischen Fischgrät, Carrara-Marmor, Marmorkamin, Bouclé, Samt in Taubenblau und Puderrosa, Altmessing und Kristall.',
 
     'room.living': 'Wohnzimmer',
     'room.kitchen': 'Küche',
@@ -3204,21 +3220,21 @@ export const I18N = {
 // Unit-label words, walkthrough style names and the building-tour action — kept together per language.
 const EXTRA = {
   he: { 'ul.building': 'בניין', 'ul.stair': 'כניסה', 'ul.floor': 'קומה', 'ul.ground': 'קרקע', 'ul.apt': 'דירה',
-    'walk.style.milano': 'מילאנו', 'walk.style.nordic': 'נורדי', 'walk.style.riviera': 'ריביירה', 'walk.style.monaco': 'מונאקו', 'walk.style.kyoto': 'קיוטו', 'unit.lobby': 'סיור בבניין' },
+    'walk.style.milano': 'מילאנו', 'walk.style.nordic': 'נורדי', 'walk.style.riviera': 'ריביירה', 'walk.style.monaco': 'מונאקו', 'walk.style.kyoto': 'קיוטו', 'walk.style.paris': 'פריז', 'unit.lobby': 'סיור בבניין' },
   en: { 'ul.building': 'Building', 'ul.stair': 'Stair', 'ul.floor': 'Floor', 'ul.ground': 'Ground', 'ul.apt': 'Apt',
-    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordic', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'unit.lobby': 'Tour the building' },
+    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordic', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'walk.style.paris': 'Paris', 'unit.lobby': 'Tour the building' },
   ro: { 'ul.building': 'Bloc', 'ul.stair': 'Sc.', 'ul.floor': 'Et.', 'ul.ground': 'Parter', 'ul.apt': 'Ap.',
-    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordic', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'unit.lobby': 'Tur prin clădire' },
+    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordic', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'walk.style.paris': 'Paris', 'unit.lobby': 'Tur prin clădire' },
   ru: { 'ul.building': 'Корпус', 'ul.stair': 'Подъезд', 'ul.floor': 'Этаж', 'ul.ground': 'Партер', 'ul.apt': 'Кв.',
-    'walk.style.milano': 'Милано', 'walk.style.nordic': 'Нордик', 'walk.style.riviera': 'Ривьера', 'walk.style.monaco': 'Монако', 'walk.style.kyoto': 'Киото', 'unit.lobby': 'Прогулка по зданию' },
+    'walk.style.milano': 'Милано', 'walk.style.nordic': 'Нордик', 'walk.style.riviera': 'Ривьера', 'walk.style.monaco': 'Монако', 'walk.style.kyoto': 'Киото', 'walk.style.paris': 'Париж', 'unit.lobby': 'Прогулка по зданию' },
   uk: { 'ul.building': 'Будинок', 'ul.stair': 'Під’їзд', 'ul.floor': 'Поверх', 'ul.ground': 'Партер', 'ul.apt': 'Кв.',
-    'walk.style.milano': 'Мілано', 'walk.style.nordic': 'Нордік', 'walk.style.riviera': 'Рів’єра', 'walk.style.monaco': 'Монако', 'walk.style.kyoto': 'Кіото', 'unit.lobby': 'Прогулянка будинком' },
+    'walk.style.milano': 'Мілано', 'walk.style.nordic': 'Нордік', 'walk.style.riviera': 'Рів’єра', 'walk.style.monaco': 'Монако', 'walk.style.kyoto': 'Кіото', 'walk.style.paris': 'Париж', 'unit.lobby': 'Прогулянка будинком' },
   fr: { 'ul.building': 'Bâtiment', 'ul.stair': 'Cage', 'ul.floor': 'Étage', 'ul.ground': 'RDC', 'ul.apt': 'Appt',
-    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordique', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'unit.lobby': 'Visiter l’immeuble' },
+    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordique', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'walk.style.paris': 'Paris', 'unit.lobby': 'Visiter l’immeuble' },
   it: { 'ul.building': 'Edificio', 'ul.stair': 'Scala', 'ul.floor': 'Piano', 'ul.ground': 'Piano terra', 'ul.apt': 'Int.',
-    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordico', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'unit.lobby': 'Visita l’edificio' },
+    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordico', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'walk.style.paris': 'Parigi', 'unit.lobby': 'Visita l’edificio' },
   de: { 'ul.building': 'Haus', 'ul.stair': 'Treppenhaus', 'ul.floor': 'Geschoss', 'ul.ground': 'EG', 'ul.apt': 'Whg.',
-    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordisch', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'unit.lobby': 'Gebäude erkunden' },
+    'walk.style.milano': 'Milano', 'walk.style.nordic': 'Nordisch', 'walk.style.riviera': 'Riviera', 'walk.style.monaco': 'Monaco', 'walk.style.kyoto': 'Kyoto', 'walk.style.paris': 'Paris', 'unit.lobby': 'Gebäude erkunden' },
 };
 for (const l in EXTRA) Object.assign(I18N[l], EXTRA[l]);
 

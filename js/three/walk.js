@@ -64,6 +64,19 @@ const LOCAL = {
   it: { 'walk.mode.live': '3D dal vivo', 'walk.mode.photo': '360° fotorealistico', 'walk.soonApt': 'Il 360° fotorealistico di questo appartamento arriverà presto', 'walk.mode3d': '3D libero', 'walk.modeReal': 'Fotorealistico', 'walk.soon': 'Presto disponibile', 'walk.reserveThis': 'Prenota questo appartamento', 'walk.floors': 'Piani', 'walk.tapDoor': 'Tocca la porta per aprirla', 'walk.tapKey': 'Premi il pulsante del piano sul pannello', 'walk.alarm': 'Allarme (demo)', 'walk.roomsN': 'locali', 'walk.status.reserved': 'Riservato', 'walk.status.sold': 'Venduto' },
   de: { 'walk.mode.live': 'Live-3D', 'walk.mode.photo': 'Fotorealistisch 360°', 'walk.soonApt': 'Fotorealistisches 360° für diese Wohnung folgt in Kürze', 'walk.mode3d': 'Freies 3D', 'walk.modeReal': 'Fotorealistisch', 'walk.soon': 'Demnächst', 'walk.reserveThis': 'Diese Wohnung reservieren', 'walk.floors': 'Etagen', 'walk.tapDoor': 'Tippen Sie auf die Tür, um sie zu öffnen', 'walk.tapKey': 'Tippen Sie auf eine Etagentaste', 'walk.alarm': 'Notruf (Demo)', 'walk.roomsN': 'Zimmer', 'walk.status.reserved': 'Reserviert', 'walk.status.sold': 'Verkauft' },
 };
+// Balcony / loggia / terrace doors open on approach or on tap: first-time hint, all 8 site languages.
+const BALCONY_DOOR_TXT = {
+  en: 'Balcony doors open as you approach — or tap a door to open and close it',
+  he: 'דלתות המרפסת נפתחות כשמתקרבים אליהן — אפשר גם להקיש על הדלת כדי לפתוח ולסגור',
+  ro: 'Ușile de balcon se deschid când vă apropiați — sau atingeți ușa pentru a o deschide și închide',
+  ru: 'Балконные двери открываются, когда вы подходите, — или нажмите на дверь, чтобы открыть и закрыть её',
+  uk: 'Балконні двері відчиняються, коли ви підходите, — або торкніться дверей, щоб відчинити й зачинити їх',
+  fr: 'Les portes du balcon s’ouvrent à votre approche — ou touchez la porte pour l’ouvrir et la fermer',
+  it: 'Le porte del balcone si aprono quando ti avvicini — oppure tocca la porta per aprirla e chiuderla',
+  de: 'Die Balkontüren öffnen sich, wenn Sie sich nähern — oder tippen Sie auf die Tür, um sie zu öffnen und zu schließen',
+};
+for (const [l, v] of Object.entries(BALCONY_DOOR_TXT)) (LOCAL[l] ||= {})['walk.balconyDoorHint'] = v;
+const BD_OPEN_R = 1.4, BD_CLOSE_R = 2.5, BD_CLOSE_S = 2, BD_REARM_R = 1.9, BD_HINT_R = 2.4;
 const MAX_APTS = 2;          // apartments kept loaded at once (the farthest one is disposed)
 const LIGHT_SLOTS = 8;       // fixed pool of apartment point lights → the light count never changes (no shader recompiles)
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
@@ -76,7 +89,7 @@ const FALLBACK_STYLES = [
   { id: 'nordic', name: { he: 'נורדי', en: 'Nordic', ru: 'Нордик' } },
   { id: 'riviera', name: { he: 'ריביירה', en: 'Riviera', ru: 'Ривьера' } },
   { id: 'monaco', name: { he: 'מונאקו', en: 'Monaco', ru: 'Монако' } },
-  { id: 'kyoto', name: { he: 'קיוטו', en: 'Kyoto', ru: 'Киото' } },
+  { id: 'kyoto', name: { he: 'קיוטו', en: 'Kyoto', ru: 'Киото' } }, { id: 'paris', name: { he: 'פריז', en: 'Paris', ru: 'Париж' } },
 ];
 const OUTDOOR = new Set(['balcony', 'loggia', 'terrace']);
 
@@ -878,10 +891,15 @@ export class Walkthrough {
     const unit = this.unit;
     const prev = this.loaded.get(unit.id);
     const wasOpen = !!(prev && prev.apt.doorLeaf && prev.apt.doorLeaf.userData._open);
+    const bdOpen = new Map();     // balcony doors that were open (a style change keeps them open): id → auto-opened?
+    if (prev) for (const d of prev.apt.balconyDoors || []) if (d.open) bdOpen.set(d.id, this._bdS(d).auto);
     this._disposeApartment();
     const e = this._loadApt(unit);
     this._setCurrent(e, { quiet: true });
     if (wasOpen && e.apt.doorLeaf) this._toggleDoor(e.apt.doorLeaf, true);
+    for (const d of e.apt.balconyDoors || []) if (bdOpen.has(d.id) && typeof d.toggle === 'function') {
+      try { d.toggle(true, { instant: true }); this._bdS(d).auto = bdOpen.get(d.id); this._bdCurtains(e, d, true); } catch (err) { console.warn('[walk] balcony door', err); }
+    }
   }
 
   // Build + place one apartment (sync, ~30–110 ms). Registered under its own collider source 'apt:<id>'.
@@ -1207,6 +1225,13 @@ export class Walkthrough {
     }
     return out;
   }
+  // Solids around a walker. The street-level building shell (cars.js outline walls, 0–4 m high, just inside the facade
+  // line) is for people and cars outside: inside an apartment — ground and first floor — it would wall up the balcony
+  // doors and swallow taps on them, so it is left out there (the apartment's own walls and railings do the job).
+  _solidsNear(p, r, feet = p) {
+    const out = this._near(this.solids, p, r);
+    return this.outdoor && this._aptAt(feet) ? out.filter(o => o.name !== 'outdoor-solid') : out;
+  }
   // Raycast treating every material as double-sided (walls may be thin planes seen from behind).
   _cast(objects, origin, dir, far) {
     if (!objects.length) return [];
@@ -1243,7 +1268,7 @@ export class Walkthrough {
   _move(delta) {
     const P = this.player.pos, len0 = Math.hypot(delta.x, delta.z);
     if (len0 < 1e-6) return 0;
-    const solids = this._near(this.solids, P, len0 + 1.2);
+    const solids = this._solidsNear(P, len0 + 1.2);
     const floors = this._near(this.floors, P, len0 + 1.5);
     let moved = 0, d = new THREE.Vector3(delta.x, 0, delta.z);
     for (let iter = 0; iter < 2 && d.lengthSq() > 1e-8; iter++) {
@@ -1270,7 +1295,7 @@ export class Walkthrough {
 
   _depenetrate(iters = 1, solids = null) {
     const P = this.player.pos;
-    solids = solids || this._near(this.solids, P, 1.2);
+    solids = solids || this._solidsNear(P, 1.2);
     if (!solids.length) return;
     const dir = this._v2;
     for (let k = 0; k < iters; k++) {
@@ -1291,7 +1316,7 @@ export class Walkthrough {
 
   _isFree(x, y, z) {
     const p = new THREE.Vector3(x, y, z);
-    const solids = this._near(this.solids, p, 1.0), floors = this._near(this.floors, p, 1.5);
+    const solids = this._solidsNear(p, 1.0), floors = this._near(this.floors, p, 1.5);
     if (this.floorReq && this._floorAt(x, y, z, floors) === null) return false;
     const down = this._cast(solids, new THREE.Vector3(x, y + 1.9, z), new THREE.Vector3(0, -1, 0), 1.85);
     if (down.some(h => !h.object.userData.floor)) return false;
@@ -1394,6 +1419,7 @@ export class Walkthrough {
         const [fx, fz] = this._freeSpot(pos.x, pos.y, pos.z); pos.x = fx; pos.z = fz;
       }
       this._place(pos, s.yaw);
+      if (where === 'balcony' || (where && where.room && OUTDOOR.has(where.room.kind))) this._openBalconyDoorAt(pos);
       this.player.eye = this.mode === '360' ? EYE_360 : EYE;
       this._lastPlace = null;
       this._updateHud(true);
@@ -1694,12 +1720,15 @@ export class Walkthrough {
     const origin = ray.ray.origin.clone(), dir = ray.ray.direction.clone();
     const objs = new Set();
     const near = (l, rr) => this._near(l, origin, rr).forEach(o => objs.add(o));
-    near(this.solids, 12); near(this.floors, forFloor ? 40 : 12); this.actions.forEach(a => a.o.parent && objs.add(a.o));
+    this._solidsNear(origin, 12, this.player.pos).forEach(o => objs.add(o)); near(this.floors, forFloor ? 40 : 12); this.actions.forEach(a => a.o.parent && objs.add(a.o));
     const hits = this._cast([...objs], origin, dir, forFloor ? 40 : 12);
     if (!hits.length) return null;
     // Wall-mounted controls (call plates, keys) sit within millimetres of wall colliders: an action hit just behind
     // the first surface still wins.
     for (const h of hits) { if (h.distance - hits[0].distance > 0.05) break; if (this._actionOf(h)) return h; }
+    // An open sliding balcony door is parked over its fixed neighbour pane: seen from the room the leaf is behind that
+    // glass, so a tap on the pane reaches the leaf (to close it).
+    if (!forFloor) for (const h of hits) { if (h.distance - hits[0].distance > 0.3) break; if (h.object.userData.balconyDoor) return h; }
     return hits[0];
   }
   _actionOf(hit) {
@@ -1711,6 +1740,7 @@ export class Walkthrough {
 
   async _doAction(a) {
     const act = a.action;
+    if (act.type === 'aptDoor' && act.part === 'balconyDoor') return this._tapBalconyDoor(a);
     if (act.type === 'aptDoor') return act.part ? (this._click?.(0.35), this._toggleDoor(a.obj)) : this._onAptDoor(act.unitId, a.obj);
     if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object, a.hit);
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
@@ -2101,13 +2131,14 @@ export class Walkthrough {
 
   // ======================= glide =======================
   // Glide target; a closed apartment door on the way shortens it to a comfortable spot ~0.7 m in front of the leaf.
-  _glideTo(x, z) {
+  _glideTo(x, z, direct = false) {
+    if (!direct && this._glideViaBalconyDoor(x, z)) return;
     const P = this.player.pos, dx = x - P.x, dz = z - P.z, L = Math.hypot(dx, dz);
     let door = false;
     if (L > 0.3) {
       const dir = new THREE.Vector3(dx / L, 0, dz / L), o = new THREE.Vector3(P.x, P.y + 1.0, P.z);
-      const hit = this._cast(this._near(this.solids, P, L + 1), o, dir, L + 0.35)[0];
-      for (let n = hit && hit.object; n; n = n.parent) { const ud = n.userData || {}; if (ud.doorLeaf || (ud.action && ud.action.type === 'aptDoor')) { door = !ud._open && !ud._anim; break; } }
+      const hit = this._cast(this._solidsNear(P, L + 1), o, dir, L + 0.35)[0];
+      for (let n = hit && hit.object; n; n = n.parent) { const ud = n.userData || {}; if (ud.doorLeaf || (ud.action && ud.action.type === 'aptDoor')) { door = !ud._open && !ud._anim && !(ud.action && ud.action.part === 'balconyDoor'); break; } }
       if (door) {
         const d = Math.max(0, hit.distance - 0.7);
         if (d < 0.15) { this.glide = null; this._doorHint(true); return; }
@@ -2119,7 +2150,13 @@ export class Walkthrough {
   _glideTap(clientX, clientY) {
     if (this.mode === '360' || this.riding) return;
     const hit = this._pickAt(clientX, clientY, true);
-    if (hit && this._actionOf(hit)) return;
+    const act = hit && this._actionOf(hit);
+    if (act) {
+      // double-tap on a balcony door (or on the curtain drawn across it): walk out / in through it
+      const bd = this._balconyDoorOf(act, hit);
+      if (bd) this._glideThroughDoor(bd.e, bd.d, hit.point);
+      return;
+    }
     const P = this.player;
     if (hit && hit.object.userData.floor && hit.distance < 35 && Math.abs(hit.point.y - P.pos.y) < 1.5) return this._glideTo(hit.point.x, hit.point.z);
     if (hit && !hit.object.userData.floor && hit.distance < 35) { // clicked a wall/furniture → go to its foot
@@ -2329,8 +2366,9 @@ export class Walkthrough {
       } else if (this.glide) {
         const g = this.glide, dx = g.x - P.pos.x, dz = g.z - P.pos.z, L = Math.hypot(dx, dz);
         g.t += dt;
-        if (L < 0.12 || g.t > 12) { this.glide = null; if (g.door) this._doorHint(true); }
-        else want.set(dx / L, 0, dz / L).multiplyScalar(Math.min(1.9, L * 1.8 + 0.25) * Math.min(1, 0.35 + g.t * 2.2));
+        if ((L < 0.12 || (g.next && g.next.length && L < 0.3)) && g.next && g.next.length) { const n = g.next.shift(); g.x = n[0]; g.z = n[1]; g.stuck = 0; }
+        else if (L < 0.12 || g.t > 12) { this.glide = null; if (g.door) this._doorHint(true); }
+        else want.set(dx / L, 0, dz / L).multiplyScalar(Math.min(1.9, (g.next && g.next.length ? 1.2 : 0) + L * 1.8 + 0.25) * Math.min(1, 0.35 + g.t * 2.2));
       }
       P.vel.lerp(want, damp(want.lengthSq() ? 7 : 10, dt));
       if (P.vel.lengthSq() > 1e-6) {
@@ -2352,6 +2390,7 @@ export class Walkthrough {
       this._outdoorWatch();
     }
     this._autoDoors(dt);
+    this._balconyDoorsTick(dt);
     this._syncCamera();
     this._conciergeTick(dt);
     this._aptEnterWatch();
@@ -2398,13 +2437,153 @@ export class Walkthrough {
       leaf.userData._autoDone = true; this._toggleDoor(leaf, true);
     }
   }
+  // ---- balcony / loggia / terrace doors (apt.balconyDoors): open on approach from either side, close behind you ----
+  // Per-door walker state: auto = opened by proximity (so it may close again by itself; a door opened by a tap or by
+  // starting on the balcony stays open until tapped), far = seconds spent away, hold = the user just tapped it shut →
+  // no auto-opening until they step back (otherwise it would re-open in their face).
+  _bdS(d) {
+    const m = this._bdState || (this._bdState = new WeakMap());
+    let s = m.get(d); if (!s) m.set(d, s = { auto: false, far: 0, hold: false });
+    return s;
+  }
+  // Curtains drawn across a door open with it (level + room match; else the curtain whose centre is nearest in u).
+  _bdCurtains(e, d, instant = false) {
+    for (const c of this._bdCur(e, d)) if (!c.open && typeof c.toggle === 'function') { try { c.toggle(true, { instant }); } catch (err) { console.warn('[walk] curtain', err); } }
+  }
+  _bdCur(e, d) {
+    const s = this._bdS(d);
+    if (!s.cur) {
+      const cs = (e.apt.curtains || []).filter(c => c.level === d.level && Math.abs((c.v ?? d.v) - d.v) < 0.9);
+      s.cur = cs.filter(c => c.roomName === d.roomName);
+      if (!s.cur.length && cs.length) s.cur = [cs.reduce((a, c) => Math.abs(c.u - d.u) < Math.abs(a.u - d.u) ? c : a)];
+    }
+    return s.cur;
+  }
+  // Walker position (or any world point) in an apartment's unit-local frame: x = u, y above its floor, z = v.
+  _bdLocal(e, pos, out) { return e.apt.group.worldToLocal((out || new THREE.Vector3()).copy(pos)); }
+  _bdDist(d, lp) {
+    if (Math.abs(lp.y - d.y) > 1.3) return Infinity;
+    const cu = Math.max(d.p0, Math.min(d.p1, lp.x));
+    return Math.hypot(cu - lp.x, d.v - lp.z);
+  }
+  _bdOpen(e, d, auto, instant = false) {
+    const s = this._bdS(d);
+    if (!d.open) { try { d.toggle(true, { instant }); } catch (err) { console.warn('[walk] balcony door', err); return; } s.auto = auto; }
+    else if (!auto) s.auto = false;
+    s.far = 0; s.hold = false;
+    this._bdCurtains(e, d, instant);
+  }
+  _balconyDoorsTick(dt) {
+    if (!this.loaded.size || this.riding || this.drive) return;
+    const P = this.player, walk = this.mode === 'walk';
+    const lp = this._bdV || (this._bdV = new THREE.Vector3()), q = this._bdQ || (this._bdQ = new THREE.Quaternion());
+    const fw = this._bdF || (this._bdF = new THREE.Vector3()), vl = this._bdW || (this._bdW = new THREE.Vector3());
+    for (const e of this.loaded.values()) {
+      const doors = e.apt.balconyDoors;
+      if (!doors || !doors.length || !e.apt.group) continue;
+      this._bdLocal(e, P.pos, lp);
+      // forward / velocity / glide heading in unit-local (the apartment group is only rotated about y)
+      q.copy(e.apt.group.quaternion).invert();
+      fw.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)).applyQuaternion(q);
+      vl.copy(P.vel); if (this.glide) vl.set(this.glide.x - P.pos.x, 0, this.glide.z - P.pos.z).normalize().multiplyScalar(1.2);
+      vl.applyQuaternion(q);
+      for (const d of doors) {
+        if (typeof d.toggle !== 'function') continue;
+        const s = this._bdS(d), dist = this._bdDist(d, lp);
+        if (s.hold && dist > BD_REARM_R) s.hold = false;
+        if (!d.open) s.auto = false;
+        if (!d.open || (dist < BD_OPEN_R && this._bdCur(e, d).some(c => !c.open))) {
+          if (!walk || s.hold || dist > BD_HINT_R) continue;
+          let toward = dist < 0.35;
+          if (!toward) {
+            const cu = Math.max(d.p0, Math.min(d.p1, lp.x)), nx = (cu - lp.x) / dist, nz = (d.v - lp.z) / dist;
+            toward = fw.x * nx + fw.z * nz > 0.3 || vl.x * nx + vl.z * nz > 0.25;
+          }
+          if (!toward) continue;
+          if (d.open) { this._bdCurtains(e, d); continue; }      // open door behind a drawn curtain: draw it back
+          if (!this._bdHinted) { this._bdHinted = true; this._toast(this.t('walk.balconyDoorHint'), 3600); }
+          if (dist < BD_OPEN_R) { this._bdOpen(e, d, true); this._click?.(0.25); }
+        } else if (s.auto) {
+          if (dist > BD_CLOSE_R) { s.far += dt; if (s.far > BD_CLOSE_S) { s.auto = false; s.far = 0; try { d.toggle(false); } catch (err) { console.warn('[walk] balcony door', err); } } }
+          else s.far = 0;
+        }
+      }
+    }
+  }
+  // Which balcony door does a picked action belong to? (its collider / a leaf, or a curtain hanging right in front of one)
+  _balconyDoorOf(a, hit) {
+    const act = a && a.action; if (!act || act.type !== 'aptDoor') return null;
+    const e = this.loaded.get(act.unitId); if (!e || !e.apt.balconyDoors) return null;
+    if (act.part === 'balconyDoor') { const d = e.apt.balconyDoors.find(x => x.id === act.door); return d ? { e, d } : null; }
+    if (!act.curtain || act.part === 'curtainSwitch' || !hit) return null;
+    const lp = this._bdLocal(e, hit.point);
+    const d = e.apt.balconyDoors.find(x => Math.abs(lp.y - x.y - 1.2) < 1.6 && lp.x > x.p0 - 0.7 && lp.x < x.p1 + 0.7 && Math.abs(lp.z - x.v) < 0.6);
+    return d ? { e, d } : null;
+  }
+  // Tap on a leaf / the glass / the handle, from the room or from the balcony: toggle. A door the user opened stays open.
+  _tapBalconyDoor(a) {
+    const bd = this._balconyDoorOf(a, a.hit);
+    this._click?.(0.35);
+    if (!bd) return this._toggleDoor(a.obj);
+    const { e, d } = bd, s = this._bdS(d);
+    if (d.open) { s.auto = false; s.far = 0; s.hold = true; return d.toggle(false); }
+    this._bdOpen(e, d, false);
+  }
+  // Teleported onto the balcony / terrace (start=balcony, room chips): the nearest door of that level is open.
+  _openBalconyDoorAt(pos) {
+    const e = this._aptAt(pos) || (this.unit && this.loaded.get(this.unit.id));
+    if (!e || !e.apt.balconyDoors || !e.apt.balconyDoors.length) return;
+    const lp = this._bdLocal(e, pos);
+    let best = null, bd = Infinity;
+    for (const d of e.apt.balconyDoors) { if (typeof d.toggle !== 'function') continue; const k = this._bdDist(d, lp); if (k < bd) { bd = k; best = d; } }
+    if (best) this._bdOpen(e, best, false, true);
+    else if (typeof e.apt.openBalconyDoor === 'function') { try { e.apt.openBalconyDoor(Math.round(lp.y / LEVELS.typicalH)); } catch (err) { console.warn('[walk] balcony door', err); } }
+  }
+  // Glide through door d of apartment e towards the other side (hit = world point tapped on the door).
+  _glideThroughDoor(e, d, hit) {
+    const lp = this._bdLocal(e, this.player.pos), side = lp.z < d.v ? 1 : -1;
+    const hu = hit ? this._bdLocal(e, hit).x : lp.x, m = Math.min(0.42, (d.p1 - d.p0) / 2 - 0.05);
+    const cu = Math.max(d.p0 + m, Math.min(d.p1 - m, hu));
+    this._bdOpen(e, d, !d.open ? true : this._bdS(d).auto);
+    const w = (u, v) => { const p = e.apt.group.localToWorld(new THREE.Vector3(u, d.y, v)); return [p.x, p.z]; };
+    const pts = [];
+    if (Math.abs(lp.z - d.v) > 0.6 && Math.abs(lp.x - cu) > 0.2) pts.push(w(cu, d.v - side * 0.5));
+    pts.push(w(cu, d.v + side * 0.85));
+    this.glide = { x: pts[0][0], z: pts[0][1], t: 0, stuck: 0, door: false, next: pts.slice(1) };
+  }
+  // A glide whose target lies across the glazing line (room → balcony or back) is routed through the best door
+  // of that level, which opens on the way. Returns true when it took the glide over.
+  _glideViaBalconyDoor(x, z) {
+    const P = this.player.pos;
+    const e = this._aptAt(P); if (!e || !e.apt.balconyDoors || !e.apt.balconyDoors.length) return false;
+    const lp = this._bdLocal(e, P), lt = this._bdLocal(e, new THREE.Vector3(x, P.y, z));
+    let best = null, cost = Infinity, bu = 0;
+    for (const d of e.apt.balconyDoors) {
+      if (typeof d.toggle !== 'function' || Math.abs(lp.y - d.y) > 1.3) continue;
+      if ((lp.z - d.v) * (lt.z - d.v) >= 0) continue;                       // same side: no door involved
+      const k = (d.v - lp.z) / (lt.z - lp.z), iu = lp.x + (lt.x - lp.x) * k, m = Math.min(0.42, (d.p1 - d.p0) / 2 - 0.05);
+      const cu = Math.max(d.p0 + m, Math.min(d.p1 - m, iu));
+      const c = Math.hypot(cu - lp.x, d.v - lp.z) + Math.hypot(lt.x - cu, lt.z - d.v);
+      if (c < cost) { cost = c; best = d; bu = cu; }
+    }
+    if (!best) return false;
+    const d = best, side = lp.z < d.v ? 1 : -1;
+    this._bdOpen(e, d, !d.open ? true : this._bdS(d).auto);
+    const w = (u, v) => { const p = e.apt.group.localToWorld(new THREE.Vector3(u, d.y, v)); return [p.x, p.z]; };
+    const pts = [];
+    if (Math.abs(lp.z - d.v) > 0.6) pts.push(w(bu, d.v - side * 0.5));
+    pts.push(w(bu, d.v + side * 0.5));
+    if (Math.abs(lt.z - d.v) > 0.55) pts.push([x, z]);
+    this.glide = { x: pts[0][0], z: pts[0][1], t: 0, stuck: 0, door: false, next: pts.slice(1) };
+    return true;
+  }
   // Blocked by a closed apartment door → tell the user to tap it (throttled).
   _doorHint(known = false) {
     const now = performance.now(); if (now - (this._doorHintT || 0) < 5000) return;
     if (known) { this._doorHintT = now; this._toast(this.t('walk.tapDoor'), 2400); return; }
     const P = this.player, dir = new THREE.Vector3(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
     const o = new THREE.Vector3(P.pos.x, P.pos.y + 1.0, P.pos.z);
-    const hit = this._cast(this._near(this.solids, P.pos, 1.6), o, dir, 1.1)[0];
+    const hit = this._cast(this._solidsNear(P.pos, 1.6), o, dir, 1.1)[0];
     if (!hit) return;
     let x = hit.object, door = false;
     while (x) { const ud = x.userData || {}; if (ud.doorLeaf || (ud.action && ud.action.type === 'aptDoor')) { door = true; break; } x = x.parent; }
