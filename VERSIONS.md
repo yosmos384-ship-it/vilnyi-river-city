@@ -21,3 +21,4 @@ Every published version has a commit id (below). To go back to one: ask Claude "
 | v2.4 | 0072824 | Lift buttons: numbers always visible on every phone (unlit engraved faces, glowing when pressed); small gold VILNYI emblem on the lift panel |
 | v2.5 | e1336d5 | Six luxury car designs with interiors; enter and drive from the −1 parking up the ramp, around the site, streets and lake road and back; headlights and sound toggles |
 | v2.6 | 2665e56 | Balcony/loggia/terrace doors open on tap or on approach (both sides) and close behind you; new sixth luxury interior design "Paris" for all apartments |
+| v2.7 | ba46e8a | Lift: view from the back of the car, large keypad by the doors, real mirror; redrawn lobby concierge; kitchen islands with running tap and salad chopping; playable snooker table in large duplexes; 360° neighbourhood map re-captured with the real building layout and moved up right after the apartment picker; flicker fix |
