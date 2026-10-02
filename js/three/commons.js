@@ -402,6 +402,68 @@ const texWash = () => cached('wash', () => {
   gr.addColorStop(0, 'rgb(255,214,160)'); gr.addColorStop(0.08, 'rgb(190,150,104)'); gr.addColorStop(0.35, 'rgb(84,64,42)'); gr.addColorStop(0.75, 'rgb(22,16,10)'); gr.addColorStop(1, 'rgb(0,0,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 8, 256); return texOf(c, { repeat: false });
 });
+// Entrance video intercom: the whole fascia (camera surround, speaker grille, screen, keypad, concierge key) is one unlit
+// quad so it reads in any light; `open` = the "door released" state (green screen + green status LED).
+const texIntercom = (open = false) => cached(open ? 'icomOpen' : 'icom', () => {
+  const W = 384, H = 1056, c = canvas(W, H);
+  const draw = () => {
+    const g = c.getContext('2d');
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#17171c'); bg.addColorStop(0.5, '#09090c'); bg.addColorStop(1, '#14141a');
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.strokeStyle = gold(g, 0, 0, W, H); g.lineWidth = 6; g.strokeRect(7, 7, W - 14, H - 14);
+    // camera surround (the lens itself is real geometry) + two IR dots
+    g.lineWidth = 4; g.beginPath(); g.arc(192, 92, 50, 0, TAU); g.stroke();
+    g.fillStyle = '#050506'; g.beginPath(); g.arc(192, 92, 44, 0, TAU); g.fill();
+    for (const x of [96, 288]) { g.fillStyle = '#6a1a14'; g.beginPath(); g.arc(x, 92, 6, 0, TAU); g.fill(); }
+    // speaker grille
+    g.fillStyle = '#34343c';
+    for (let r = 0; r < 5; r++) for (let k = 0; k < 9; k++) g.fillRect(70 + k * 28, 170 + r * 14, 20, 6);
+    // screen
+    const sx = 34, sy = 262, sw = 316, sh = 236;
+    const sg = g.createLinearGradient(0, sy, 0, sy + sh);
+    if (open) { sg.addColorStop(0, '#0d3323'); sg.addColorStop(1, '#23744b'); } else { sg.addColorStop(0, '#0e1a2b'); sg.addColorStop(1, '#22395a'); }
+    g.fillStyle = sg; g.fillRect(sx, sy, sw, sh);
+    g.lineWidth = 2; g.strokeStyle = 'rgba(230,201,135,0.7)'; g.strokeRect(sx, sy, sw, sh);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (open) {   // open padlock + tick
+      g.strokeStyle = '#eafff2'; g.lineWidth = 9; g.lineCap = 'round';
+      g.beginPath(); g.arc(170, 338, 30, Math.PI, TAU * 0.96); g.stroke();
+      g.fillStyle = '#eafff2'; g.fillRect(150, 350, 88, 70);
+      g.strokeStyle = '#1b6a43'; g.lineWidth = 8; g.beginPath(); g.moveTo(172, 386); g.lineTo(190, 402); g.lineTo(218, 368); g.stroke();
+      g.strokeStyle = 'rgba(234,255,242,0.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(96, 458); g.lineTo(288, 458); g.stroke();
+    } else {
+      drawBird(g, 192, sy + 74, 44, gold(g, 140, sy + 30, 250, sy + 120));
+      g.fillStyle = gold(g, 60, 0, 330, 0);
+      g.font = `500 46px ${SERIF}`; if ('letterSpacing' in g) g.letterSpacing = '9px'; g.fillText('VILNYI', 196, sy + 150);
+      g.font = `500 19px ${SERIF}`; if ('letterSpacing' in g) g.letterSpacing = '8px'; g.fillText('RIVER  CITY', 196, sy + 194);
+      if ('letterSpacing' in g) g.letterSpacing = '0px';
+    }
+    // status LED
+    g.shadowColor = open ? '#5dff9a' : '#ff5a48'; g.shadowBlur = 16; g.fillStyle = open ? '#7dffb0' : '#ff6a55';
+    g.beginPath(); g.arc(336, 524, 7, 0, TAU); g.fill(); g.shadowBlur = 0;
+    // keypad: backlit numerals in fine brass rings
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+    g.font = `600 40px ${SANS}`;
+    keys.forEach((k, i) => {
+      const x = 84 + (i % 3) * 108, y = 580 + ((i / 3) | 0) * 92;
+      const rg = g.createRadialGradient(x, y - 8, 4, x, y, 40); rg.addColorStop(0, '#2b2b33'); rg.addColorStop(1, '#141418');
+      g.fillStyle = rg; g.beginPath(); g.arc(x, y, 38, 0, TAU); g.fill();
+      g.lineWidth = 2.5; g.strokeStyle = 'rgba(214,178,110,0.85)'; g.stroke();
+      g.shadowColor = '#ffd9a0'; g.shadowBlur = 10; g.fillStyle = '#fff3dc'; g.fillText(k, x, y + (k === '*' ? 9 : 2)); g.shadowBlur = 0;
+    });
+    // concierge key: a brass pill with a service bell
+    const py = 946, ph = 74, px0 = 62, px1 = 322;
+    g.fillStyle = gold(g, px0, py, px1, py + ph);
+    g.beginPath(); g.arc(px0 + ph / 2, py + ph / 2, ph / 2, Math.PI / 2, Math.PI * 1.5); g.arc(px1 - ph / 2, py + ph / 2, ph / 2, -Math.PI / 2, Math.PI / 2); g.closePath(); g.fill();
+    g.fillStyle = '#20160a';
+    g.beginPath(); g.arc(192, py + 50, 22, Math.PI, TAU); g.closePath(); g.fill();
+    g.fillRect(162, py + 52, 60, 6); g.beginPath(); g.arc(192, py + 23, 5, 0, TAU); g.fill();
+  };
+  draw();
+  const t = texOf(c, { repeat: false });
+  try { if (!open && document.fonts && document.fonts.load) document.fonts.load(`500 46px "Cormorant Garamond"`).then(f => { if (f && f.length) { draw(); t.needsUpdate = true; } }).catch(() => {}); } catch { /* optional */ }
+  return t;
+});
 // 3 columns × 4 rows (top row = highest floors), then a row with door-open / door-close / alarm
 // The operating panel is a tall black-glass column on the front return wall (beside the doors, facing the back of the
 // car), read and tapped from the back of the car: 2 columns × 6 rows of floor keys (top row = highest floors), then
@@ -560,6 +622,12 @@ function M(key) {
     tyre: () => S({ color: 0x151515, roughness: 0.8 }),
     pipeRed: () => S({ color: 0x7c2620, roughness: 0.55 }),
     steel: () => S({ color: 0xa6a8aa, metalness: 1, roughness: 0.35 }),
+    // entrance intercom: unlit fascia (idle / door released) on a brushed-bronze totem
+    icomFace: () => new THREE.MeshBasicMaterial({ map: texIntercom(false), color: 0xe2e2e2 }),
+    icomFaceOpen: () => new THREE.MeshBasicMaterial({ map: texIntercom(true), color: 0xf2f2f2 }),
+    // apartment bell push: ivory button in a glowing ring (ring colour = per-instance, lit while pressed)
+    bellCap: () => S({ color: 0xf4eee0, roughness: 0.3, envMapIntensity: 0.9, emissive: 0x4a3a22, emissiveIntensity: 0.5 }),
+    bellRing: () => new THREE.MeshBasicMaterial({ color: 0xffffff }),
     white: () => S({ color: 0xf4f2ee, roughness: 0.4 }),
     daylight: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.5, 2.6) }),
     decal: () => new THREE.MeshBasicMaterial({ map: texScallop(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.55 }),
@@ -1910,9 +1978,67 @@ function placeDoor(ctx, d, run, plateIdx) {
   const [u0, v0, du, dv] = ctx.plates.uv(plateIdx); const uv = g.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * du, v0 + uv.getY(i) * dv);
   ctx.plateB.add(ctx.plateMat, g, mat4(px, 1.52, pz, yaw));
-  ctx.B.add('brass', boxGeo(-0.093, 0.093, -0.05, 0.05, -0.006, 0), mat4(px, 1.52, pz, yaw));
-  // door bell
-  ctx.B.add('brass', new THREE.CylinderGeometry(0.018, 0.018, 0.01, 20).rotateX(Math.PI / 2), mat4(px, 1.3, pz, yaw));
+  ctx.B.add('brass', boxGeo(-0.093, 0.093, -0.05, 0.05, -0.006, -0.0012), mat4(px, 1.52, pz, yaw));   // backing just behind the plate quad (no z-fight)
+  // bell push under the number plate (instanced per floor, see buildBells)
+  ctx.bells.push({ unitId: d.unitId, m: mat4(px, 1.35, pz, yaw) });
+}
+// Bell pushes of one floor: brass plate (the tap target), glowing ring and ivory button — three InstancedMeshes.
+// The push is symmetric left ↔ right, so in a mirrored block it is placed with S · m · flipX (a proper rotation
+// that keeps the button on the corridor side; instanced() would reflect it into the wall).
+const BELL_IDLE = new THREE.Color(0.8, 0.3, 0.035), BELL_LIT = new THREE.Color(4.2, 2.0, 0.4);   // linear: soft amber / bright gold
+function buildBells(ctx) {
+  const list = ctx.bells; if (!list || !list.length) return null;
+  const S = ctx.mz != null ? mirrorMatrix(ctx.mz) : null;
+  const mats = list.map(b => (S ? S.clone().multiply(b.m).multiply(_flipX) : b.m)), ids = list.map(b => b.unitId);
+  const mk = (geo, mat) => {
+    const im = new THREE.InstancedMesh(geo, M(mat), mats.length);
+    mats.forEach((m, i) => im.setMatrixAt(i, m));
+    im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); im.computeBoundingBox();
+    im.name = 'vrc-doorbell'; BAKED.add(im); ctx.root.add(im); return im;
+  };
+  const plate = mk(ctx.geo('bellPlate', () => rbox(-0.034, 0.034, -0.052, 0.052, 0, 0.007, 0.006)), 'brass');
+  const ring = mk(ctx.geo('bellRing', () => new THREE.TorusGeometry(0.0212, 0.0042, 10, 44).translate(0, 0, 0.0082)), 'bellRing');
+  const cap = mk(ctx.geo('bellCap', () => { const c = new THREE.CylinderGeometry(0.0122, 0.0136, 0.009, 28); c.rotateX(Math.PI / 2); c.translate(0, 0, 0.0115); return c; }), 'bellCap');
+  mats.forEach((_, i) => ring.setColorAt(i, BELL_IDLE)); ring.instanceColor.needsUpdate = true;
+  plate.userData.action = { type: 'doorbell', building: ctx.bId, floor: ctx.floor };
+  plate.userData.bellUnits = ids;
+  const push = new THREE.Matrix4().makeTranslation(0, 0, -0.0045), tmp = new THREE.Matrix4(), timers = new Map();
+  const set = (i, on) => {
+    cap.setMatrixAt(i, on ? tmp.copy(mats[i]).multiply(push) : mats[i]); cap.instanceMatrix.needsUpdate = true;
+    ring.setColorAt(i, on ? BELL_LIT : BELL_IDLE); ring.instanceColor.needsUpdate = true;
+  };
+  return {
+    mesh: plate, units: ids,
+    /** press the button of `unitId` in (travel + lit ring) for `ms`; returns false when that door is not on this floor */
+    press(unitId, ms = 900) {
+      const i = ids.indexOf(unitId); if (i < 0 || !plate.parent) return false;
+      set(i, true); clearTimeout(timers.get(i));
+      timers.set(i, setTimeout(() => { timers.delete(i); if (plate.parent) set(i, false); }, ms));
+      return true;
+    },
+    dispose() { for (const t of timers.values()) clearTimeout(t); timers.clear(); },
+  };
+}
+// Video intercom totem outside a lobby entrance (canonical frame; the front faces −z = the street / courtyard).
+// Body, trims and lens are baked; the fascia is one individually placed quad carrying the tap action.
+function intercomTotem(ctx, c, x, z) {
+  const { B, C } = ctx, T = mat4(x, 0, z, Math.PI);
+  B.add('bronzeDark', boxGeo(-0.17, 0.17, 0, 0.022, -0.085, 0.085), T);                    // foot plate
+  B.add('bronze', rbox(-0.125, 0.125, 0.022, 1.58, -0.05, 0.05, 0.012), T);               // brushed-bronze body (follows the finish)
+  B.add('brass', boxGeo(-0.127, 0.127, 1.58, 1.592, -0.052, 0.052), T);                   // brass cap
+  B.add('led', boxGeo(-0.1, 0.1, 1.5455, 1.5495, 0.05, 0.0515), T);                         // light line over the fascia
+  for (const s of [-1, 1]) B.add('brass', boxGeo(s * 0.108 - 0.003, s * 0.108 + 0.003, 0.08, 0.9, 0.05, 0.0525), T);   // inlay lines
+  B.add('brass', boxGeo(-0.102, 0.102, 0.955, 1.535, 0.05, 0.0535), T);                   // fascia bezel
+  B.add('blackGlass', new THREE.SphereGeometry(0.017, 20, 12, 0, TAU, 0, Math.PI / 2).rotateX(Math.PI / 2).translate(0, 1.4607, 0.0545), T);   // lens
+  B.add('brass', new THREE.TorusGeometry(0.0185, 0.0028, 8, 32).translate(0, 1.4607, 0.0555), T);
+  C.box(x - 0.14, x + 0.14, 0, 1.6, z - 0.07, z + 0.07);
+  const face = new THREE.Mesh(ctx.geo('icomFace', () => new THREE.PlaneGeometry(0.19, 0.5225)), M('icomFace'));
+  face.position.set(x, 1.245, z - 0.0545); face.rotation.y = Math.PI; face.name = 'vrc-intercom';
+  face.userData.action = { type: 'intercom', building: ctx.bId, stair: c.stair };
+  ctx.root.add(face);
+  const rec = { stair: c.stair, x, z, face, setOpen(on) { face.material = M(on ? 'icomFaceOpen' : 'icomFace'); } };
+  (ctx.intercoms ||= []).push(rec);
+  return rec;
 }
 
 function ceilingRect(ctx, r, alongX, H, trayW = 1.05) {
@@ -2040,7 +2166,7 @@ function makeCtx(bId, floor, H, mirrorable = true) {
   const geos = new Map();
   MZ = mirrorable && isMirrored(bId) ? 0 : null;   // reflect about the bar axis (building-local z = 0)
   return {
-    bId, floor, H, group, root, mz: MZ, B: new Batch(), C: new Colliders(), signB: new Batch(MZ, true), leaves: [], lifts: [], doors: [], ownTex: [],
+    bId, floor, H, group, root, mz: MZ, B: new Batch(), C: new Colliders(), signB: new Batch(MZ, true), leaves: [], lifts: [], doors: [], ownTex: [], bells: [],
     geo(key, make) { if (!geos.has(key)) geos.set(key, make()); return geos.get(key); },
     _geos: geos,
   };
@@ -2049,19 +2175,25 @@ function finish(ctx, spawn) {
   if (ctx.mz != null) {   // reflect the individually placed objects, the sliding doors and the spawn point
     for (const o of [...ctx.root.children]) if (!BAKED.has(o) && !NOMIRROR.has(o) && o !== RIG.group) mirrorObj(o, ctx.mz);
     for (const d of ctx.autoDoors || []) d.z = 2 * ctx.mz - d.z;
+    for (const d of ctx.intercoms || []) d.z = 2 * ctx.mz - d.z;
     if (spawn) spawn = { ...spawn, z: 2 * ctx.mz - spawn.z, yaw: Math.PI - (spawn.yaw || 0) };
   }
   ctx.B.flush(ctx.root); ctx.C.flush(ctx.root); ctx.signB.flush(ctx.root);
   if (ctx.plateB) ctx.plateB.flush(ctx.root);
+  const bells = buildBells(ctx);
   MZ = null;
   for (const L of ctx.lifts) ctx.group.add(L.group);
   ctx.group.updateMatrixWorld(true);
   const { group, lifts, doors } = ctx;
   let disposed = false;
   return {
-    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [], concierges: ctx.concierges || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
+    group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [],
+    // doorbells of this floor ({mesh, units, press(unitId)}), the corridor leaf of a unit, the entrance intercoms
+    // ([{stair, x, z (building-local), face, setOpen(on)}], ground floor only)
+    bells, leafOf: unitId => ctx.leaves.find(l => l.userData.unitId === unitId) || null, intercoms: ctx.intercoms || [], concierges: ctx.concierges || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
     dispose() {
       if (disposed) return; disposed = true;
+      if (bells) bells.dispose();
       if (RIG.group && RIG.group.parent === ctx.root) { ctx.root.remove(RIG.group); }
       for (const L of lifts) L.dispose();
       for (const L of ctx.decor || []) L.dispose();
@@ -2330,8 +2462,9 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
   sd.position.set(x0 - 0.045, 1.095, -2.3); sd.userData.solid = true; ctx.root.add(sd);
   B.box('brass', x0 + 0.0, x0 + 0.06, 1.0, 1.04, -2.72, -2.6);
   signPlane(ctx, 0, x0 + FACE + SKIN + 0.01, 2.45, -2.3, Math.PI / 2, 0.2, 0.2);
-  // facade glazing with entrance doors; the courtyard lobbies (stairs 1 & 3) get automatic sliding doors (walk.js opens them)
-  const em = c.entrance[0], auto = c.stair !== 2, DW = 0.95;
+  // facade glazing with entrance doors: every lobby has automatic sliding doors (walk.js opens them: freely from inside,
+  // from outside once the video intercom beside the door has released them)
+  const em = c.entrance[0], auto = true, DW = 0.95;
   const spans = auto ? [[x0, em - DW], [em + DW, x1]] : [[x0, x1]];
   for (const [a0, a1] of spans) { B.box('glass', a0, a1, 0.05, H - 0.05, zF - 0.06, zF - 0.05); C.box(a0, a1, 0, H, zF - 0.12, zF); }
   for (let x = x0; x <= x1 + 0.01; x += (x1 - x0) / 5) if (!auto || Math.abs(x - em) > DW + 0.05) B.box('bronze', x - 0.03, x + 0.03, 0, H, zF - 0.1, zF);
@@ -2358,7 +2491,11 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
       g.position.set(em + s * DW / 2, 0, zF - 0.03); g.userData.baseX = g.position.x; g.userData.dir = s;
       ctx.root.add(g); leaves.push(g);
     }
-    (ctx.autoDoors ||= []).push({ x: em, z: zF, leaves, open: 0, travel: DW - 0.06 });
+    // closed leaves block the way (walk.js clears userData.solid while they stand open)
+    const blocker = new THREE.Mesh(ctx.geo('slideBlock', () => new THREE.BoxGeometry(2 * DW, 2.5, 0.1)), M('hidden'));
+    blocker.position.set(em, 1.25, zF - 0.03); blocker.userData.solid = true; blocker.name = 'lobby-door-block'; ctx.root.add(blocker);
+    (ctx.autoDoors ||= []).push({ x: em, z: zF, leaves, open: 0, travel: DW - 0.06, stair: c.stair, blocker });
+    intercomTotem(ctx, c, em + DW + 0.42, zF - 0.12 - 0.11);
   }
   // coffered ceiling with cove + chandelier
   const cz0 = zF + 0.9, cz1 = zL - 0.9, cx0 = x0 + 1.0, cx1 = x1 - 1.0;
@@ -2432,10 +2569,10 @@ function buildLobby(ctx, c, ci, L0, L1, sh0, sh1, pL, pR) {
     const cg = makeConcierge(cxp, zc, Math.PI / 2, ctx.bId, c.stair, ctx.mz != null ? -1 : 1);
     ctx.root.add(cg.group); (ctx.concierges ||= []).push(cg);
     // seating by the facade (east side)
-    armchair(B, x1 - 1.0, zF + 1.25, -Math.PI / 2 - 0.5); armchair(B, x1 - 2.25, zF + 1.0, -0.2);
-    roundTable(B, x1 - 1.55, zF + 1.95, 0.32, 0.45);
-    B.box('rug', x1 - 2.9, x1 - 0.4, 0.004, 0.012, zF + 0.4, zF + 2.9);
-    C.box(x1 - 2.8, x1 - 0.5, 0, 0.8, zF + 0.4, zF + 2.4);
+    armchair(B, x1 - 0.85, zF + 1.25, -Math.PI / 2 - 0.5); armchair(B, x1 - 2.0, zF + 1.0, -0.2);   // clear of the entrance doors
+    roundTable(B, x1 - 1.4, zF + 1.95, 0.32, 0.45);
+    B.box('rug', x1 - 2.55, x1 - 0.25, 0.004, 0.012, zF + 0.4, zF + 2.9);
+    C.box(x1 - 2.45, x1 - 0.35, 0, 0.8, zF + 0.4, zF + 2.4);
   } else {
     // bench under the wordmark, seating near the facade
     B.box('velvetSand', x0 + 0.22, x0 + 0.72, 0.3, 0.46, zc - 1.2, zc + 1.2); B.box('bronze', x0 + 0.26, x0 + 0.68, 0.06, 0.3, zc - 1.15, zc + 1.15);

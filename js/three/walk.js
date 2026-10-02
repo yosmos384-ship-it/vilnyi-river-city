@@ -76,6 +76,52 @@ const BALCONY_DOOR_TXT = {
   de: 'Die Balkontüren öffnen sich, wenn Sie sich nähern — oder tippen Sie auf die Tür, um sie zu öffnen und zu schließen',
 };
 for (const [l, v] of Object.entries(BALCONY_DOOR_TXT)) (LOCAL[l] ||= {})['walk.balconyDoorHint'] = v;
+// Doorbells, the apartment door-entry monitor and the entrance video intercom: all 8 site languages.
+const BELL_TXT = {
+  en: { entrance: 'Entrance', 'bell.ring': 'Ringing apartment {n}…', 'bell.hint': 'Ring the bell beside the door', 'mon.open': 'Door opened',
+    'ic.title': 'Intercom', 'ic.prompt': 'Enter the apartment number', 'ic.range': 'Apartments {a}–{b}', 'ic.stair': 'This staircase', 'ic.call': 'Call', 'ic.del': 'Delete',
+    'ic.concierge': 'Call concierge', 'ic.mine': 'My apartment', 'ic.calling': 'Calling apartment {n}…', 'ic.callingCg': 'Calling the concierge…',
+    'ic.answer': 'Apartment {n} answered — the door is open, please come in.', 'ic.none': 'There is no apartment {n} in this building',
+    'ic.goApt': 'Go to this apartment', 'ic.enter': 'Enter the lobby', 'ic.again': 'Another apartment', 'ic.close': 'Close', 'ic.locked': 'The door is locked — use the intercom beside it' },
+  he: { entrance: 'כניסה', 'bell.ring': 'מצלצלים בדירה {n}…', 'bell.hint': 'צלצלו בפעמון שליד הדלת', 'mon.open': 'הדלת נפתחה',
+    'ic.title': 'אינטרקום', 'ic.prompt': 'הקישו את מספר הדירה', 'ic.range': 'דירות {a}–{b}', 'ic.stair': 'בכניסה זו', 'ic.call': 'חיוג', 'ic.del': 'מחיקה',
+    'ic.concierge': 'קריאה לקונסיירז׳', 'ic.mine': 'הדירה שלי', 'ic.calling': 'מחייגים לדירה {n}…', 'ic.callingCg': 'מחייגים לקונסיירז׳…',
+    'ic.answer': 'דירה {n} ענתה — הדלת פתוחה, היכנסו בבקשה.', 'ic.none': 'אין דירה {n} בבניין הזה',
+    'ic.goApt': 'אל הדירה הזו', 'ic.enter': 'כניסה ללובי', 'ic.again': 'דירה אחרת', 'ic.close': 'סגירה', 'ic.locked': 'הדלת נעולה — השתמשו באינטרקום שלצידה' },
+  ro: { entrance: 'Intrare', 'bell.ring': 'Sunăm la apartamentul {n}…', 'bell.hint': 'Sunați la soneria de lângă ușă', 'mon.open': 'Ușa s-a deschis',
+    'ic.title': 'Interfon', 'ic.prompt': 'Introduceți numărul apartamentului', 'ic.range': 'Apartamentele {a}–{b}', 'ic.stair': 'Pe această scară', 'ic.call': 'Apelează', 'ic.del': 'Șterge',
+    'ic.concierge': 'Sună la concierge', 'ic.mine': 'Apartamentul meu', 'ic.calling': 'Se apelează apartamentul {n}…', 'ic.callingCg': 'Se apelează concierge-ul…',
+    'ic.answer': 'Apartamentul {n} a răspuns — ușa este deschisă, poftiți.', 'ic.none': 'Nu există apartamentul {n} în acest bloc',
+    'ic.goApt': 'Mergi la acest apartament', 'ic.enter': 'Intră în hol', 'ic.again': 'Alt apartament', 'ic.close': 'Închide', 'ic.locked': 'Ușa este încuiată — folosiți interfonul de lângă ea' },
+  ru: { entrance: 'Вход', 'bell.ring': 'Звоним в квартиру {n}…', 'bell.hint': 'Позвоните в звонок у двери', 'mon.open': 'Дверь открыта',
+    'ic.title': 'Домофон', 'ic.prompt': 'Введите номер квартиры', 'ic.range': 'Квартиры {a}–{b}', 'ic.stair': 'В этом подъезде', 'ic.call': 'Вызов', 'ic.del': 'Стереть',
+    'ic.concierge': 'Вызвать консьержа', 'ic.mine': 'Моя квартира', 'ic.calling': 'Вызываем квартиру {n}…', 'ic.callingCg': 'Вызываем консьержа…',
+    'ic.answer': 'Квартира {n} ответила — дверь открыта, проходите.', 'ic.none': 'В этом доме нет квартиры {n}',
+    'ic.goApt': 'Пройти к этой квартире', 'ic.enter': 'Войти в лобби', 'ic.again': 'Другая квартира', 'ic.close': 'Закрыть', 'ic.locked': 'Дверь заперта — воспользуйтесь домофоном рядом' },
+  uk: { entrance: 'Вхід', 'bell.ring': 'Дзвонимо до квартири {n}…', 'bell.hint': 'Подзвоніть у дзвінок біля дверей', 'mon.open': 'Двері відчинено',
+    'ic.title': 'Домофон', 'ic.prompt': 'Введіть номер квартири', 'ic.range': 'Квартири {a}–{b}', 'ic.stair': 'У цьому під’їзді', 'ic.call': 'Виклик', 'ic.del': 'Стерти',
+    'ic.concierge': 'Викликати консьєржа', 'ic.mine': 'Моя квартира', 'ic.calling': 'Викликаємо квартиру {n}…', 'ic.callingCg': 'Викликаємо консьєржа…',
+    'ic.answer': 'Квартира {n} відповіла — двері відчинено, заходьте.', 'ic.none': 'У цьому будинку немає квартири {n}',
+    'ic.goApt': 'Пройти до цієї квартири', 'ic.enter': 'Увійти до лобі', 'ic.again': 'Інша квартира', 'ic.close': 'Закрити', 'ic.locked': 'Двері зачинено — скористайтеся домофоном поруч' },
+  fr: { entrance: 'Entrée', 'bell.ring': 'On sonne à l’appartement {n}…', 'bell.hint': 'Sonnez à côté de la porte', 'mon.open': 'Porte ouverte',
+    'ic.title': 'Interphone', 'ic.prompt': 'Composez le numéro de l’appartement', 'ic.range': 'Appartements {a}–{b}', 'ic.stair': 'Dans cet escalier', 'ic.call': 'Appeler', 'ic.del': 'Effacer',
+    'ic.concierge': 'Appeler le concierge', 'ic.mine': 'Mon appartement', 'ic.calling': 'Appel de l’appartement {n}…', 'ic.callingCg': 'Appel du concierge…',
+    'ic.answer': 'L’appartement {n} a répondu — la porte est ouverte, entrez.', 'ic.none': 'Il n’y a pas d’appartement {n} dans cet immeuble',
+    'ic.goApt': 'Aller à cet appartement', 'ic.enter': 'Entrer dans le hall', 'ic.again': 'Autre appartement', 'ic.close': 'Fermer', 'ic.locked': 'La porte est verrouillée — utilisez l’interphone à côté' },
+  it: { entrance: 'Ingresso', 'bell.ring': 'Suoniamo all’appartamento {n}…', 'bell.hint': 'Suona il campanello accanto alla porta', 'mon.open': 'Porta aperta',
+    'ic.title': 'Citofono', 'ic.prompt': 'Digita il numero dell’appartamento', 'ic.range': 'Appartamenti {a}–{b}', 'ic.stair': 'In questa scala', 'ic.call': 'Chiama', 'ic.del': 'Cancella',
+    'ic.concierge': 'Chiama il concierge', 'ic.mine': 'Il mio appartamento', 'ic.calling': 'Chiamata all’appartamento {n}…', 'ic.callingCg': 'Chiamata al concierge…',
+    'ic.answer': 'L’appartamento {n} ha risposto — la porta è aperta, prego.', 'ic.none': 'Non esiste l’appartamento {n} in questo edificio',
+    'ic.goApt': 'Vai a questo appartamento', 'ic.enter': 'Entra nella lobby', 'ic.again': 'Altro appartamento', 'ic.close': 'Chiudi', 'ic.locked': 'La porta è chiusa — usa il citofono accanto' },
+  de: { entrance: 'Eingang', 'bell.ring': 'Es klingelt bei Wohnung {n}…', 'bell.hint': 'Klingeln Sie neben der Tür', 'mon.open': 'Tür geöffnet',
+    'ic.title': 'Gegensprechanlage', 'ic.prompt': 'Wohnungsnummer eingeben', 'ic.range': 'Wohnungen {a}–{b}', 'ic.stair': 'In diesem Treppenhaus', 'ic.call': 'Anrufen', 'ic.del': 'Löschen',
+    'ic.concierge': 'Concierge rufen', 'ic.mine': 'Meine Wohnung', 'ic.calling': 'Wohnung {n} wird gerufen…', 'ic.callingCg': 'Concierge wird gerufen…',
+    'ic.answer': 'Wohnung {n} hat geöffnet — die Tür ist offen, bitte eintreten.', 'ic.none': 'In diesem Haus gibt es keine Wohnung {n}',
+    'ic.goApt': 'Zu dieser Wohnung gehen', 'ic.enter': 'Lobby betreten', 'ic.again': 'Andere Wohnung', 'ic.close': 'Schließen', 'ic.locked': 'Die Tür ist verschlossen — bitte die Gegensprechanlage daneben benutzen' },
+};
+for (const [l, o] of Object.entries(BELL_TXT)) for (const [k, v] of Object.entries(o)) (LOCAL[l] ||= {})['walk.' + k] = v;
+const ENTRY_HOLD_MS = 9000, ENTRY_UNLOCK_MS = 600000, ENTRY_GRACE_MS = 25000;   // lobby doors after an intercom release / after leaving
+const INTERCOM_DX = 0.95 + 0.42;   // the intercom totem stands this far beside the entrance axis (commons.js)
 const BD_OPEN_R = 1.4, BD_CLOSE_R = 2.5, BD_CLOSE_S = 2, BD_REARM_R = 1.9, BD_HINT_R = 2.4;
 const MAX_APTS = 2;          // apartments kept loaded at once (the farthest one is disposed)
 const LIGHT_SLOTS = 8;       // fixed pool of apartment point lights → the light count never changes (no shader recompiles)
@@ -165,6 +211,78 @@ async function loadModules(injected = {}) {
 // programs compiled for the first frame stay valid and nothing recompiles when the world arrives.
 // prewarmWalk() (called by the page in idle time) loads the modules, gets the textures from the worker, builds the
 // target apartment and compiles its programs into a spare renderer that the next Walkthrough adopts.
+// ---- apartment door-entry monitor: a slim black-glass video panel on the hall wall beside the entrance door. Built
+// here as an overlay (shared geometry / materials, 2 draw calls per loaded apartment); the screen is unlit.
+const MON = {};
+function monitorTex(ring) {
+  const W = 512, H = 370, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), TAU = Math.PI * 2;
+  g.fillStyle = '#070709'; g.fillRect(0, 0, W, H);
+  const sx = 14, sy = 12, sw = 484, sh = 268, vx = sx + sw / 2, vy = sy + sh * 0.42, ew = 46, eh = 30;
+  const quad = (pts, fill) => { g.fillStyle = fill; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill(); };
+  g.save(); g.beginPath(); g.rect(sx, sy, sw, sh); g.clip();
+  // the corridor as the door camera sees it: walls, ceiling cove, runner and the neighbours' doors converge on one point
+  const wl = g.createLinearGradient(sx, 0, sx + sw, 0);
+  wl.addColorStop(0, '#8d7a62'); wl.addColorStop(0.42, '#3c3228'); wl.addColorStop(0.58, '#3c3228'); wl.addColorStop(1, '#8d7a62');
+  g.fillStyle = wl; g.fillRect(sx, sy, sw, sh);
+  quad([[sx, sy], [sx + sw, sy], [vx + ew, vy - eh], [vx - ew, vy - eh]], '#d8cdb8');
+  quad([[sx, sy + sh], [sx + sw, sy + sh], [vx + ew, vy + eh], [vx - ew, vy + eh]], '#b3a691');
+  quad([[sx + sw * 0.3, sy + sh], [sx + sw * 0.7, sy + sh], [vx + ew * 0.4, vy + eh], [vx - ew * 0.4, vy + eh]], '#39445a');
+  quad([[vx - ew, vy - eh], [vx + ew, vy - eh], [vx + ew, vy + eh], [vx - ew, vy + eh]], '#2a231c');
+  quad([[vx - 14, vy - 20], [vx + 14, vy - 20], [vx + 14, vy + 22], [vx - 14, vy + 22]], '#9db4c9');
+  for (const s of [-1, 1]) {
+    const ex = s < 0 ? sx : sx + sw, X = t => ex + (vx + s * ew - ex) * t, Yt = t => sy + (vy - eh - sy) * t, Yb = t => sy + sh + (vy + eh - sy - sh) * t;
+    for (const [t0, t1] of [[0.2, 0.42], [0.58, 0.7], [0.8, 0.86]]) {
+      const top = t => Yt(t) + (Yb(t) - Yt(t)) * 0.2;
+      quad([[X(t0), top(t0)], [X(t1), top(t1)], [X(t1), Yb(t1)], [X(t0), Yb(t0)]], '#2b1c12');
+      g.fillStyle = '#d9b46c'; g.fillRect(X(t1) - s * 6 - 2, (top(t1) + Yb(t1)) / 2, 4, 4);
+    }
+    g.strokeStyle = 'rgba(255,224,176,0.9)'; g.lineWidth = 3; g.beginPath(); g.moveTo(X(0), Yt(0) + 14); g.lineTo(X(1), Yt(1) + 2); g.stroke();
+  }
+  if (ring) {   // a visitor at the door
+    g.fillStyle = '#17120e'; g.beginPath(); g.arc(vx + 6, sy + 128, 46, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(vx + 6, sy + sh + 30, 128, 104, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,214,150,0.55)'; g.lineWidth = 3; g.beginPath(); g.arc(vx + 6, sy + 128, 46, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+  }
+  const vg = g.createRadialGradient(vx, sy + sh / 2, sh * 0.35, vx, sy + sh / 2, sw * 0.68);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, ring ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.72)');
+  g.fillStyle = vg; g.fillRect(sx, sy, sw, sh);
+  if (!ring) { g.fillStyle = 'rgba(8,12,20,0.38)'; g.fillRect(sx, sy, sw, sh); }
+  g.fillStyle = '#ff5346'; g.beginPath(); g.arc(sx + 22, sy + 22, 6, 0, TAU); g.fill();
+  if (ring) {   // bell badge with sound arcs
+    const bx = sx + sw - 46, by = sy + 44;
+    g.fillStyle = '#f0cf8a'; g.beginPath(); g.arc(bx, by + 4, 15, Math.PI, TAU); g.lineTo(bx + 19, by + 14); g.lineTo(bx - 19, by + 14); g.closePath(); g.fill();
+    g.beginPath(); g.arc(bx, by + 19, 4.5, 0, TAU); g.fill();
+    g.strokeStyle = '#f0cf8a'; g.lineWidth = 3;
+    for (const r of [26, 35]) for (const s of [-1, 1]) { g.beginPath(); g.arc(bx, by + 2, r, s < 0 ? Math.PI * 1.08 : Math.PI * 1.72, s < 0 ? Math.PI * 1.28 : Math.PI * 1.92); g.stroke(); }
+  }
+  g.restore();
+  g.strokeStyle = ring ? '#e6c987' : '#3a3a42'; g.lineWidth = 2; g.strokeRect(sx, sy, sw, sh);
+  // keys: speaker · door release (brass) · mute
+  const ky = 326;
+  for (const [x, main] of [[176, 0], [256, 1], [336, 0]]) {
+    g.beginPath(); g.arc(x, ky, main ? 27 : 21, 0, TAU);
+    if (main) { const gr = g.createLinearGradient(x - 27, ky - 27, x + 27, ky + 27); gr.addColorStop(0, '#f3dca0'); gr.addColorStop(1, '#a87f3c'); g.fillStyle = gr; g.fill(); }
+    else { g.fillStyle = '#17171b'; g.fill(); g.strokeStyle = '#5a5a64'; g.lineWidth = 2; g.stroke(); }
+  }
+  g.strokeStyle = '#20160a'; g.fillStyle = '#20160a'; g.lineWidth = 4; g.lineCap = 'round';   // key glyph
+  g.beginPath(); g.arc(247, ky, 7, 0, TAU); g.stroke(); g.beginPath(); g.moveTo(254, ky); g.lineTo(272, ky); g.moveTo(266, ky); g.lineTo(266, ky + 7); g.moveTo(272, ky); g.lineTo(272, ky + 6); g.stroke();
+  g.fillStyle = '#b9b9c4'; g.strokeStyle = '#b9b9c4'; g.lineWidth = 2.5;
+  quad([[166, ky - 4], [171, ky - 4], [178, ky - 10], [178, ky + 10], [171, ky + 4], [166, ky + 4]], '#b9b9c4');
+  g.beginPath(); g.arc(178, ky, 8, -0.8, 0.8); g.stroke();
+  g.beginPath(); g.arc(336, ky + 1, 8, Math.PI, TAU); g.lineTo(346, ky + 6); g.lineTo(326, ky + 6); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(325, ky - 11); g.lineTo(347, ky + 11); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function monitorParts() {
+  if (MON.body) return MON;
+  MON.body = new THREE.BoxGeometry(0.24, 0.178, 0.02).translate(0, 0, 0.01);
+  MON.face = new THREE.PlaneGeometry(0.226, 0.1635).translate(0, 0, 0.0206);
+  MON.shell = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.16, metalness: 0.45, envMapIntensity: 1.1 });
+  MON.idle = new THREE.MeshBasicMaterial({ map: monitorTex(false), color: 0xd8d8d8 });
+  MON.ring = new THREE.MeshBasicMaterial({ map: monitorTex(true), color: 0xffffff });
+  return MON;
+}
 const mark = n => { try { performance.mark('walk:' + n); } catch { /* old browsers */ } };
 const GHOSTS = { PointLight: 5, HemisphereLight: 2, DirectionalLight: 1, SpotLight: 1 };   // commons rig + sky + car headlights
 const LIGHT_TOTALS = { ...GHOSTS, PointLight: GHOSTS.PointLight + LIGHT_SLOTS };   // + the apartment light pool
@@ -522,6 +640,23 @@ const CSS = `
 .vw-cg .acts.fl button.mine{background:rgba(201,164,92,.2);border-color:var(--g2)}
 .vw.phone .vw-cg{bottom:calc(10px + var(--sb))}
 .vw.riding .vw-cg,.vw.m360 .vw-cg{display:none}
+.vw-ic .disp{display:flex;align-items:center;justify-content:center;height:44px;margin:9px 0 5px;border-radius:11px;border:1px solid var(--ln);background:linear-gradient(180deg,#0e1a2b,#1d3350);font:600 25px/1 "Manrope","Inter Tight",Arial,sans-serif;letter-spacing:.2em;color:#fff3dc;direction:ltr;transition:background .3s}
+.vw-ic .disp.empty{font-size:12.5px;font-weight:400;letter-spacing:.02em;color:#b9c6d8;direction:inherit;unicode-bidi:plaintext}
+.vw-ic .disp.ok{background:linear-gradient(180deg,#0d3323,#23744b)}
+.vw-ic .disp.calling{animation:vwicp 1s ease-in-out infinite}
+@keyframes vwicp{50%{box-shadow:0 0 0 3px rgba(230,201,135,.35);border-color:var(--g2)}}
+.vw-ic .info{min-height:17px;margin:0 2px 7px;font-size:12px;line-height:1.4;color:#d9cdb2;text-align:center;unicode-bidi:plaintext}
+.vw-ic .info.ok{color:#9be8bd}.vw-ic .info.err{color:#ff9d8a}
+.vw-ic .lst{display:flex;align-items:center;gap:5px;overflow-x:auto;margin:0 0 7px;padding-bottom:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.vw-ic .lst::-webkit-scrollbar{display:none}
+.vw-ic .lst span{flex:0 0 auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--g);padding-inline-end:3px}
+.vw-ic .lst button{flex:0 0 auto;min-width:40px;height:26px;padding:0 7px;border-radius:999px;border:1px solid var(--ln);background:rgba(255,255,255,.03);color:#efe5cf;font-size:11.5px}
+.vw-ic .lst button.mine{border-color:var(--g2);background:rgba(201,164,92,.2);color:var(--g2)}
+.vw-ic .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;direction:ltr;margin-bottom:7px}
+.vw-ic .pad button{height:40px;border-radius:11px;border:1px solid var(--ln);background:rgba(255,255,255,.04);color:#fff3dc;font:600 17px/1 "Manrope","Inter Tight",Arial,sans-serif;display:flex;align-items:center;justify-content:center}
+.vw-ic .pad button:active{background:rgba(201,164,92,.25)}
+.vw-ic .pad button.call{background:linear-gradient(180deg,#e6c987,#b88a3c);color:#16110a;border-color:transparent}
+.vw-ic .pad button.del{color:var(--g2)}
 `;
 
 export class Walkthrough {
@@ -938,6 +1073,7 @@ export class Walkthrough {
     const e = { unit, apt, src: 'apt:' + unit.id, lights: specs, rooms: null, ms: performance.now() - t0 };
     this.loaded.set(unit.id, e);
     this._register(apt.group, e.src);
+    this._addMonitor(e);
     if (this.commons) this._hideDuplicateDoor();
     return e;
   }
@@ -975,6 +1111,7 @@ export class Walkthrough {
   _disposeEntry(e) {
     if (!e) return;
     this._unregister(e.src);
+    if (e.monitor) { e.monitor.dispose(); e.monitor = null; }
     this.scene.remove(e.apt.group);
     try { e.apt.dispose ? e.apt.dispose() : disposeTree(e.apt.group); } catch (err) { console.warn(err); }
     this.loaded.delete(e.unit.id);
@@ -1361,11 +1498,18 @@ export class Walkthrough {
     const u = this.unit, apt = this.apt;
     const unitFloor = u.floor;
     if (where === 'lobby' || where === 'parking') return { floor: where === 'lobby' ? 0 : -1, spawn: true };
-    if (where === 'corridor') {
-      // stand a little up the corridor and look at the entrance door diagonally
-      const side = u.door.u > 1.9 ? -1.9 : 1.9;
-      const pos = this._unitPoint(u.door.u + side, -0.8);
-      return { floor: unitFloor, pos, yaw: this._unitDirYaw(-side, 0.75), free: true };
+    if (where === 'corridor' || (where && where.door)) {
+      // stand a little up the corridor and look at the entrance door diagonally ({door: unit} → any apartment's door)
+      const d = (where && where.door) || u, side = d.door.u > 1.9 ? -1.9 : 1.9;
+      const [x, z] = unitToWorld(d, d.door.u + side, -0.8), U = d.frame.U, V = d.frame.V;
+      const [wx, wz] = dirToWorld(d.building, U[0] * -side + V[0] * 0.75, U[1] * -side + V[1] * 0.75);
+      return { floor: d.floor, bId: d.building, pos: new THREE.Vector3(x, floorY(d.floor), z), yaw: yawFromDir(wx, wz), free: true };
+    }
+    if (where === 'entrance') {
+      // outside the lobby doors of the unit's staircase, facing the video intercom beside them
+      const c = coresOf(u.building).find(c => c.stair === u.stair) || coresOf(u.building)[0], oz = Math.sign(c.zOut) || -1;
+      const [x, z] = localToWorldXZ(u.building, c.entrance[0] + 0.95, c.zOut + oz * 1.4), [ix, iz] = localToWorldXZ(u.building, c.entrance[0] + INTERCOM_DX, c.zOut + oz * 0.1);
+      return { floor: 0, pos: new THREE.Vector3(x, floorY(0), z), yaw: yawFromDir(ix - x, iz - z), pitch: -0.14 };
     }
     if (where === 'balcony') {
       const bp = (apt && apt.balconyPoint) || { u: u.width / 2, v: u.depth + GEOM.balconyDepth * 0.55 };
@@ -1403,7 +1547,7 @@ export class Walkthrough {
     if (!instant) await this._fade(true);
     try {
       let s = this._spot(where);
-      const bId = this.unit.building;
+      const bId = s.bId || this.unit.building;
       if (skipFloor && !s.spawn) { this.floor = s.floor; this.bId = bId; }   // commons follow in _streamWorld
       else await this._setFloor(bId, s.floor);
       if (this.disposed) return;
@@ -1418,7 +1562,7 @@ export class Walkthrough {
         if (fy !== null) pos.y = fy;
         const [fx, fz] = this._freeSpot(pos.x, pos.y, pos.z); pos.x = fx; pos.z = fz;
       }
-      this._place(pos, s.yaw);
+      this._place(pos, s.yaw, s.pitch);
       if (where === 'balcony' || (where && where.room && OUTDOOR.has(where.room.kind))) this._openBalconyDoorAt(pos);
       this.player.eye = this.mode === '360' ? EYE_360 : EYE;
       this._lastPlace = null;
@@ -1742,6 +1886,9 @@ export class Walkthrough {
     const act = a.action;
     if (act.type === 'aptDoor' && act.part === 'balconyDoor') return this._tapBalconyDoor(a);
     if (act.type === 'aptDoor') return act.part ? (this._click?.(0.35), this._toggleDoor(a.obj)) : this._onAptDoor(act.unitId, a.obj);
+    if (act.type === 'doorbell') return this._ringBell(a);
+    if (act.type === 'aptMonitor') return this._monitorOpen(act.unitId);
+    if (act.type === 'intercom') return this._icShow(act);
     if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object, a.hit);
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
     if (act.type === 'liftDoor') return this._liftDoorKey(act);
@@ -1860,6 +2007,277 @@ export class Walkthrough {
         o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.15);
       }
     } catch { /* optional */ }
+  }
+
+  // ======================= doorbells, door-entry monitor, entrance intercom =======================
+  _sfx(k, n) { const l = (this._sfxLog ||= []); l.push({ k, n, t: this._ac ? +this._ac.currentTime.toFixed(3) : 0 }); if (l.length > 40) l.shift(); }
+  // One enveloped oscillator → destination node; returns the node count (for the sound log)
+  _osc(ac, out, type, f, t, dur, vol, a = 0.008) {
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + a); g.gain.exponentialRampToValueAtTime(0.0004, t + dur);
+    o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+  _dingDong() {   // two struck chime bars a major third apart (E5 → C5), each with a few inharmonic partials
+    const ac = this._audio(); if (!ac) return 0;
+    try {
+      const t0 = ac.currentTime + 0.03, out = ac.createGain(); out.gain.value = 0.85; out.connect(ac.destination);
+      for (const [f, dt] of [[659.25, 0], [523.25, 0.44]]) for (const [mul, vol, dec] of [[1, 0.17, 1.6], [2, 0.05, 0.95], [2.76, 0.03, 0.5], [5.4, 0.012, 0.22]]) this._osc(ac, out, 'sine', f * mul, t0 + dt, dec, vol);
+      this._sfx('dingdong', 16);
+    } catch { /* optional */ }
+    return 1500;
+  }
+  _icKeyTone(d) {   // DTMF pair of the key
+    const ac = this._audio(); if (!ac) return;
+    try {
+      const i = '123456789*0#'.indexOf(String(d)), t = ac.currentTime + 0.005;
+      const lo = [697, 770, 852, 941][i < 0 ? 3 : (i / 3) | 0], hi = [1209, 1336, 1477][i < 0 ? 1 : i % 3];
+      for (const f of [lo, hi]) this._osc(ac, ac.destination, 'sine', f, t, 0.11, 0.035, 0.004);
+      this._sfx('key', 4);
+    } catch { /* optional */ }
+  }
+  _icRing(bursts = 2) {   // ringback tone: 425 Hz bursts
+    const ac = this._audio(), on = 0.85, gap = 0.5; if (!ac) return bursts * (on + gap) * 1000;
+    try {
+      const t0 = ac.currentTime + 0.05;
+      for (let i = 0; i < bursts; i++) {
+        const t = t0 + i * (on + gap), g = ac.createGain();
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.055, t + 0.03); g.gain.setValueAtTime(0.055, t + on - 0.05); g.gain.linearRampToValueAtTime(0, t + on);
+        g.connect(ac.destination);
+        for (const f of [425, 850.6]) { const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine'; o.frequency.value = f; og.gain.value = f > 500 ? 0.18 : 1; o.connect(og).connect(g); o.start(t); o.stop(t + on + 0.02); }
+      }
+      this._sfx('ring', bursts * 5);
+    } catch { /* optional */ }
+    return bursts * (on + gap) * 1000;
+  }
+  _icAnswer() {   // pick-up: two rising notes
+    const ac = this._audio(); if (!ac) return;
+    try { const t = ac.currentTime + 0.02; this._osc(ac, ac.destination, 'sine', 784, t, 0.2, 0.06); this._osc(ac, ac.destination, 'sine', 1046.5, t + 0.14, 0.34, 0.06); this._sfx('answer', 4); } catch { /* optional */ }
+  }
+  _icBuzz(k = 1) {   // door-strike buzz: mains-hum sawtooth through a low-pass, with a clack at each end
+    const ac = this._audio(); if (!ac) return;
+    try {
+      const t = ac.currentTime + 0.02, dur = 1.1 * k, g = ac.createGain(), lp = ac.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 1100; lp.Q.value = 0.8;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.015); g.gain.setValueAtTime(0.06, t + dur - 0.03); g.gain.linearRampToValueAtTime(0, t + dur);
+      lp.connect(g).connect(ac.destination);
+      for (const [type, f] of [['sawtooth', 100], ['square', 200.7]]) { const o = ac.createOscillator(), og = ac.createGain(); o.type = type; o.frequency.value = f; og.gain.value = type === 'square' ? 0.35 : 1; o.connect(og).connect(lp); o.start(t); o.stop(t + dur + 0.02); }
+      for (const tt of [t, t + dur]) this._osc(ac, ac.destination, 'triangle', 180, tt, 0.07, 0.07, 0.002);
+      this._sfx('buzz', 8);
+    } catch { /* optional */ }
+  }
+  _icError() {
+    const ac = this._audio(); if (!ac) return;
+    try { const t = ac.currentTime + 0.01; for (const dt of [0, 0.17]) this._osc(ac, ac.destination, 'square', 233, t + dt, 0.13, 0.03); this._sfx('error', 4); } catch { /* optional */ }
+  }
+
+  // Tap on a bell push (one InstancedMesh per floor): press it, chime, and after a beat the door opens as on a door tap.
+  _ringBell(a) {
+    const ids = a.obj.userData.bellUnits, i = a.hit ? a.hit.instanceId : null;
+    const unitId = ids && i != null ? ids[i] : null;
+    if (unitId) return this._pressBell(unitId);
+  }
+  async _pressBell(unitId) {
+    if (this.riding || this._bellBusy) return;
+    this._bellBusy = unitId;
+    try {
+      const c = this.commons, u = unitById(unitId);
+      this._click(0.6);
+      if (c && c.bells) c.bells.press(unitId, 1100);
+      this._dingDong();
+      this._monitorRing(unitId);
+      if (u) this._toast(this.t('walk.bell.ring').replace('{n}', u.apNo), 1900);
+      await this._sleep(1150);
+      if (this.disposed || this.riding) return;
+      const e = this.loaded.get(unitId);
+      if (e) { const leaf = e.apt.doorLeaf; if (leaf && !leaf.userData._open) await this._onAptDoor(unitId, leaf); return; }
+      const leaf = this.commons && this.commons.leafOf ? this.commons.leafOf(unitId) : null;
+      if (!leaf) return;
+      await this._onAptDoor(unitId, leaf);
+      this._monitorRing(unitId, 2600);   // the apartment behind the door has just been built: its monitor is still ringing
+    } finally { this._bellBusy = null; }
+  }
+  // The video monitor on the hall wall by the entrance door of a loaded apartment (shared parts, see monitorParts).
+  _addMonitor(e) {
+    try {
+      const M = monitorParts(), u = e.unit, apt = e.apt, P = apt.plan || {};
+      const ul = P.ul ?? 0.1, vc = P.vc ?? 0.15, du = P.doorU ?? (apt.entrance && apt.entrance.u) ?? u.door.u;
+      // free stretch of the corridor wall on the latch side: between the hall wardrobe / laundry tower and the architrave
+      const gap = du - 0.5 - ul, left = ul + (gap >= 0.62 ? 0.66 : 0.02), right = du - 0.6;
+      const h = new THREE.Group(); h.name = 'walk-door-monitor';
+      h.position.copy(apt.group.position); h.rotation.y = apt.group.rotation.y;
+      const g = new THREE.Group();
+      if (right - left >= 0.32) g.position.set(Math.max(left + 0.14, right - 0.17), 1.43, vc + 0.001);
+      else { g.position.set(ul + 0.001, 1.43, vc + (gap >= 0.62 ? 0.7 : 0.42)); g.rotation.y = Math.PI / 2; }   // no room there: the party wall
+      const body = new THREE.Mesh(M.body, M.shell), face = new THREE.Mesh(M.face, M.idle);
+      face.userData.action = { type: 'aptMonitor', unitId: u.id };
+      g.add(body, face); h.add(g); this.scene.add(h); h.updateMatrixWorld(true);
+      this._register(h, e.src);
+      let timer = 0;
+      e.monitor = {
+        group: h, face,
+        ring: (ms = 2600) => { face.material = M.ring; clearTimeout(timer); timer = setTimeout(() => { face.material = M.idle; }, ms); },
+        dispose: () => { clearTimeout(timer); if (h.parent) h.parent.remove(h); },
+      };
+    } catch (err) { console.warn('[walk] door monitor', err); }
+  }
+  _monitorRing(unitId, ms) { const e = this.loaded.get(unitId); if (e && e.monitor) e.monitor.ring(ms); }
+  async _monitorOpen(unitId) {   // the "door" key of the monitor releases the entrance door
+    const e = this.loaded.get(unitId); if (!e) return;
+    this._click(0.5); this._icBuzz(0.4);
+    const leaf = e.apt.doorLeaf;
+    if (leaf && !leaf.userData._open) { this._toast(this.t('walk.mon.open'), 1500); await this._toggleDoor(leaf, true); }
+  }
+
+  // ---- entrance video intercom (commons.intercoms; tap → HUD dialog)
+  _icUnits(bId) {
+    const m = (this._icMaps ||= {});
+    if (!m[bId]) { const map = new Map(); for (const u of UNITS) if (u.building === bId) map.set(String(u.apNo), u); m[bId] = map; }
+    return m[bId];
+  }
+  _icShow(act) {
+    if (!this.el || this.riding || this.drive) return;
+    if (!this.el.ic) {
+      const d = document.createElement('div'); d.className = 'vw-cg vw-ic vw-panel'; d.setAttribute('role', 'dialog');
+      d.innerHTML = `<div class="hd"><span class="av" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e6c987" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2"/><circle cx="12" cy="6.6" r="1.6"/><rect x="9" y="10" width="6" height="3.6" rx=".6"/><path d="M9.3 16.4h.1M12 16.4h.1M14.7 16.4h.1M9.3 18.8h.1M12 18.8h.1M14.7 18.8h.1"/></svg></span>
+        <div class="who"><b></b><span></span></div><button class="ib" data-ic="close">✕</button></div><div class="body"></div>`;
+      this.el.hud.appendChild(d); this.el.ic = d;
+    }
+    this._click(0.4);
+    if (this._cgOpen) this._cgClose();
+    this._ic = { bId: act.building, stair: act.stair, num: '', view: 'pad', unit: null, err: false, tok: 0 };
+    this._icOpen = true;
+    this._icRender();
+    this.el.ic.classList.add('show');
+  }
+  _icClose() {
+    this._icOpen = false;
+    if (this._ic) this._ic.tok++;
+    if (this.el && this.el.ic) this.el.ic.classList.remove('show');
+  }
+  _icUnitLine(u) { return `${u.apNo} · ${u.floor === 0 ? this.t('walk.ground') : `${this.t('walk.floor')} ${u.floor}`} · Sc.${u.stair}`; }
+  _icRender() {
+    const d = this.el && this.el.ic, ic = this._ic; if (!d || !ic) return;
+    const t = k => this.t('walk.ic.' + k), esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    d.dir = this.dir; d.lang = this.lang; d.setAttribute('aria-label', t('title'));
+    d.querySelector('.who b').textContent = t('title');
+    d.querySelector('.who span').textContent = `${(BUILDINGS[ic.bId] && BUILDINGS[ic.bId].label) || ic.bId} · Sc.${ic.stair}`;
+    const x = d.querySelector('[data-ic=close]'); x.title = t('close'); x.setAttribute('aria-label', t('close'));
+    const body = d.querySelector('.body'), map = this._icUnits(ic.bId), mine = this.unit && this.unit.building === ic.bId ? this.unit : null;
+    if (ic.view === 'calling') {
+      body.innerHTML = `<div class="disp calling">${ic.unit ? esc(ic.unit.apNo) : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17M12 10V8"/></svg>'}</div>
+        <div class="info" aria-live="polite">${esc(ic.unit ? t('calling').replace('{n}', ic.unit.apNo) : t('callingCg'))}</div>
+        <div class="acts"><button class="wide" data-ic="again">${esc(t('close'))}</button></div>`;
+      return;
+    }
+    if (ic.view === 'answered') {
+      const u = ic.unit;
+      body.innerHTML = `<div class="disp ok">✓ ${esc(u.apNo)}</div>
+        <p class="msg" aria-live="polite">${esc(t('answer').replace('{n}', u.apNo))}</p>
+        <div class="acts"><button class="pri" data-ic="go" style="grid-column:1/-1"><i>⌂</i><span>${esc(t('goApt'))}<small>${esc(this._icUnitLine(u))}</small></span></button>
+        <button data-ic="enter"><i>⇥</i><span>${esc(t('enter'))}</span></button><button data-ic="again"><i>#</i><span>${esc(t('again'))}</span></button>
+        <button class="wide" data-ic="close">${esc(t('close'))}</button></div>`;
+      return;
+    }
+    const hit = ic.num ? map.get(ic.num) : null, nos = [...map.keys()].map(Number);
+    const info = hit ? ['ok', this._icUnitLine(hit)] : ic.err && ic.num ? ['err', t('none').replace('{n}', ic.num)] : ['', t('range').replace('{a}', Math.min(...nos)).replace('{b}', Math.max(...nos))];
+    const here = [...map.values()].filter(u => u.stair === ic.stair).sort((a, b) => a.apNo - b.apNo);
+    body.innerHTML = `<div class="disp${ic.num ? '' : ' empty'}">${esc(ic.num || t('prompt'))}</div>
+      <div class="info ${info[0]}" aria-live="polite">${esc(info[1])}</div>
+      <div class="lst"><span>${esc(t('stair'))}</span>${here.map(u => `<button data-ic="u" data-n="${u.apNo}"${u === mine ? ' class="mine"' : ''}>${u.apNo}</button>`).join('')}</div>
+      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-ic="d" data-n="${n}">${n}</button>`).join('')}
+        <button class="del" data-ic="del" aria-label="${esc(t('del'))}" title="${esc(t('del'))}">⌫</button><button data-ic="d" data-n="0">0</button>
+        <button class="call" data-ic="call" aria-label="${esc(t('call'))}" title="${esc(t('call'))}"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 3.2 9 3l1.5 4.2-1.9 1.5a11 11 0 0 0 6.7 6.7l1.5-1.9L21 15l-.2 2.4a3.4 3.4 0 0 1-3.6 3.2C10 20 4 14 3.4 6.8a3.4 3.4 0 0 1 3.2-3.6z"/></svg></button></div>
+      <div class="acts">${mine ? `<button data-ic="mine"><i>⌂</i><span>${esc(t('mine'))}<small>${esc(mine.apNo)}</small></span></button>` : ''}
+        <button data-ic="cg"${mine ? '' : ' style="grid-column:1/-1"'}><i>✦</i><span>${esc(t('concierge'))}</span></button>
+        <button class="wide" data-ic="close">${esc(t('close'))}</button></div>`;
+    const lst = body.querySelector('.lst'), cur = lst.querySelector(ic.num ? `[data-n="${ic.num}"]` : '.mine');   // keep the typed / own number in view (LTR and RTL)
+    if (cur) { const a = cur.getBoundingClientRect(), r = lst.getBoundingClientRect(); lst.scrollLeft += a.left + a.width / 2 - r.left - r.width / 2; }
+  }
+  async _icAction(k, b) {
+    const ic = this._ic; if (!ic) return;
+    if (k === 'close') { this._click(0.3); return this._icClose(); }
+    if (k === 'd') { if (ic.num.length < 3) ic.num += b.dataset.n; ic.err = false; this._icKeyTone(b.dataset.n); return this._icRender(); }
+    if (k === 'del') { ic.num = ic.num.slice(0, -1); ic.err = false; this._click(0.3); return this._icRender(); }
+    if (k === 'u') { ic.num = String(b.dataset.n); ic.err = false; this._icKeyTone('#'); return this._icRender(); }
+    if (k === 'again') { this._click(0.3); ic.tok++; ic.view = 'pad'; ic.num = ''; ic.unit = null; ic.err = false; return this._icRender(); }
+    if (k === 'mine' && this.unit) ic.num = String(this.unit.apNo);
+    if (k === 'call' || k === 'mine') {
+      const u = this._icUnits(ic.bId).get(ic.num);
+      if (!u) { ic.err = true; this._icError(); return this._icRender(); }
+      return this._icCall(u);
+    }
+    if (k === 'cg') return this._icCall(null);
+    if (k === 'enter') { this._click(0.3); this._icClose(); return this._walkIn(ic.bId, ic.stair); }
+    if (k === 'go') { this._click(0.3); return this._icGoApt(); }
+  }
+  // Ring an apartment (or the concierge when unit is null): ringback → pick-up → door-strike buzz → the lobby doors open.
+  async _icCall(unit) {
+    const ic = this._ic, tok = ++ic.tok, stale = () => this.disposed || !this._icOpen || ic !== this._ic || ic.tok !== tok;
+    ic.view = 'calling'; ic.unit = unit; this._icRender();
+    this._icKeyTone('#');
+    await this._sleep(260); if (stale()) return;
+    await this._sleep(this._icRing(unit ? 2 : 1)); if (stale()) return;
+    this._icAnswer();
+    await this._sleep(520); if (stale()) return;
+    this._icBuzz();
+    this._releaseEntrance(ic.bId, ic.stair);
+    if (unit) { ic.view = 'answered'; return this._icRender(); }
+    this._icClose();
+    const cg = ((this.commons && this.commons.concierges) || [])[0];
+    if (cg) this._cgShow(cg, { auto: false, stair: ic.stair });
+  }
+  _releaseEntrance(bId, stair) {
+    (this._entryOpen ||= {})[bId + ':' + stair] = performance.now();
+    const c = this.commons, rec = c && c.bId === bId && (c.intercoms || []).find(i => i.stair === stair);
+    if (rec) rec.setOpen(true);
+  }
+  // Walk the visitor from the forecourt through the (released) lobby doors into the lobby.
+  async _walkIn(bId, stair) {
+    const c = coresOf(bId).find(c => c.stair === stair); if (!c || this.riding || this.busy) return;
+    const oz = Math.sign(c.zOut) || -1, P = this.player;
+    const pts = [[c.entrance[0], c.zOut + oz * 0.9], [c.entrance[0], c.zOut - oz * 2.7]].map(([x, z]) => localToWorldXZ(bId, x, z));
+    this._releaseEntrance(bId, stair);
+    this.busy = true; this.glide = null;
+    try {
+      await this._sleep(380);   // the leaves start to slide
+      for (const [x, z] of pts) {
+        const from = P.pos.clone(), L = Math.hypot(x - from.x, z - from.z); if (L < 0.05) continue;
+        const fy = P.yaw, ty = fy + wrapPi(yawFromDir(x - from.x, z - from.z) - fy);
+        await tween(Math.min(2600, Math.max(520, L * 560)), k => { P.pos.x = from.x + (x - from.x) * k; P.pos.z = from.z + (z - from.z) * k; P.tYaw = P.yaw = fy + (ty - fy) * Math.min(1, k * 2.2); P.tPitch = P.pitch = P.pitch * (1 - k * 0.5); P.vel.set(0, 0, 0); });
+        if (this.disposed) return;
+      }
+      this._hideFloorsForWalker(true);
+    } finally { this.busy = false; }
+  }
+  // Take the lift of a staircase to another floor: call it, step in, press the key, ride.
+  async _rideTo(floor, stair, bId = this.bId) {
+    if (this.riding || this.busy) return false;
+    if (floor === this.floor) return true;
+    await this._callLift(stair, bId);
+    const inf = this._carOf(this.player.pos);
+    if (!inf) return false;
+    await this._pressKey(inf, floor);
+    return this.floor === floor;
+  }
+  async _icGoApt() {
+    const ic = this._ic, u = ic && ic.unit; if (!u) return;
+    this._icClose();
+    if (this.busy || this.riding || this.drive) return;
+    if (this._isOutside()) await this._walkIn(ic.bId, ic.stair);
+    if (this.disposed) return;
+    if (u.floor !== this.floor || u.building !== this.bId) {
+      this._toast(this.t('walk.cg.going'), 2200);
+      if (!(await this._rideTo(u.floor, ic.stair, ic.bId))) return;
+    }
+    await this._goto(u === this.unit ? 'corridor' : { door: u });
+    this._toast(this.t('walk.bell.hint'), 2800);
+  }
+  _intercomTick() {
+    if (!this._icOpen) return;
+    const ic = this._ic, c = this.commons, rec = c && c.bId === ic.bId && (c.intercoms || []).find(i => i.stair === ic.stair);
+    if (!rec || this.riding || this.drive) return this._icClose();
+    const [x, z] = localToWorldXZ(ic.bId, rec.x, rec.z), P = this.player.pos;
+    if (Math.hypot(P.x - x, P.z - z) > 7) this._icClose();
   }
 
   _toggleDoor(leaf, open) {
@@ -2184,8 +2602,10 @@ export class Walkthrough {
       else if (d > 4.2 && cg._near) { cg._near = false; if (this._cgOpen && this._cgCur === cg) this._cgClose(); }
     }
   }
-  _cgShow(cg, { auto = false } = {}) {
+  _cgShow(cg, { auto = false, stair = null } = {}) {
     if (!this.el) return;
+    if (this._icOpen) this._icClose();
+    this._cgStair = stair ?? cg.stair;   // the lifts she sends you to (called from an entrance intercom: that staircase)
     if (!this.el.cg) {
       const d = document.createElement('div'); d.className = 'vw-cg vw-panel'; d.setAttribute('role', 'dialog');
       d.innerHTML = `<div class="hd"><span class="av" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e6c987" stroke-width="1.3" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M15.2 5.6c1.3.2 2.2 1.2 2 2.4"/><path d="M5 20c.6-4 3.4-6.2 7-6.2s6.4 2.2 7 6.2"/><path d="M10 14.2 12 17l2-2.8"/></svg></span>
@@ -2266,7 +2686,8 @@ export class Walkthrough {
     if (this.riding || this.busy || !this.unit) return false;
     if (floor === this.floor) return true;
     this._toast(this.t('walk.cg.going'), 2200);
-    const stair = this._cgCur ? this._cgCur.stair : null;
+    const stair = this._cgStair ?? (this._cgCur ? this._cgCur.stair : null);
+    if (stair != null && this._isOutside()) await this._walkIn(this.bId, stair);   // called from the entrance intercom
     await this._callLift(stair, this.bId);
     const inf = this._carOf(this.player.pos);
     if (!inf) return false;
@@ -2395,6 +2816,7 @@ export class Walkthrough {
     this._balconyDoorsTick(dt);
     this._syncCamera();
     this._conciergeTick(dt);
+    this._intercomTick();
     this._aptEnterWatch();
     this._cullWorld();
     if (this.fleet) this.fleet.update(this.camera);
@@ -2725,6 +3147,7 @@ export class Walkthrough {
     this.root.lang = this.lang;
     e.reserve.querySelector('.lbl').textContent = this.t('walk.reserve');
     if (this._cgOpen) this._cgRender(this._cgView);
+    if (this._icOpen) this._icRender();
     e.exit.querySelector('.lbl').textContent = this.t('walk.exit');
     e.exit.setAttribute('aria-label', this.t('walk.exit'));
     e.helpBtn.title = this.t('walk.help');
@@ -2818,7 +3241,7 @@ export class Walkthrough {
   _renderTime() { if (this.el) for (const b of this.el.timeSeg.children) b.classList.toggle('on', b.dataset.t === this.envMode); }
   _renderTeleports() {
     const box = this.el.tp; box.innerHTML = '';
-    for (const k of ['lobby', 'corridor', 'apartment', 'balcony', 'parking']) {
+    for (const k of ['entrance', 'lobby', 'corridor', 'apartment', 'balcony', 'parking']) {
       const b = document.createElement('button'); b.className = 'vw-chip tp'; b.dataset.tp = k; b.textContent = this.t('walk.' + k); box.appendChild(b);
     }
   }
@@ -3332,7 +3755,6 @@ export class Walkthrough {
     if (P.x > R.x0 - 16 && P.x < R.x1 + 16 && P.z > R.z0 - 18 && P.z < R.z1 + 3 && P.y > -4 && P.y < 1.5) want = [this.bId || (this.unit && this.unit.building) || this._nearestBuilding(P.x, P.z), -1];
     else if (P.y > -0.6 && P.y < 1.5 && !this.drive) {
       for (const id of Object.keys(BUILDINGS)) for (const c of coresOf(id)) {
-        if (c.stair === 2) continue;
         const [x, z] = localToWorldXZ(id, c.entrance[0], c.entrance[1]);
         if (Math.hypot(P.x - x, P.z - z) < 7) want = [id, 0];
       }
@@ -3341,13 +3763,22 @@ export class Walkthrough {
     this._swapBusy = true;
     this._setFloor(want[0], want[1]).catch(e => console.warn('[walk] floor swap', e)).finally(() => { this._swapBusy = false; });
   }
-  // Automatic sliding doors of the courtyard lobbies
+  // Automatic sliding doors of the lobbies. From inside they open on approach (and stay unlocked for a moment after you
+  // step out); from the forecourt they are locked until the video intercom beside them releases them.
   _autoDoors(dt) {
     const c = this.commons; if (!c || !c.autoDoors || !c.autoDoors.length) return;
-    const P = this.player.pos;
+    const P = this.player.pos, now = performance.now(), level = Math.abs(P.y - floorY(0)) < 2;
+    const inside = level && this._inFootprint(P.x, P.z) === c.bId;
     for (const d of c.autoDoors) {
-      const [x, z] = localToWorldXZ(c.bId, d.x, d.z);
-      const t = Math.abs(P.y - floorY(0)) < 2 && Math.hypot(P.x - x, P.z - z) < 3.4 ? 1 : 0;
+      const [x, z] = localToWorldXZ(c.bId, d.x, d.z), dist = level ? Math.hypot(P.x - x, P.z - z) : 99;
+      const key = c.bId + ':' + d.stair, rel = this._entryOpen && this._entryOpen[key], age = rel ? now - rel : Infinity;
+      if (inside && dist < 3.4) d.grace = now;
+      if (rel && age > ENTRY_UNLOCK_MS) { delete this._entryOpen[key]; const rec = (c.intercoms || []).find(i => i.stair === d.stair); if (rec) rec.setOpen(false); }
+      const free = d.stair == null || inside || age < ENTRY_UNLOCK_MS || now - (d.grace || -1e9) < ENTRY_GRACE_MS;
+      // open: someone allowed is near, the intercom has just released it, or somebody stands in the open doorway
+      const t = (free && dist < 3.4) || age < ENTRY_HOLD_MS || (dist < 1.3 && d.open > 0.5) ? 1 : 0;
+      if (!free && dist < 2.3 && !this.drive && !this._icOpen && this.el && now - (this._lockHintT || 0) > 7000) { this._lockHintT = now; this._toast(this.t('walk.ic.locked'), 2600); }
+      if (d.blocker) d.blocker.userData.solid = d.open < 0.6;
       const prev = d.open; d.open += (t - d.open) * damp(4.5, dt);
       if (Math.abs(prev - d.open) < 1e-4) continue;
       for (const g of d.leaves) { g.position.x = g.userData.baseX + g.userData.dir * d.open * d.travel; g.updateMatrixWorld(true); }
@@ -3653,6 +4084,7 @@ export class Walkthrough {
     if (this._phone && ev.target.closest('.vw-map')) return this._setMapOpen(false);
     const b = ev.target.closest('button'); if (!b) return;
     if (b.dataset.cg) return this._cgAction(b.dataset.cg, b);
+    if (b.dataset.ic) return this._icAction(b.dataset.ic, b);
     const k = b.dataset.k;
     if (k === 'gear') return this._setPopover(!this._popOpen);
     if (k === 'flabel') return;

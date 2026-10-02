@@ -969,80 +969,212 @@ const std = (o) => new THREE.MeshStandardMaterial(o);
 const phys = (o) => new THREE.MeshPhysicalMaterial(o);
 
 // ---------------------------------------------------------------- live TV picture
-// One shared 320×180 canvas: a looping "nature channel" (dusk over a lake: drifting hills, a sun on the water, gulls)
-// with the VILNYI channel bug. tickTv() redraws it at ≤ 15 fps and is called from the screens' onBeforeRender, so the
-// picture only costs anything while a switched-on screen is actually drawn.
+// One shared 320×180 canvas: a Romanian news channel — the fictional "VRC Știri" (studio and anchor, an over-the-shoulder
+// topic card, a "ȘTIRI" lower third with rotating headlines, a crawl, the visitor's local time, an "ÎN DIRECT" bug, and
+// cuts to a weather map of Romania and to a Lacul Morii skyline). Everything is drawn here; the three backdrops and the
+// crawl are painted once into off-screen layers, so a frame is a few blits and short texts. tickTv() redraws at ≤ 15 fps
+// and is called from the screens' onBeforeRender, so the picture only costs anything while a switched-on screen is drawn.
 let TV = null;
 function tvTexture() {
   if (TV) return TV.tex;
   let c = null;
-  try { c = typeof document !== 'undefined' ? document.createElement('canvas') : new OffscreenCanvas(320, 180); } catch { c = null; }
+  try { c = tvCanvas(320, 180); } catch { c = null; }
   if (!c) return null;
-  c.width = 320; c.height = 180;
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
-  TV = { c, ctx: c.getContext('2d'), tex: t, last: -1e9 };
+  TV = { c, ctx: c.getContext('2d'), tex: t, last: -1e9, L: {} };
   try { drawTv(0); } catch { /* no 2d context */ }
   return t;
 }
-const mixC = (a, b, k) => a.map((x, i) => Math.round(x + (b[i] - x) * k));
-const rgb = (a, al = 1) => `rgba(${a[0]},${a[1]},${a[2]},${al})`;
+function tvCanvas(w, h) { if (typeof document !== 'undefined') { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; } return new OffscreenCanvas(w, h); }
+const TVF = (px, w = 700) => `${w} ${px}px "Helvetica Neue", Arial, "Liberation Sans", sans-serif`;
+// typical daily highs in Bucharest by month: the forecast follows the visitor's calendar
+const TV_HIGH = [3, 6, 12, 18, 24, 28, 30, 30, 25, 18, 10, 4];
+const tvHigh = () => TV_HIGH[new Date().getMonth()];
+// [topic, headline] — neutral, generic, non-political
+const tvNews = () => [
+  ['METEO', `Prognoza pentru București: maxime de până la ${tvHigh()}°C`],
+  ['TRAFIC', 'Se circulă fluid pe principalele artere din Sectorul 6'],
+  ['LACUL MORII', 'Promenada de la Lacul Morii, tot mai căutată la sfârșit de săptămână'],
+  ['IMOBILIARE', 'Interes ridicat pentru locuințele noi din vestul Capitalei'],
+  ['CULTURĂ', 'Concert în aer liber, în acest weekend, în centrul orașului'],
+  ['SPORT', 'Mii de alergători, așteptați la crosul de pe malul lacului'],
+  ['COMUNITATE', 'Târg de carte în Capitală: intrarea este liberă'],
+];
+const TV_CRAWL = 'METEO: cer variabil, vânt slab   •   TRAFIC: se circulă fluid pe Splaiul Independenței   •   CULTURĂ: muzeele au program prelungit sâmbătă   •   SPORT: turneu de tenis pentru juniori în Sectorul 6   •   IMOBILIARE: cerere ridicată pentru apartamentele cu vedere la lac   •   LACUL MORII: promenada este deschisă zilnic   •   ';
+// Romania's outline and cities as [lon, lat] (stylised)
+const RO = [[22.0, 47.95], [23.2, 48.0], [24.9, 47.72], [26.6, 48.25], [27.3, 47.75], [28.1, 46.7], [28.2, 45.5], [29.65, 45.3], [29.55, 44.8], [28.75, 44.5], [28.6, 43.75], [27.3, 44.1], [26.0, 43.9], [24.9, 43.72], [23.0, 43.8], [22.45, 44.45], [21.4, 44.8], [20.3, 46.1], [21.2, 46.42], [21.6, 47.0]];
+// [name, lon, lat, °C against Bucharest, icon (0 sun, 1 sun & cloud, 2 cloud), label side]
+const RO_CITY = [['București', 26.1, 44.43, 0, 0, -1], ['Cluj-Napoca', 23.6, 46.77, -3, 1, 1], ['Iași', 27.6, 47.16, -2, 1, 1], ['Timișoara', 21.23, 45.75, 0, 0, 1], ['Constanța', 28.63, 44.18, -1, 0, 1], ['Brașov', 25.6, 45.65, -5, 2, 1]];
+function rr(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
+function tvIcon(x, kind, cx, cy, s) {          // small weather / topic pictograms
+  const sun = (a, b, r) => { x.fillStyle = '#ffd35a'; x.beginPath(); x.arc(a, b, r, 0, 6.3); x.fill(); x.strokeStyle = '#ffd35a'; x.lineWidth = Math.max(1, r * 0.3); for (let i = 0; i < 8; i++) { const q = i * 0.785; x.beginPath(); x.moveTo(a + Math.cos(q) * r * 1.4, b + Math.sin(q) * r * 1.4); x.lineTo(a + Math.cos(q) * r * 1.9, b + Math.sin(q) * r * 1.9); x.stroke(); } };
+  const cloud = (a, b, r, col = '#eef3f8') => { x.fillStyle = col; x.beginPath(); x.arc(a - r * 0.8, b, r * 0.7, 0, 6.3); x.arc(a, b - r * 0.45, r, 0, 6.3); x.arc(a + r * 0.9, b, r * 0.75, 0, 6.3); x.fill(); x.fillRect(a - r * 0.8, b - r * 0.1, r * 1.7, r * 0.8); };
+  if (kind === 0 || kind === 'METEO') sun(cx, cy, s * 0.42);
+  else if (kind === 1) { sun(cx + s * 0.25, cy - s * 0.2, s * 0.3); cloud(cx - s * 0.1, cy + s * 0.15, s * 0.36); }
+  else if (kind === 2) cloud(cx, cy, s * 0.45, '#cfd8e2');
+  else if (kind === 'TRAFIC') { x.fillStyle = '#eef3f8'; rr(x, cx - s * 0.75, cy - s * 0.05, s * 1.5, s * 0.42, s * 0.12); x.fill(); rr(x, cx - s * 0.42, cy - s * 0.42, s * 0.84, s * 0.44, s * 0.14); x.fill(); x.fillStyle = '#16233c'; for (const q of [-0.42, 0.42]) { x.beginPath(); x.arc(cx + s * q, cy + s * 0.38, s * 0.17, 0, 6.3); x.fill(); } }
+  else if (kind === 'IMOBILIARE') { x.fillStyle = '#eef3f8'; x.fillRect(cx - s * 0.62, cy - s * 0.2, s * 0.5, s * 0.8); x.fillRect(cx - s * 0.02, cy - s * 0.62, s * 0.62, s * 1.22); x.fillStyle = '#d8b46a'; for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) x.fillRect(cx + s * (0.08 + j * 0.27), cy - s * (0.5 - i * 0.27), s * 0.15, s * 0.14); }
+  else if (kind === 'CULTURĂ') { x.fillStyle = '#eef3f8'; for (const q of [-0.3, 0.38]) { x.beginPath(); x.ellipse(cx + s * q, cy + s * 0.42, s * 0.24, s * 0.17, -0.4, 0, 6.3); x.fill(); x.fillRect(cx + s * (q + 0.16), cy - s * 0.55, s * 0.08, s * 0.98); } x.fillRect(cx - s * 0.14, cy - s * 0.6, s * 0.76, s * 0.16); }
+  else if (kind === 'SPORT') { x.fillStyle = '#eef3f8'; x.beginPath(); x.arc(cx, cy, s * 0.56, 0, 6.3); x.fill(); x.strokeStyle = '#16233c'; x.lineWidth = Math.max(1, s * 0.08); x.beginPath(); x.arc(cx - s * 0.75, cy, s * 0.6, -0.9, 0.9); x.stroke(); x.beginPath(); x.arc(cx + s * 0.75, cy, s * 0.6, 2.24, 4.04); x.stroke(); }
+  else if (kind === 'COMUNITATE') { x.fillStyle = '#eef3f8'; x.beginPath(); x.moveTo(cx, cy - s * 0.4); x.quadraticCurveTo(cx - s * 0.4, cy - s * 0.62, cx - s * 0.8, cy - s * 0.45); x.lineTo(cx - s * 0.8, cy + s * 0.5); x.quadraticCurveTo(cx - s * 0.4, cy + s * 0.33, cx, cy + s * 0.55); x.quadraticCurveTo(cx + s * 0.4, cy + s * 0.33, cx + s * 0.8, cy + s * 0.5); x.lineTo(cx + s * 0.8, cy - s * 0.45); x.quadraticCurveTo(cx + s * 0.4, cy - s * 0.62, cx, cy - s * 0.4); x.fill(); x.fillStyle = '#16233c'; x.fillRect(cx - s * 0.03, cy - s * 0.4, s * 0.06, s * 0.95); }
+  else { x.fillStyle = '#8fc3e6'; x.beginPath(); x.ellipse(cx, cy + s * 0.28, s * 0.8, s * 0.26, 0, 0, 6.3); x.fill(); x.fillStyle = '#eef3f8'; x.beginPath(); x.moveTo(cx - s * 0.05, cy + s * 0.2); x.lineTo(cx - s * 0.05, cy - s * 0.6); x.lineTo(cx + s * 0.5, cy + s * 0.1); x.closePath(); x.fill(); x.fillRect(cx - s * 0.45, cy + s * 0.2, s * 0.95, s * 0.12); }   // lake + sail
+}
+// the channel bug: gold origami bird + "VRC ȘTIRI"
+function tvLogo(x, a, b, k = 1) {
+  x.save(); x.translate(a, b); x.scale(k, k);
+  x.fillStyle = 'rgba(8,14,30,0.72)'; rr(x, 0, 0, 62, 15, 3); x.fill();
+  x.fillStyle = '#d8b46a'; x.beginPath(); x.moveTo(4, 8.5); x.lineTo(13, 3); x.lineTo(10.5, 8); x.lineTo(16, 7.5); x.lineTo(8.5, 12.5); x.closePath(); x.fill();
+  x.font = TVF(9, 800); x.textBaseline = 'middle'; x.textAlign = 'left'; x.fillText('VRC', 19, 8);
+  x.fillStyle = '#c8202a'; rr(x, 39, 2.5, 21, 10, 2); x.fill();
+  x.fillStyle = '#fff'; x.font = TVF(6.5, 800); x.fillText('ȘTIRI', 41, 8);
+  x.restore();
+}
+function tvLayer(key, w, h, paint) { let c = TV.L[key]; if (!c) { c = TV.L[key] = tvCanvas(w, h); paint(c.getContext('2d')); } return c; }
+const W_TV = 320, H_TV = 180;
+function tvStudio() {
+  return tvLayer('studio', W_TV, H_TV, (x) => {
+    const W = W_TV, H = H_TV;
+    let g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a1c44'); g.addColorStop(0.6, '#123a78'); g.addColorStop(1, '#071230');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    // video wall: tall panels with a dotted world band and soft light bars
+    for (let i = 0; i < 6; i++) { const px = -10 + i * 58; g = x.createLinearGradient(px, 0, px + 54, 0); g.addColorStop(0, 'rgba(70,140,230,0.10)'); g.addColorStop(0.5, 'rgba(110,180,255,0.32)'); g.addColorStop(1, 'rgba(70,140,230,0.10)'); x.fillStyle = g; x.fillRect(px, 6, 54, 112); }
+    x.fillStyle = 'rgba(170,215,255,0.35)';
+    for (let i = 0; i < 64; i++) for (let j = 0; j < 14; j++) { const n = Math.sin(i * 0.31 + 1) * Math.cos(j * 0.52 + i * 0.07) + Math.sin(i * 0.11 + j * 0.3); if (n > 0.35) x.fillRect(4 + i * 5, 34 + j * 5, 2, 2); }
+    x.strokeStyle = 'rgba(216,180,106,0.55)'; x.lineWidth = 1; x.beginPath(); x.moveTo(0, 26); x.lineTo(W, 26); x.moveTo(0, 110); x.lineTo(W, 110); x.stroke();
+    g = x.createRadialGradient(108, 60, 6, 108, 60, 120); g.addColorStop(0, 'rgba(160,210,255,0.38)'); g.addColorStop(1, 'rgba(160,210,255,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    // desk: light top, dark front with a gold line
+    g = x.createLinearGradient(0, 118, 0, 150); g.addColorStop(0, '#e9eef6'); g.addColorStop(0.16, '#b9c6da'); g.addColorStop(0.2, '#101c3a'); g.addColorStop(1, '#060c1e');
+    x.fillStyle = g; x.beginPath(); x.moveTo(0, 124); x.quadraticCurveTo(W / 2, 112, W, 124); x.lineTo(W, H); x.lineTo(0, H); x.closePath(); x.fill();
+    x.strokeStyle = '#d8b46a'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 133); x.quadraticCurveTo(W / 2, 121, W, 133); x.stroke();
+  });
+}
+function tvMap() {
+  return tvLayer('map', W_TV, H_TV, (x) => {
+    const W = W_TV, H = H_TV, P = ([lo, la]) => [92 + (lo - 20.2) * 17.4, 22 + (48.3 - la) * 25];
+    let g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b2a5c'); g.addColorStop(1, '#06132e'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.strokeStyle = 'rgba(140,190,255,0.12)'; x.lineWidth = 1; for (let i = 0; i < 9; i++) { x.beginPath(); x.moveTo(0, i * 22 + 4); x.lineTo(W, i * 22 + 4); x.stroke(); x.beginPath(); x.moveTo(i * 40, 0); x.lineTo(i * 40, H); x.stroke(); }
+    x.beginPath(); RO.forEach((p, i) => { const [a, b] = P(p); if (i) x.lineTo(a, b); else x.moveTo(a, b); }); x.closePath();
+    g = x.createLinearGradient(0, 20, 0, 140); g.addColorStop(0, '#3f8f5e'); g.addColorStop(0.5, '#5aa56a'); g.addColorStop(1, '#8fb86a');
+    x.fillStyle = g; x.fill(); x.strokeStyle = '#eaf4ff'; x.lineWidth = 1.5; x.lineJoin = 'round'; x.stroke();
+    // the Carpathian arc and the Black Sea
+    x.strokeStyle = 'rgba(40,80,50,0.55)'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath(); x.moveTo(...P([24.2, 47.5])); x.quadraticCurveTo(...P([26.6, 46.6]), ...P([26.0, 45.55])); x.quadraticCurveTo(...P([24.6, 45.3]), ...P([22.8, 45.3])); x.stroke();
+    x.fillStyle = 'rgba(120,190,240,0.9)'; x.font = TVF(7, 600); x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText('Marea Neagră', 262, 104);
+    x.fillStyle = '#fff'; x.font = TVF(11, 800); x.fillText('PROGNOZA', 10, 34); x.fillText('METEO', 10, 46);
+    x.fillStyle = '#d8b46a'; x.fillRect(10, 54, 60, 1.5);
+    x.fillStyle = 'rgba(200,225,255,0.9)'; x.font = TVF(8, 600); x.fillText('România · astăzi', 10, 63);
+    const hi = tvHigh();
+    for (const [name, lo, la, dt, ic, side] of RO_CITY) {
+      const [a, b] = P([lo, la]);
+      x.fillStyle = '#fff'; x.beginPath(); x.arc(a, b, 2, 0, 6.3); x.fill();
+      tvIcon(x, ic, a - side * 9, b - 8, 8);
+      x.font = TVF(8, 700); x.textAlign = side < 0 ? 'right' : 'left'; x.lineWidth = 2.4; x.lineJoin = 'round'; x.strokeStyle = 'rgba(6,19,46,0.9)';
+      const lab = `${name} ${hi + dt}°`; x.strokeText(lab, a + side * 5, b + 1); x.fillStyle = '#fff'; x.fillText(lab, a + side * 5, b + 1);
+    }
+  });
+}
+function tvSkyline() {
+  return tvLayer('sky', W_TV, H_TV, (x) => {
+    const W = W_TV, H = H_TV, hz = 96;
+    let g = x.createLinearGradient(0, 0, 0, hz); g.addColorStop(0, '#27365f'); g.addColorStop(0.6, '#b0627a'); g.addColorStop(1, '#f6b678'); x.fillStyle = g; x.fillRect(0, 0, W, hz);
+    g = x.createRadialGradient(214, hz - 6, 2, 214, hz - 6, 80); g.addColorStop(0, 'rgba(255,230,180,0.95)'); g.addColorStop(0.15, 'rgba(255,200,140,0.5)'); g.addColorStop(1, 'rgba(255,200,140,0)'); x.fillStyle = g; x.fillRect(0, 0, W, hz);
+    // far city, then the nearer blocks along the shore (lit windows)
+    x.fillStyle = 'rgba(60,58,96,0.75)'; for (let i = 0; i < 40; i++) { const h = 8 + ((i * 37) % 17); x.fillRect(i * 8.2, hz - h, 7, h); }
+    for (let i = 0; i < 17; i++) {
+      const bw = 13 + (i * 7) % 9, bx = i * 19.5 - 4, h = 20 + ((i * 53) % 30) + (i % 5 === 2 ? 14 : 0);
+      x.fillStyle = '#1c1f38'; x.fillRect(bx, hz - h, bw, h);
+      x.fillStyle = 'rgba(255,214,140,0.85)'; for (let a = 2; a < bw - 2; a += 3) for (let b = 3; b < h - 2; b += 4) if ((a * 7 + b * 13 + i * 5) % 5 < 2) x.fillRect(bx + a, hz - h + b, 1.4, 1.6);
+    }
+    x.fillStyle = '#141a2c'; for (let i = 0; i < 26; i++) { const tx = i * 13 + (i * 5) % 7; x.beginPath(); x.arc(tx, hz - 1, 4 + (i % 3), Math.PI, 0); x.fill(); }
+    g = x.createLinearGradient(0, hz, 0, H); g.addColorStop(0, '#c98a78'); g.addColorStop(0.35, '#56507c'); g.addColorStop(1, '#141c3a'); x.fillStyle = g; x.fillRect(0, hz, W, H - hz);
+  });
+}
+function tvCrawl() {
+  if (!TV.L.crawl) {
+    const m = TV.ctx; m.font = TVF(9, 600); const w = Math.ceil(m.measureText(TV_CRAWL).width);
+    const c = TV.L.crawl = tvCanvas(w, 14), x = c.getContext('2d');
+    x.font = TVF(9, 600); x.textBaseline = 'middle'; x.fillStyle = '#f2f5fa'; x.fillText(TV_CRAWL, 0, 7.5);
+  }
+  return TV.L.crawl;
+}
+// headline wrapped to two lines (cached per headline)
+function tvLines(x, text, maxW) {
+  const k = 'h:' + text; if (TV.L[k]) return TV.L[k];
+  const words = text.split(' '), lines = ['']; x.font = TVF(10.5, 700);
+  for (const w of words) { const t = lines[lines.length - 1] ? lines[lines.length - 1] + ' ' + w : w; if (x.measureText(t).width > maxW && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = t; }
+  return (TV.L[k] = lines.slice(0, 2));
+}
+// programme: [duration s, scene]; headlines change every 7 s
+const TV_PROG = [[28, 'studio'], [12, 'map'], [21, 'studio'], [11, 'sky']], TV_LOOP = TV_PROG.reduce((a, p) => a + p[0], 0);
 function drawTv(T) {
-  const { ctx: x } = TV, W = 320, H = 180, hz = H * 0.56;
-  // 48 s day-to-dusk loop: golden hour → sunset → blue hour → back
-  const ph = (Math.sin(T * Math.PI * 2 / 48) + 1) / 2;
-  const top = mixC([62, 112, 170], [38, 44, 92], ph), hor = mixC([255, 206, 140], [244, 120, 92], ph), sunC = mixC([255, 236, 190], [255, 170, 110], ph);
-  let g = x.createLinearGradient(0, 0, 0, hz);
-  g.addColorStop(0, rgb(top)); g.addColorStop(0.75, rgb(mixC(top, hor, 0.65))); g.addColorStop(1, rgb(hor));
-  x.fillStyle = g; x.fillRect(0, 0, W, hz + 1);
-  // sun + halo
-  const sx = W * 0.62 + Math.sin(T * 0.05) * 6, sy = hz - 16 - ph * 10;
-  g = x.createRadialGradient(sx, sy, 2, sx, sy, 70); g.addColorStop(0, rgb(sunC, 0.95)); g.addColorStop(0.12, rgb(sunC, 0.6)); g.addColorStop(1, rgb(sunC, 0));
-  x.fillStyle = g; x.fillRect(0, 0, W, hz);
-  x.fillStyle = rgb(mixC(sunC, [255, 255, 255], 0.4)); x.beginPath(); x.arc(sx, sy, 7.5, 0, Math.PI * 2); x.fill();
-  // drifting cloud streaks
-  for (let i = 0; i < 4; i++) {
-    const cy = 18 + i * 17, cx = ((T * (4 + i * 1.5) + i * 97) % (W + 160)) - 80;
-    g = x.createLinearGradient(cx - 70, 0, cx + 70, 0); g.addColorStop(0, rgb(hor, 0)); g.addColorStop(0.5, rgb(mixC(hor, [255, 255, 255], 0.3), 0.22)); g.addColorStop(1, rgb(hor, 0));
-    x.fillStyle = g; x.fillRect(cx - 70, cy, 140, 3 + i);
-  }
-  // hills: three parallax layers (a slow camera pan)
-  const hills = [[0.55, 26, mixC([120, 110, 140], top, 0.35), 3], [0.75, 17, mixC([70, 72, 90], top, 0.25), 7], [1, 10, [34, 38, 46], 12]];
-  for (const [k, amp, col, sp] of hills) {
-    x.fillStyle = rgb(col); x.beginPath(); x.moveTo(0, hz);
-    for (let px = 0; px <= W; px += 8) {
-      const q = px + T * sp;
-      x.lineTo(px, hz - amp * k * (0.55 + 0.3 * Math.sin(q * 0.021 + k * 3) + 0.15 * Math.sin(q * 0.057 + k)));
+  const { ctx: x } = TV, W = W_TV, H = H_TV, news = TV.news || (TV.news = tvNews());
+  let tt = T % TV_LOOP, scene = 'studio', ts = 0;
+  for (const [d, s] of TV_PROG) { if (tt < d) { scene = s; ts = tt; break; } tt -= d; }
+  let hi = Math.floor(T / 7) % news.length;
+  if (scene === 'map') hi = 0; else if (scene === 'sky') hi = 2;     // the cut-aways carry their own headline
+  const [topic, head] = news[hi];
+  x.globalAlpha = 1; x.textAlign = 'left';
+  if (scene === 'studio') {
+    x.drawImage(tvStudio(), 0, 0);
+    // light sweeping across the video wall
+    const sw = ((T * 26) % (W + 160)) - 80; let g = x.createLinearGradient(sw - 40, 0, sw + 40, 0); g.addColorStop(0, 'rgba(150,200,255,0)'); g.addColorStop(0.5, 'rgba(150,200,255,0.16)'); g.addColorStop(1, 'rgba(150,200,255,0)'); x.fillStyle = g; x.fillRect(sw - 40, 6, 80, 104);
+    // anchor: a generic figure — suit, shirt, head; it nods and talks
+    const ax = 108, bob = Math.sin(T * 1.7) * 0.7 + Math.sin(T * 4.3) * 0.3, sway = Math.sin(T * 0.6) * 1.2, talk = 0.5 + 0.5 * Math.sin(T * 13) * Math.sin(T * 3.1);
+    x.fillStyle = '#16233c'; x.beginPath(); x.moveTo(ax - 44 + sway * 0.3, 128); x.quadraticCurveTo(ax - 40 + sway, 84, ax - 12 + sway, 78); x.lineTo(ax + 12 + sway, 78); x.quadraticCurveTo(ax + 40 + sway, 84, ax + 44 + sway * 0.3, 128); x.closePath(); x.fill();
+    x.fillStyle = '#f1f3f7'; x.beginPath(); x.moveTo(ax - 8 + sway, 78); x.lineTo(ax + sway, 100); x.lineTo(ax + 8 + sway, 78); x.closePath(); x.fill();
+    x.fillStyle = '#b8323a'; x.beginPath(); x.moveTo(ax - 2 + sway, 82); x.lineTo(ax + 2 + sway, 82); x.lineTo(ax + 3 + sway, 98); x.lineTo(ax + sway, 102); x.lineTo(ax - 3 + sway, 98); x.closePath(); x.fill();
+    const hx = ax + sway, hy = 60 + bob;
+    x.fillStyle = '#d9ab8c'; x.fillRect(hx - 5, hy + 10, 10, 10);
+    x.beginPath(); x.ellipse(hx, hy, 11.5, 14.5, 0, 0, 6.3); x.fillStyle = '#e6bc9e'; x.fill();
+    x.fillStyle = '#3a2a22'; x.beginPath(); x.ellipse(hx, hy - 5.5, 12.3, 10.5, 0, Math.PI, 0); x.fill(); x.fillRect(hx - 12.3, hy - 6, 3, 8); x.fillRect(hx + 9.3, hy - 6, 3, 8);
+    x.fillStyle = '#2a2420'; x.fillRect(hx - 5.5, hy - 0.5, 2.6, 1.6); x.fillRect(hx + 2.9, hy - 0.5, 2.6, 1.6);
+    x.fillStyle = '#8c4a44'; x.fillRect(hx - 2.6, hy + 7, 5.2, 0.9 + talk * 2.2);
+    // over-the-shoulder card for the current topic
+    x.fillStyle = 'rgba(8,16,38,0.78)'; rr(x, 196, 30, 104, 72, 4); x.fill(); x.strokeStyle = '#d8b46a'; x.lineWidth = 1; x.stroke();
+    g = x.createLinearGradient(196, 30, 300, 102); g.addColorStop(0, 'rgba(70,130,220,0.5)'); g.addColorStop(1, 'rgba(30,60,130,0.2)'); x.fillStyle = g; rr(x, 199, 33, 98, 48, 3); x.fill();
+    tvIcon(x, topic === 'LACUL MORII' ? 'LAC' : topic, 248, 57, 20);
+    x.fillStyle = '#fff'; x.font = TVF(9.5, 800); x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(topic, 248, 92); x.textAlign = 'left';
+  } else if (scene === 'map') {
+    x.drawImage(tvMap(), 0, 0);
+    // a band of cloud drifting over the map
+    for (let i = 0; i < 3; i++) { const cx = ((T * (5 + i * 2) + i * 130) % (W + 120)) - 60, cy = 44 + i * 24; const g = x.createRadialGradient(cx, cy, 2, cx, cy, 34); g.addColorStop(0, 'rgba(255,255,255,0.28)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(cx - 34, cy - 20, 68, 40); }
+  } else {
+    x.drawImage(tvSkyline(), 0, 0);
+    const hz = 96, sx = 214;
+    for (let r = 0; r < 14; r++) {            // shimmer on the lake: the sun's column + pale ripples
+      const d = r / 14, y = hz + 2 + Math.pow(d, 1.6) * (118 - hz), seg = 12 + d * 26;
+      for (let px = -((T * (8 + d * 26) + r * 13) % seg); px < W; px += seg) {
+        const a = 0.5 + 0.5 * Math.sin(px * 0.05 + T * 2.1 + r * 1.7), near = Math.exp(-Math.pow((px - sx) / (16 + d * 46), 2));
+        x.fillStyle = near > 0.05 ? `rgba(255,214,150,${(0.25 + 0.6 * a) * near})` : `rgba(255,255,255,${0.04 + 0.07 * a})`;
+        x.fillRect(px, y, seg * (0.35 + 0.3 * a), 0.7 + d * 1.8);
+      }
     }
-    x.lineTo(W, hz); x.closePath(); x.fill();
+    x.fillStyle = 'rgba(8,14,30,0.6)'; rr(x, 8, 26, 116, 14, 3); x.fill(); x.fillStyle = '#fff'; x.font = TVF(8, 700); x.textBaseline = 'middle'; x.fillText('LACUL MORII · BUCUREȘTI', 13, 33.5);
   }
-  x.fillStyle = 'rgba(22,26,30,0.9)';                     // poplars on the near shore
-  for (let i = 0; i < 9; i++) { const tx = ((i * 41 - T * 12) % (W + 40) + W + 40) % (W + 40) - 20, th = 8 + (i * 7) % 9; x.beginPath(); x.moveTo(tx - 3, hz); x.lineTo(tx, hz - th); x.lineTo(tx + 3, hz); x.fill(); }
-  // lake: reflected sky + shimmering ripple bands (perspective-spaced) + the sun's glitter column
-  g = x.createLinearGradient(0, hz, 0, H); g.addColorStop(0, rgb(mixC(hor, top, 0.35))); g.addColorStop(1, rgb(mixC(top, [10, 18, 30], 0.55)));
-  x.fillStyle = g; x.fillRect(0, hz, W, H - hz);
-  for (let r = 0; r < 26; r++) {
-    const d = r / 26, y = hz + 2 + Math.pow(d, 1.7) * (H - hz), lw = 0.6 + d * 2.2, seg = 10 + d * 26;
-    for (let px = -((T * (8 + d * 30) + r * 13) % seg); px < W; px += seg) {
-      const a = 0.5 + 0.5 * Math.sin(px * 0.05 + T * 2.1 + r * 1.7), near = Math.exp(-Math.pow((px - sx) / (14 + d * 50), 2));
-      x.fillStyle = near > 0.05 ? rgb(sunC, (0.25 + 0.65 * a) * near) : `rgba(255,255,255,${0.05 + 0.08 * a})`;
-      x.fillRect(px, y, seg * (0.35 + 0.3 * a), lw);
-    }
+  // cut between scenes: a quick gold-edged wipe
+  if (ts < 0.45) { const k = ts / 0.45, wx = k * (W + 60) - 30; x.fillStyle = '#0a1a40'; x.fillRect(wx, 0, W, H); x.fillStyle = '#d8b46a'; x.fillRect(wx - 3, 0, 3, H); }
+  // lower third: red "ȘTIRI" tab + topic, headline on a light bar
+  // (the weather map keeps a single slim line, so the south of the country stays in view)
+  const map = scene === 'map', ly = map ? 148 : 119, hs = Math.min(1, ((T % 7) / 0.35)), lines = tvLines(x, head, 284);
+  x.fillStyle = '#c8202a'; x.fillRect(8, ly, 46, 13); x.fillStyle = '#fff'; x.font = TVF(9, 800); x.textBaseline = 'middle'; x.fillText('ȘTIRI', 13, ly + 7);
+  x.font = TVF(8, 700); const tabR = 54 + Math.ceil(x.measureText(topic).width) + 12;
+  x.fillStyle = '#0d1f47'; x.fillRect(54, ly, tabR - 54, 13); x.fillStyle = '#ffd98a'; x.fillText(topic, 60, ly + 7);
+  if (map) { x.fillStyle = 'rgba(244,246,250,0.96)'; x.fillRect(tabR, ly, 312 - tabR, 13); x.fillStyle = '#0c1836'; x.font = TVF(8, 700); x.fillText(head, tabR + 5, ly + 7); }
+  else {
+    x.fillStyle = 'rgba(244,246,250,0.96)'; x.fillRect(8, ly + 13, 304, 29); x.fillStyle = '#c8202a'; x.fillRect(8, ly + 13, 3, 29);
+    x.save(); x.beginPath(); x.rect(11, ly + 13, 301, 29); x.clip(); x.globalAlpha = hs; x.fillStyle = '#0c1836'; x.font = TVF(10.5, 700);
+    lines.forEach((l, i) => x.fillText(l, 16, ly + (lines.length === 1 ? 28 : 21.5 + i * 12.5) + (1 - hs) * 6)); x.restore();
   }
-  x.strokeStyle = 'rgba(20,22,28,0.8)'; x.lineWidth = 1.1;     // gulls
-  for (let i = 0; i < 3; i++) {
-    const bx = ((T * (14 + i * 3) + i * 120) % (W + 60)) - 30, by = 34 + i * 11 + Math.sin(T * 0.7 + i) * 4, f = 2.5 + Math.sin(T * 6 + i * 2) * 1.6;
-    x.beginPath(); x.moveTo(bx - 5, by - f); x.quadraticCurveTo(bx - 2, by - 1, bx, by); x.quadraticCurveTo(bx + 2, by - 1, bx + 5, by - f); x.stroke();
-  }
-  // vignette + channel bug (gold origami bird + VILNYI) + "live"
-  g = x.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.62); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.35)');
-  x.fillStyle = g; x.fillRect(0, 0, W, H);
-  x.save(); x.globalAlpha = 0.85; x.fillStyle = '#d8b46a';
-  x.beginPath(); x.moveTo(W - 84, 15); x.lineTo(W - 71, 8); x.lineTo(W - 75, 15); x.lineTo(W - 65, 14); x.lineTo(W - 77, 22); x.closePath(); x.fill();
-  x.font = '600 11px Georgia, "Times New Roman", serif'; x.textBaseline = 'middle';
-  x.fillText('V I L N Y I', W - 60, 15.5); x.restore();
-  x.fillStyle = 'rgba(214,58,48,0.9)'; x.beginPath(); x.arc(14, H - 13, 2.6, 0, Math.PI * 2); x.fill();
-  x.fillStyle = 'rgba(255,255,255,0.75)'; x.font = '600 8px Arial, sans-serif'; x.textBaseline = 'middle'; x.fillText('LIVE · LACUL MORII', 21, H - 12.5);
+  // crawl + local clock
+  x.fillStyle = '#081430'; x.fillRect(0, 163, W, 17);
+  const cr = tvCrawl(), off = (T * 30) % cr.width; x.drawImage(cr, 44 - off, 164.5); if (cr.width - off < W) x.drawImage(cr, 44 - off + cr.width, 164.5);
+  const now = new Date(), hh = String(now.getHours()).padStart(2, '0'), mm = String(now.getMinutes()).padStart(2, '0');
+  x.fillStyle = '#d8b46a'; x.fillRect(0, 163, 42, 17); x.fillStyle = '#0a1228'; x.font = TVF(10.5, 800); x.textAlign = 'center'; x.fillText(hh + (now.getSeconds() % 2 ? ':' : ' ') + mm, 21, 172); x.textAlign = 'left';
+  // "ÎN DIRECT" bug + channel logo
+  x.fillStyle = 'rgba(8,14,30,0.72)'; rr(x, 8, 7, 60, 14, 3); x.fill();
+  x.fillStyle = `rgba(232,50,44,${0.55 + 0.45 * (Math.sin(T * 4) > 0 ? 1 : 0.3)})`; x.beginPath(); x.arc(16, 14, 3, 0, 6.3); x.fill();
+  x.fillStyle = '#fff'; x.font = TVF(8, 800); x.fillText('ÎN DIRECT', 22, 14.5);
+  tvLogo(x, W - 70, 7);
 }
 // Advance the TV picture (throttled to ~15 fps). Screens call it from onBeforeRender.
 export function tickTv(now = performance.now()) {

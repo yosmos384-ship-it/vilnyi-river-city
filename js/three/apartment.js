@@ -1396,9 +1396,9 @@ function furnishBath(ctx, L, g, r) {
   if (d >= 2.0) {
     // wet zone along the back wall
     let u = a0;
-    if (w >= 2.75) { put(g, F.bathtub(m, { len: 1.7 }), a0 + 0.85, b0, '+v'); u = a0 + 1.72; const sw = a1 - u; put(g, F.shower(m, { w: sw, d: 0.9, h: ctx.cut ? 1.05 : 2.0 }), u + sw / 2, b0, '+v'); ctx.showers.push([g, u, b0, sw, 0.9, L]); }
+    if (w >= 2.75) { put(g, F.bathtub(m, { len: 1.7, cut: ctx.cut }), a0 + 0.85, b0, '+v'); u = a0 + 1.72; const sw = a1 - u; put(g, F.shower(m, { w: sw, d: 0.9, h: ctx.cut ? 1.05 : 2.0 }), u + sw / 2, b0, '+v'); ctx.showers.push([g, u, b0, sw, 0.9, L]); }
     else if (style === 'milano') { put(g, F.shower(m, { w, d: 0.95, h: ctx.cut ? 1.05 : 2.0 }), (a0 + a1) / 2, b0, '+v'); ctx.showers.push([g, a0, b0, w, 0.95, L]); }
-    else put(g, F.bathtub(m, { len: Math.min(1.75, w - 0.04) }), (a0 + a1) / 2, b0, '+v');
+    else put(g, F.bathtub(m, { len: Math.min(1.75, w - 0.04), cut: ctx.cut }), (a0 + a1) / 2, b0, '+v');
     // vanity on the front wall (or right wall if the door is on the front wall), toilet on the right wall
     if (!doorFront) {
       const vl = Math.min(1.4, w - (doorLeft ? 0.95 : 0.7) - 0.0);
@@ -1423,7 +1423,7 @@ function furnishBath(ctx, L, g, r) {
     put(g, F.vanity(m, { len: vl }), u + vl / 2, b0, '+v'); mirrorAt(ctx, g, u + vl / 2, b0, '+v', vl); u += vl + 0.04;
     put(g, F.toilet(m), u + 0.3, b0, '+v'); u += 0.62;
     const ww = a1 - u;
-    if (w >= 3.3) put(g, F.bathtub(m, { len: Math.min(1.7, ww - 0.02) }), u + ww / 2, b0, '+v');
+    if (w >= 3.3) put(g, F.bathtub(m, { len: Math.min(1.7, ww - 0.02), cut: ctx.cut }), u + ww / 2, b0, '+v');
     else { put(g, F.shower(m, { w: ww, d: 0.95, h: ctx.cut ? 1.05 : 2.0 }), u + ww / 2, b0, '+v'); ctx.showers.push([g, u, b0, ww, 0.95, L]); }
   }
   // bath mat in front of the wet zone
@@ -1953,6 +1953,7 @@ function wireTvs(ctx, root) {
   });
 }
 const NOOP_R = () => {};
+const WATER_PIECES = new Set(['toilet', 'vanity', 'bathtub', 'shower', 'kitchen']);
 
 // ================================================================== LIGHTS
 function buildLights(ctx) {
@@ -1997,10 +1998,12 @@ function build(unit, styleId, opts = {}) {
   if (P.duplex && onlyLevel == null) buildStair(ctx);
   else if (P.duplex && onlyLevel === 0) buildStairLow(ctx);
   // outdoor furniture placement uses the living centre found during furnishing → re-run balcony furniture is inside buildOutdoor (already built); fine.
-  // shower glass panels are solid
+  // shower glass panels are solid — up to just above the walker's waist-height probe only (probes: 0.3 / 1.0 / 1.6 m,
+  // and nothing is walked into at 1.6 that is not also there at 1.0), so that taps aimed through the glass at the
+  // mixer, the rain head and the shampoo niche (all above 1.1 m) reach them instead of stopping at the panel
   for (const [g, u, v, w, d, L] of ctx.showers) {
     const gw = Math.min(w - 0.1, 1.0);
-    collider(cg, u + w - gw, L.y + 0.02, v + d - 0.03, u + w, L.y + 2.0, v + d + 0.03);
+    collider(cg, u + w - gw, L.y + 0.02, v + d - 0.03, u + w, L.y + 1.08, v + d + 0.03);
   }
   CUR_M = null;
   // bake static geometry (halo markers first: they become one camera-facing billboard mesh)
@@ -2044,7 +2047,9 @@ function build(unit, styleId, opts = {}) {
   if (opts.startOnBalcony && doors.length) mainDoor()?.toggle(true, { instant: true });
   const tvs = opts.cutaway ? [] : wireTvs(ctx, root);
   // play pieces (island tap / chopping board / salad bowl, snooker table, chalk): proxies become tap targets
-  root.traverse(o => { if (o.userData.playPart) o.userData.action = { type: 'aptDoor', unitId: unit.id, part: o.userData.playPart }; });
+  // … and the water play: toilet lids & flush plates, basin / bath / kitchen taps, showers, shampoo pumps
+  const fixtures = [];
+  root.traverse(o => { if (o.userData.playPart) { o.userData.action = { type: 'aptDoor', unitId: unit.id, part: o.userData.playPart }; if (WATER_PIECES.has(o.userData.piece)) fixtures.push(o); } });
   const game = opts.cutaway ? null : ctx.game || null;
   // curtains start closed and open (room by room) when the visitor enters: on window 'vrc:apt-enter' {unitId},
   // on apt.openCurtains(), or — as a fallback — the first time a frame is rendered from inside the apartment.
@@ -2100,6 +2105,8 @@ function build(unit, styleId, opts = {}) {
     // kitchen island {u, v, len, depth, level} and snooker table {size (ft), u, v, outer, clear} if this plan has them;
     // game: the table's controller — walk.js calls game.frame(walker, dt) every frame (play prompt, play mode)
     island: ctx.island || null, snooker: ctx.snooker || null, game,
+    // water play proxies (userData: playPart 'toiletLid'|'flush'|'tap'|'bathTap'|'shower'|'shampoo', piece, open, toggle)
+    fixtures,
     closeBalconyDoors: () => Promise.all(doors.filter(d => d.open).map(d => d.toggle(false))),
     dispose: disposeAll,
   };
