@@ -14,10 +14,17 @@
 //   commonsBy[bId][key] = same, per building (C3 is mirrored); the viewer uses the unit's building, else `commons`
 //   point = { id, room, level, pos:[u, v, y], yawOffset, links:[{ to, yaw, dist }], img:{ '2k': path, '4k': path } }
 //   pos is unit-local (types) or building-local x/z (commons); y = floor height of the level; the camera sat at y + eye.
+//   point.mask = path of the "outside" mask of that panorama (grey PNG, white = sky / surroundings seen directly or through
+//   clear glass; pano-work/mask.py), absent when the point sees nothing outside.
+// The panoramas are rendered once per apartment TYPE from a reference unit on a high floor, so their own outside pixels are
+// that unit's view. For a visitor's unit they are never shown: wherever the mask is white the viewer draws the surroundings
+// captured from the visitor's real unit (pano-outside.js: real floor height, facade, building), or a neutral haze until
+// that capture exists. A panorama whose mask cannot be loaded is shown with a note naming the reference floor.
 // Projection: image centre = +v (+z) of the scene frame, left quarter = +u; yaw = three.js camera rotation.y (+ yawOffset).
 import * as THREE from 'three';
-import { unitById, unitLabel, CORRIDORS, CORES, corridorsOf, coresOf } from './data.js';
+import { unitById, unitLabel, TYPES, CORRIDORS, CORES, corridorsOf, coresOf } from './data.js';
 import { tt, RTL } from './i18n-tour.js';
+import { createOutside, ENV_GLSL } from './pano-outside.js';
 
 const MANIFEST_URL = new URL('../assets/tour/tour.json', import.meta.url);
 const ASSET_BASE = new URL('../assets/tour/', import.meta.url);
@@ -31,6 +38,7 @@ export function hasTour(typeId, styleId) {
 }
 const FOV0 = 78, FOV_MIN = 32, FOV_MAX = 100;
 const COMMONS = ['lobby', 'corridor', 'parking'];
+const OUTDOOR = ['balcony', 'loggia', 'terrace'];
 const ROOM_ORDER = ['hall', 'living', 'kitchen', 'bedroom', 'dressing', 'bath', 'storage', 'balcony', 'loggia', 'terrace'];
 
 const CSS = `
@@ -122,6 +130,8 @@ const FRAG = `
 precision highp float;
 in vec3 vW;
 uniform sampler2D tA; uniform sampler2D tB;
+uniform sampler2D mA; uniform sampler2D mB; uniform sampler2D eA; uniform sampler2D eB;
+uniform float wA; uniform float wB; uniform float gA; uniform float gB;
 uniform vec3 cA; uniform vec3 cB; uniform float rA; uniform float rB; uniform float k; uniform float fade;
 out vec4 oc;
 const float PI = 3.141592653589793;
@@ -139,12 +149,30 @@ vec4 equi(sampler2D t, vec3 d){
   if (abs(dx2.x) + abs(dy2.x) < abs(dx.x) + abs(dy.x)) { dx = dx2; dy = dy2; }
   return textureGrad(t, vec2(u, v), dx, dy);
 }
+${ENV_GLSL}
+// The JPEGs are display-referred (tone-mapped offline). The sampler hands back linear values, so they are encoded to sRGB
+// again before they reach the canvas — until v2.8 they were written linear, which showed every panorama too dark.
+vec3 toDisp(vec3 c){ return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+// outside pixels (mask) come from the visitor's own surroundings; a soft haze stands in until they are captured
+vec3 layer(sampler2D t, sampler2D m, sampler2D e, float w, float g, vec3 dir, vec3 far){
+  vec3 c = toDisp(equi(t, dir).rgb);
+  if (w > 0.0) {
+    float mk = equi(m, dir).r * w;
+    if (mk > 0.002) {
+      vec3 haze = mix(vec3(0.78, 0.82, 0.86), vec3(0.88, 0.91, 0.95), smoothstep(-0.25, 0.35, far.y));
+      vec3 o = haze;
+      if (g > 0.0) o = mix(haze, envAt(e, far), g);
+      c = mix(c, o, mk);
+    }
+  }
+  return c;
+}
 void main(){
   vec3 d = normalize(vW - cameraPosition);
-  vec4 a = equi(tA, proj(cameraPosition, d, cA, rA));
-  vec4 col = a;
-  if (k > 0.0) { vec4 b = equi(tB, proj(cameraPosition, d, cB, rB)); col = mix(a, b, k); }
-  oc = vec4(col.rgb * fade, 1.0);
+  // the surroundings are far away: they are looked up along the true view ray, not through the room-sized proxy sphere
+  vec3 col = layer(tA, mA, eA, wA, gA, proj(cameraPosition, d, cA, rA), d);
+  if (k > 0.0) col = mix(col, layer(tB, mB, eB, wB, gB, proj(cameraPosition, d, cB, rB), d), k);
+  oc = vec4(col * fade, 1.0);
 }`;
 
 function strFor(opts) {
@@ -174,7 +202,7 @@ export async function openPanoTour(container, opts = {}) {
   const { lang, dir, T } = strFor(opts);
   const unit = opts.unitId ? unitById(opts.unitId) : null;
   // normalise points: links → id list (+ hotspot info), img → 2k (lo) / 4k (img)
-  const norm = (P) => (P || []).map(p => ({ ...p, linkInfo: p.links || [], links: (p.links || []).map(l => (typeof l === 'string' ? l : l.to)),
+  const norm = (P) => (P || []).map(p => ({ ...p, mask: p.mask || null, linkInfo: p.links || [], links: (p.links || []).map(l => (typeof l === 'string' ? l : l.to)),
     lo: p.img && (p.img['2k'] || p.img.lo), img: p.img && (p.img['4k'] || p.img['2k']) }));
 
   // ---------------------------------------------------------------- which scene / style
@@ -253,7 +281,8 @@ export async function openPanoTour(container, opts = {}) {
   camera.rotation.order = 'YXZ';
   const blank = new THREE.DataTexture(new Uint8Array([5, 5, 5, 255]), 1, 1); blank.needsUpdate = true;
   const U = { tA: { value: blank }, tB: { value: blank }, cA: { value: new THREE.Vector3() }, cB: { value: new THREE.Vector3() },
-    rA: { value: 4 }, rB: { value: 4 }, k: { value: 0 }, fade: { value: 1 } };
+    rA: { value: 4 }, rB: { value: 4 }, k: { value: 0 }, fade: { value: 1 },
+    mA: { value: blank }, mB: { value: blank }, eA: { value: blank }, eB: { value: blank }, wA: { value: 0 }, wB: { value: 0 }, gA: { value: 0 }, gB: { value: 0 } };
   const sky = new THREE.Mesh(new THREE.SphereGeometry(60, 48, 32), new THREE.ShaderMaterial({
     uniforms: U, vertexShader: VERT, fragmentShader: FRAG, glslVersion: THREE.GLSL3, side: THREE.BackSide, depthWrite: false, depthTest: false }));
   sky.renderOrder = -1; sky.frustumCulled = false; scene.add(sky);
@@ -316,6 +345,60 @@ export async function openPanoTour(container, opts = {}) {
     for (const id of p.links || []) { const q = byId(id); if (!q) continue; tex(q.lo || q.img).catch(() => {}); if (!phone && hiOK(q)) tex(q.img).catch(() => {}); }
   }
 
+  // ---------------------------------------------------------------- the visitor's own surroundings (see header)
+  const masks = new Map();   // url → { p: Promise<Texture|null>, t }
+  function maskTex(url) {
+    let e = masks.get(url);
+    if (!e) {
+      e = { t: null, used: 0 };
+      e.p = new Promise(res => loader.load(new URL(url, ASSET_BASE).href, t => {
+        t.colorSpace = THREE.NoColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+        t.wrapS = THREE.RepeatWrapping; t.anisotropy = aniso; e.t = t; res(t);
+      }, undefined, () => { console.warn('[pano] outside mask missing', url); res(null); }));
+      masks.set(url, e);
+    }
+    e.used = performance.now();
+    const live = new Set([U.mA.value, U.mB.value]);
+    for (const [u, x] of [...masks.entries()].sort((a, b) => b[1].used - a[1].used).slice(6)) if (x.t && !live.has(x.t)) { x.t.dispose(); masks.delete(u); }
+    return e.p;
+  }
+  const O = { api: null, p: null, failed: false, slot: 0, refNote: false };
+  const uScale = () => { const d = sceneDefs.apt && sceneDefs.apt.def; return unit && d && d.width ? unit.width / d.width : 1; };
+  const wantsOutside = (p, key = S.key) => !!(unit && key === 'apt' && p && p.mask);
+  function ensureOutside() {
+    if (O.p || S.disposed) return O.p;
+    O.p = createOutside(renderer, { face: maxTex >= 4096 && !isPhone() ? 1024 : 768 }).then(api => {
+      if (S.disposed) { api.dispose(); return null; }
+      O.api = api;
+      if (!S.trans) outsideForA();
+      return api;
+    }).catch(e => { O.failed = true; console.warn('[pano] surroundings unavailable — outside areas stay neutral', e); return null; });
+    return O.p;
+  }
+  function captureInto(p, slot) {
+    if (!O.api) return null;
+    try { return O.api.capture(unit, p.pos[0] * uScale(), p.pos[1], (p.pos[2] || 0) + (man.eye || 1.6), slot); }
+    catch (e) { console.warn('[pano] outside capture failed', e); return null; }
+  }
+  // mask + surroundings of a panorama about to be shown → { m, w, e, g }
+  async function outsideOf(p, key, slot) {
+    if (!wantsOutside(p, key)) return { m: blank, w: 0, e: blank, g: 0, miss: false };
+    const m = await maskTex(p.mask);
+    if (!m) return { m: blank, w: 0, e: blank, g: 0, miss: true };
+    if (!O.api && !O.failed) { ensureOutside(); return { m, w: 1, e: blank, g: 0, miss: false }; }
+    const e = captureInto(p, slot);
+    return { m, w: 1, e: e || blank, g: e ? 1 : 0, miss: false };
+  }
+  function outsideForA() {   // the surroundings became available (or a transition ended) while A still shows the haze
+    if (S.disposed || !O.api || !S.point || U.wA.value <= 0 || S.envA) return;
+    const e = captureInto(S.point, O.slot);
+    if (e) { U.eA.value = e; S.envA = true; S.dirty = true; }
+  }
+  function noteRef(miss) {   // a panorama shown with its own (reference-unit) outside view must say so
+    const d = sceneDefs.apt && sceneDefs.apt.def;
+    O.refNote = !!(miss && unit && d && d.refUnit && d.refUnit !== unit.id);
+  }
+
   // ---------------------------------------------------------------- hotspots
   function buildHotspots() {
     hotGroup.clear();
@@ -335,7 +418,9 @@ export async function openPanoTour(container, opts = {}) {
   // ---------------------------------------------------------------- HUD
   function roomLabel(p) {
     if (COMMONS.includes(p.room)) return T('r.' + p.room);
-    const name = T('r.' + p.room);
+    // the outdoor space is named as the visitor's own unit has it (a loggia type shown through the balcony-type renders)
+    const own = unit && TYPES[unit.type] && !TYPES[unit.type].duplex && OUTDOOR.includes(p.room) ? TYPES[unit.type].outdoorKind : null;
+    const name = T('r.' + (own && OUTDOOR.includes(own) ? own : p.room));
     const same = [...new Set(pts().filter(q => q.room === p.room).map(q => baseId(q.id)))];
     const n = same.length > 1 ? ' ' + (same.indexOf(baseId(p.id)) + 1) : '';
     return name + n + ((p.level || 0) > 0 ? ' · ' + T('upper') : '');
@@ -347,7 +432,9 @@ export async function openPanoTour(container, opts = {}) {
     else head = T('building');
     el.t1.textContent = roomLabel(p);
     el.t2.textContent = head;
-    el.badge.hidden = !(S.key === 'apt' && sceneDefs.apt.sample);
+    const d = sceneDefs.apt && sceneDefs.apt.def;
+    el.badge.textContent = O.refNote && S.key === 'apt' ? T('viewRef').replace('{n}', d && d.floor != null ? d.floor : '') : T('sample');
+    el.badge.hidden = !(S.key === 'apt' && (sceneDefs.apt.sample || O.refNote));
   }
   function renderStyles() {
     const list = S.key === 'apt' ? stylesOf('apt') : [];
@@ -433,14 +520,16 @@ export async function openPanoTour(container, opts = {}) {
   // ---------------------------------------------------------------- navigation
   function setBusy(on) { el.busy.classList.toggle('on', !!on); }
   async function go(target, { walk = true, keepYaw = true, yaw } = {}) {
-    if (!target || S.trans || S.disposed) return;
+    if (!target || S.trans || S.going || S.disposed) return;
     const from = S.point;
     if (from === target) return;
-    setBusy(true);
-    let t;
-    try { t = await bestNow(target); } catch (e) { setBusy(false); console.warn('[pano] load failed', target.img, e); return; }
-    setBusy(false);
-    if (S.disposed) return;
+    setBusy(true); S.going = true;   // one pending move at a time: the next panorama's surroundings are captured into the spare slot
+    let t, os;
+    try { t = await bestNow(target); } catch (e) { setBusy(false); S.going = false; console.warn('[pano] load failed', target.img, e); return; }
+    try { os = await outsideOf(target, S.key, 1 - O.slot); } catch (e) { os = { m: blank, w: 0, e: blank, g: 0, miss: true }; }
+    setBusy(false); S.going = false;
+    if (S.disposed || S.trans) return;
+    U.mB.value = os.m; U.wB.value = os.w; U.eB.value = os.e; U.gB.value = os.g; S.envB = os.g > 0; noteRef(os.miss);
     const linked = from && walk && (from.links || []).includes(target.id) && (from.level || 0) === (target.level || 0);
     const A = from ? eyeOf(from) : eyeOf(target), B = eyeOf(target);
     const dist = A.distanceTo(B);
@@ -458,6 +547,9 @@ export async function openPanoTour(container, opts = {}) {
   function finishTrans() {
     const tr = S.trans; S.trans = null;
     U.tA.value = S.pendingHi || U.tB.value; S.pendingHi = null;
+    U.mA.value = U.mB.value; U.wA.value = U.wB.value; U.eA.value = U.eB.value; U.gA.value = U.gB.value; S.envA = S.envB; O.slot = 1 - O.slot;
+    U.mB.value = blank; U.wB.value = 0; U.eB.value = blank; U.gB.value = 0; S.envB = false;
+    outsideForA();
     U.cA.value.copy(eyeOf(S.point)); U.cB.value.copy(U.cA.value); U.k.value = 0; U.rA.value = 4;
     camera.position.copy(eyeOf(S.point));
     S.fov = tr.fov0;
@@ -487,13 +579,17 @@ export async function openPanoTour(container, opts = {}) {
     const prevKey = S.key; S.key = key; S.style = st;
     const P = pts();
     let p = (pointId && P.find(q => q.id === pointId)) || (room && P.find(q => q.room === room || baseId(q.id) === room));
+    // a loggia / terrace unit shown through another type's renders: any outdoor point of the entry level is "the balcony"
+    if (!p && OUTDOOR.includes(room)) p = P.find(q => OUTDOOR.includes(q.room) && !(q.level > 0)) || P.find(q => OUTDOOR.includes(q.room));
     if (!p && room === 'living') p = P.find(q => q.room === 'living');
     p = p || P.find(q => q.room === 'living') || P[0];
     if (yaw === undefined) yaw = p.view ?? p.yaw ?? 0;
     const first = !S.point;
     if (first) {
       const t = await bestNow(p);
+      const os = await outsideOf(p, key, O.slot);
       if (S.disposed) return;
+      U.mA.value = os.m; U.wA.value = os.w; U.eA.value = os.e; U.gA.value = os.g; S.envA = os.g > 0; noteRef(os.miss);
       S.point = p; S.yaw = yaw; U.tA.value = t; camera.position.copy(eyeOf(p)); U.cA.value.copy(camera.position); U.cB.value.copy(camera.position);
       buildHotspots(); upgrade(p); preloadNeighbours(p);
       renderTitle(); renderStyles(); renderChips(); drawMap(); S.dirty = true;
@@ -651,6 +747,7 @@ export async function openPanoTour(container, opts = {}) {
     if (S.disposed) return;
     const dt = Math.min(0.05, (now - S.lastT) / 1000); S.lastT = now;
     stepTrans(now);
+    if (S.envA && U.gA.value < 1) { U.gA.value = Math.min(1, U.gA.value + dt / 0.45); S.dirty = true; }
     if (!drag && !S.gyro && (Math.abs(S.vy) > 1e-4 || Math.abs(S.vp) > 1e-4)) {
       S.yaw += S.vy; S.pitch = clamp(S.pitch + S.vp, -1.45, 1.45); S.vy *= 0.9; S.vp *= 0.9; S.dirty = true;
     } else if (!S.touched && !S.trans && !S.gyro) { S.yaw += dt * 0.035; S.dirty = true; }
@@ -683,6 +780,8 @@ export async function openPanoTour(container, opts = {}) {
     if (S.disposed) return; S.disposed = true;
     renderer.setAnimationLoop(null); ro.disconnect(); window.removeEventListener('deviceorientation', onOrient);
     for (const e of cache.values()) if (e.t) e.t.dispose();
+    for (const e of masks.values()) if (e.t) e.t.dispose();
+    masks.clear(); if (O.api) { try { O.api.dispose(); } catch (e) { console.warn(e); } O.api = null; }
     cache.clear(); sky.geometry.dispose(); sky.material.dispose(); ringGeo.dispose(); discGeo.dispose(); hitGeo.dispose();
     hotGroup.traverse(o => o.material && o.material.dispose());
     renderer.dispose(); root.remove();
@@ -700,6 +799,15 @@ export async function openPanoTour(container, opts = {}) {
   el.hint.classList.add('show'); setTimeout(() => { if (!S.touched) el.hint.classList.remove('show'); }, 6000);
   el.canvas.focus({ preventScroll: true });
 
-  return { ok: true, setStyle, getState, dispose, close: dispose, get pointId() { return S.point && S.point.id; } };
+  const handle = { ok: true, setStyle, getState, dispose, close: dispose, get pointId() { return S.point && S.point.id; } };
+  if (/[?&]ptdebug\b/.test(location.search)) {   // test hook: render one frame at a given look and return it as a JPEG data URL
+    window.__ptDbg = { S, U, O, go, byId, pts, enterScene, outsideReady: () => (O.p || Promise.resolve(null)),
+      snap(yaw, pitch = 0, fov = FOV0) {
+        S.touched = true; S.yaw = yaw; S.pitch = pitch; S.fov = fov; U.gA.value = S.envA ? 1 : U.gA.value;
+        camera.rotation.set(S.pitch, S.yaw, 0); camera.fov = S.fov; camera.updateProjectionMatrix(); sky.position.copy(camera.position);
+        renderer.render(scene, camera); return el.canvas.toDataURL('image/jpeg', 0.9);
+      } };
+  }
+  return handle;
 }
 export default openPanoTour;
