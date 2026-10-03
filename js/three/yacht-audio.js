@@ -5,8 +5,8 @@
 const PROG = {
   disco: { bpm: 122, vol: 0.9 }, live: { bpm: 96, vol: 0.85 }, lounge: { bpm: 88, vol: 0.5 }, spa: { bpm: 60, vol: 0.55 },
 };
-const ZONE_PROG = { beach: 'disco', swim: 'lounge', aft: 'lounge', sundeck: 'lounge', upaft: 'lounge', salon: 'lounge', dining: 'lounge', sky: 'lounge', spa: 'spa', massage: 'spa', sauna: 'spa', hammam: 'spa' };
-const ZONE_GAIN = { beach: 1, swim: 0.5, aft: 0.45, sundeck: 0.8, upaft: 0.55, salon: 0.4, dining: 0.35, sky: 0.45, spa: 0.8, massage: 1, sauna: 0.7, hammam: 0.7 };
+const ZONE_PROG = { casino: 'lounge', beach: 'disco', swim: 'lounge', aft: 'lounge', sundeck: 'lounge', upaft: 'lounge', salon: 'lounge', dining: 'lounge', sky: 'lounge', spa: 'spa', massage: 'spa', sauna: 'spa', hammam: 'spa' };
+const ZONE_GAIN = { casino: 0.3, beach: 1, swim: 0.5, aft: 0.45, sundeck: 0.8, upaft: 0.55, salon: 0.4, dining: 0.35, sky: 0.45, spa: 0.8, massage: 1, sauna: 0.7, hammam: 0.7 };
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 export function createAudio(yacht) {
@@ -31,7 +31,8 @@ export function createAudio(yacht) {
     setMuted(b) { A.muted = !!b; if (master) master.gain.setTargetAtTime(A.muted ? 0 : A.volume, ac.currentTime, 0.05); },
     setVolume(v) { A.volume = Math.max(0, Math.min(1, v)); if (master && !A.muted) master.gain.setTargetAtTime(A.volume, ac.currentTime, 0.05); },
     toggleShow() { A.show = A.show === 'live' ? 'dj' : 'live'; if (A.zoneId === 'beach') setProg(A.show === 'live' ? 'live' : 'disco'); yacht.walk._toast(yacht.t(A.show === 'live' ? 'live' : 'dj'), 2200); if (yacht.el && yacht.el.show) yacht.el.show.textContent = yacht.t(A.show === 'live' ? 'dj' : 'live'); },
-    zone(z) { A.zoneId = z ? z.id : null; let p = z ? ZONE_PROG[z.id] || null : null; if (p === 'disco' && A.show === 'live') p = 'live'; if (yacht.massaging) p = 'spa'; setProg(p, z ? ZONE_GAIN[z.id] ?? 0.5 : 0); if (yacht.el && yacht.el.show) yacht.el.show.textContent = yacht.t(A.show === 'live' ? 'dj' : 'live'); },
+    zone(z) { A.zoneId = z ? z.id : null; if (!z && engine) { engine.stop(); engine = null; } let p = z ? ZONE_PROG[z.id] || null : null; if (p === 'disco' && A.show === 'live') p = 'live'; if (yacht.massaging) p = 'spa'; setProg(p, z ? ZONE_GAIN[z.id] ?? 0.5 : 0); if (yacht.el && yacht.el.show) yacht.el.show.textContent = yacht.t(A.show === 'live' ? 'dj' : 'live'); },
+    get ac() { return ac; }, get master() { return master; },   // (the helicopter's rotor sound goes through the same output and mute)
     update, sfx, dispose() { try { if (engine) engine.stop(); ac && ac.close(); } catch { /* */ } ac = null; A.unlocked = false; },
   };
   let prog = null, pgain = 0, next = 0, step = 0, vt = 0;

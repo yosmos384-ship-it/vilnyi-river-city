@@ -7,6 +7,7 @@ import { Y, TIERS, tierHalf, hullHalf, PLATES } from './yacht-pier.js';
 import { LOBBY, STERN_STAIR } from './yacht-hull.js';
 import { UBOX, colMat, shellMaterials } from './yacht-kit.js';
 import { CROWD } from './yacht-crowd-spots.js';
+import { buildDisco } from './yacht-disco.js';
 
 const PI = Math.PI, HALF = PI / 2;
 // furniture faces +z at rotation 0; FACE.px = facing +x (towards the bow) …
@@ -30,7 +31,7 @@ export function makeCtx(yt, zone, sg, m, sh = sg) {
   // from the neighbouring rooms while the contents are hidden behind closed doors
   const y = zone.y, world = yt.world, tag = zone.id, SM = shellMaterials().M;
   const c = {
-    y, m, sg, zone, world, yt, SM,
+    y, m, sg, sh, zone, world, yt, SM,
     add(o) { sg.add(o); return o; },
     mesh(geo, mat, px, py, pz, rot, scl, to = sg) { const o = new THREE.Mesh(geo, mat); o.position.set(px, y + py, pz); if (rot) o.rotation.set(rot[0], rot[1], rot[2]); if (scl) o.scale.set(scl[0], scl[1], scl[2]); to.add(o); return o; },
     // box by extents (y relative to the deck)
@@ -297,25 +298,7 @@ const spaMat = () => fx('spa', NOISE + `void main(){ vec2 p = vUv * 7.; float t 
   float f = n1(p + vec2(t, -t * 0.7)) * 0.6 + n1(p * 2.7 - vec2(t * 1.3, t)) * 0.4; float bub = smoothstep(0.62, 0.8, n1(p * 5. + t * 2.));
   vec3 col = mix(vec3(0.1, 0.5, 0.62), vec3(0.92, 0.98, 1.), smoothstep(0.45, 0.75, f) * 0.8 + bub * 0.6);
   gl_FragColor = vec4(col, 0.95);` + END, { transparent: true });
-// dance floor: LED tiles pulsing with the beat
-const danceMat = () => fx('dance', NOISE + `void main(){ vec2 c = floor(vUv / 0.75), f = fract(vUv / 0.75); float st = floor(uT * 1.9);
-  float h = h1(c + st * 0.37), h2 = h1(c * 1.7 + 3.1 + floor(uT * 0.47));
-  vec3 a = vec3(0.95, 0.15, 0.55), b = vec3(0.1, 0.55, 1.0), g = vec3(1.0, 0.72, 0.25);
-  vec3 col = h < 0.34 ? a : h < 0.67 ? b : g; float on = step(0.35, h2) * (0.35 + 0.65 * uBeat);
-  float edge = smoothstep(0., 0.035, f.x) * smoothstep(1., 0.965, f.x) * smoothstep(0., 0.035, f.y) * smoothstep(1., 0.965, f.y);
-  float glow = 0.55 + 0.45 * (1. - length(f - 0.5) * 1.3);
-  gl_FragColor = vec4(col * on * glow * edge * 1.5 + vec3(0.012), 1.);` + END);
-// LED wall behind the stage: equaliser bars (DJ) / slow gold waves (live show)
-const wallMat = () => fx('ledwall', NOISE + `void main(){ vec2 p = vUv; float bar = floor(p.x / 0.22), fx = fract(p.x / 0.22);
-  float lvl = 0.25 + 0.75 * n1(vec2(bar * 0.9, uT * 2.4)) * (0.55 + 0.45 * uBeat); float y = fract(p.y / 2.6);
-  float on = step(y, lvl) * smoothstep(0.08, 0.16, fx) * smoothstep(0.92, 0.84, fx) * step(0.25, fract(p.y / 0.11));
-  vec3 dj = mix(vec3(0.1, 0.5, 1.), vec3(1., 0.15, 0.6), y) * on * 1.6;
-  float w = sin(p.x * 1.6 + uT * 0.7) * 0.25 + sin(p.x * 3.1 - uT * 0.45) * 0.12; float band = smoothstep(0.34, 0., abs(y - 0.5 - w));
-  vec3 live = vec3(1., 0.72, 0.32) * band * 1.25 + vec3(0.25, 0.08, 0.3) * (1. - band) * 0.5;
-  gl_FragColor = vec4(mix(dj, live, uShow) + 0.01, 1.);` + END, { side: THREE.DoubleSide });
-// stage / disco light beam: additive cone, brighter on the beat (colour from uC)
-function beamMat(hex) { return new THREE.ShaderMaterial({ uniforms: { uT: ROOM_U.uT, uBeat: ROOM_U.uBeat, uC: { value: new THREE.Color(hex) } }, vertexShader: VS, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-  fragmentShader: 'uniform float uT, uBeat; uniform vec3 uC; varying vec2 vUv; void main(){ float a = pow(vUv.y, 1.6) * (0.10 + 0.16 * uBeat); gl_FragColor = vec4(uC * a, a); }' }); }
+// (the disco's LED floor, LED walls and light beams live in yacht-disco.js)
 // steam: soft billboards rising and thinning out (unit column, scaled by the mesh)
 const steamMat = () => fx('steam', `varying float vA; varying vec2 vC; void main(){ float a = smoothstep(1., 0.1, length(vC)); gl_FragColor = vec4(vec3(0.96), a * a * vA * 0.22); }`, { transparent: true, depthWrite: false, side: THREE.DoubleSide,
   vs: `attribute vec3 aS; attribute vec2 aC; uniform float uT; varying float vA; varying vec2 vC;
@@ -546,7 +529,7 @@ for (const sd of [-1, 1]) {
     } });
 }
 // ---- lower-deck lobby, corridor to the guest cabins
-Z({ id: 'lobby1', name: 'lobby', deck: 1, y: Y.D1, box: [-4.2, 20.5, -8.5, 8.5], near: ['spa', 'cabinP', 'cabinS', 'lobby2'], spot: [-3.2, 0, -HALF],
+Z({ id: 'lobby1', name: 'lobby', deck: 1, y: Y.D1, box: [-4.2, 20.5, -8.5, 8.5], near: ['spa', 'cabinP', 'cabinS', 'lobby2', 'casino'], spot: [-3.2, 0, -HALF],
   build(c) {
     const { m } = c, hw = 7.3;
     lobby(c, 1, { hw });
@@ -554,11 +537,30 @@ Z({ id: 'lobby1', name: 'lobby', deck: 1, y: Y.D1, box: [-4.2, 20.5, -8.5, 8.5],
     c.wall(3, -hw, 3, hw, { doors: [[-1.2, 1.2]], dh: Y.CEIL, mat: m.wallAccent || m.wall });
     c.floor(m.floorHall || m.floor, 3, 20, -1.2, 1.2); c.ceil(3, 20, -1.2, 1.2, { step: 1.6 });
     for (const sd of [-1, 1]) { c.wall(3, sd * 1.2, 20, sd * 1.2, { doors: [[4.0, 5.1]], mat: m.wallAccent || m.wall }); c.door('cabin' + (sd > 0 ? 'S' : 'P') + 'Door', { x: 4.55, z: sd * 1.2, axis: 'x', w: 1.1, kind: 'wood', dir: 1, h: 2.1, off: sd * 0.09, lock: 'cabin' + (sd > 0 ? 'S' : 'P') }); }
-    c.wall(20, -1.2, 20, 1.2, { mat: m.woodDark || m.wall }); c.box(m.brass || m.metal, 19.93, 19.94, 1.4, 1.5, -0.22, 0.22);
+    // the corridor ends at the casino's double door (the room itself is the lazily loaded 'casino' zone below)
+    c.wall(20, -1.2, 20, 1.2, { doors: [[-0.9, 0.9]], dh: 2.2, mat: m.woodDark || m.wall }); c.box(m.brass || m.metal, 19.93, 19.94, 2.27, 2.37, -0.3, 0.3);
+    c.door('casinoDoor', { to: 'casino', x: 20, z: 0, axis: 'z', w: 1.8, kind: 'wood', double: true, h: 2.2, off: 0.1 });
     c.put(F.sideboard(m, { len: 1.6 }), 2.6, 5.6, FACE.nx); c.put(F.plant(m, { h: 1.7, seed: 7 }), -3.4, 6.4, 0); c.put(F.armchair(m), -2.4, -6.2, FACE.pz);
     for (const x of [8, 14]) { c.put(F.artFrame(m, { w: 0.9, h: 0.7, i: x }), x, -1.14, FACE.pz, 1.4); }
     c.light(9, 2.3, 0, 0.7); c.light(16, 2.3, 0, 0.7);
     c.person({ role: 'steward', look: 'steward_m', x: 1.9, z: 0.3 - 0.9, yaw: HALF, anim: 'idle', say: 'sayWelcome' });
+  } });
+
+// ---- casino (lower deck, forward of the guest cabins): play-money games. Everything about it lives in ./casino/ and is
+// imported only when the visitor comes down to the lower-deck lobby (or picks the Casino chip). Until the code has
+// arrived the zone is the bare room (floor, ceiling, walls to walk against); it is rebuilt as soon as the module is there.
+const CASINO = { mod: null, p: null };
+Z({ id: 'casino', name: 'casino', deck: 1, y: Y.D1, box: [20.2, 42, -8.5, 8.5], near: ['lobby1'], spot: [21.9, 0, -HALF],
+  load() { return CASINO.p || (CASINO.p = import('./casino/room.js').then((mod) => { CASINO.mod = mod; return mod; }).catch((e) => { CASINO.p = null; console.warn('[yacht] casino', e); return null; })); },
+  build(c) {
+    if (CASINO.mod) return CASINO.mod.buildCasino(c);
+    { // the room's outline as in casino/layout.js (X0, X1, hw)
+      const hw = (x) => 7.55 - (x - 20.3) * 0.1197, x0 = 20.22, x1 = 41.6, dark = c.m.woodDark || c.m.wall, seg = (ax, az, bx, bz) => c.world.seg(ax, az, bx, bz, c.y, c.y + 2.7, { tag: 'casino' });
+      c.floor(dark, x0, x1, (x) => -hw(x), hw, 0.014); c.slab(dark, x0, x1, (x) => -hw(x), hw, 2.7, -1);
+      for (const sd of [-1, 1]) { seg(x0, sd * hw(x0), x1, sd * hw(x1)); seg(x0, sd * 0.92, x0, sd * hw(x0)); seg(20, sd * 0.92, x0, sd * 0.92); }
+      seg(x1, -hw(x1), x1, hw(x1));
+    }
+    this.load().then((mod) => { const z = c.zone; if (mod && z.built && !c.yt.disposed && c.yt.zones.get('casino') === z) { c.yt.dropZone(z); c.yt._want_build = z; } });
   } });
 
 // ---- galley (port) and library (starboard) off the main-deck corridor
@@ -673,7 +675,7 @@ Z({ id: 'master', name: 'master', deck: 3, y: Y.D3, box: [9, 22.2, -6.7, 6.7], n
 Z({ id: 'mterr', name: 'terrace', deck: 3, y: Y.D3, out: true, box: [22.2, 31.5, -9, 9], near: ['master'], spot: [24.5, 0, -HALF],
   build(c) { const { m } = c; for (const z of [-1.3, 1.3]) sunbed(c, 25.6, z, FACE.nx); c.put(F.sideTable(m), 25.2, 0, 0); c.light(25, 1.6, 0, 0.5); } });
 // ---- foredeck: helipad (decal in the shell), mooring-deck benches
-Z({ id: 'fore', name: 'helipad', deck: 2, y: Y.D2, out: true, box: [30, 62, -9, 9], near: [], spot: [38.5, 0, -HALF],
+Z({ id: 'fore', name: 'helipad', deck: 2, y: Y.D2, out: true, box: [30, 62, -9, 9], near: [], spot: [40.9, 4.5, -0.76],   // (beside the helicopter, facing its cabin door)
   build(c) { const { m } = c; for (const sd of [-1, 1]) c.put(F.outdoorChair(m), 39.6, sd * 6.6, sd > 0 ? FACE.nz : FACE.pz); c.light(45, 2, 0, 0.4); } });
 
 // ---- spa (lower deck): lounge + corridor, massage room, sauna, steam room with a plunge pool
@@ -766,18 +768,14 @@ const BEACH_HW = 6.95;
 Z({ id: 'beach', name: 'disco', deck: 1, y: Y.D1, box: [-58, -36, -8.5, 8.5], near: ['swim', 'spa'], spot: [-56.2, 0, -HALF],
   build(c) {
     const { m } = c, hw = BEACH_HW, dark = m.marbleDark || m.floorHall || m.floor;
-    c.floor(dark, -57.95, -36, -hw, hw); c.ceil(-57.95, -36, -hw, hw, { mat: m.darkPlastic || m.ceiling, step: 2.6 });
-    for (const sd of [-1, 1]) c.wall(-58, sd * (hw + 0.05), -36, sd * (hw + 0.05), { mat: m.woodDark || m.wallAccent || m.wall, h: Y.H - 0.3 });
+    // the room, the LED floor and walls, the light rig and the pooled lights: yacht-disco.js (the disco's look)
+    buildDisco(c);
     // transom: glass wall with wide sliding doors to the swim platform
     c.wall(-58, -hw, -58, hw, { doors: [[-3, 3]], dh: 2.3, mat: m.glass, t: 0.03, h: Y.H - 0.3 });
     c.door('beachAft', { to: 'swim', always: true, x: -58, z: 0, axis: 'z', w: 6, kind: 'glass', double: true, h: 2.3, off: 0.06 });
-    // dance floor
-    c.slab(danceMat(), -51.5, -45.5, -3, 3, 0.02, 1);
-    c.box(m.brass || m.metal, -51.56, -45.44, 0.012, 0.03, -3.06, -3.0); c.box(m.brass || m.metal, -51.56, -45.44, 0.012, 0.03, 3.0, 3.06); c.box(m.brass || m.metal, -51.56, -51.5, 0.012, 0.03, -3, 3); c.box(m.brass || m.metal, -45.5, -45.44, 0.012, 0.03, -3, 3);
-    // stage forward with the LED wall
+    // stage forward (its LED wall: yacht-disco.js)
     c.box(m.darkPlastic || dark, -39.8, -36.1, 0, 0.35, -3.8, 3.8); c.box(c.SM.led, -39.82, -39.8, 0.3, 0.33, -3.8, 3.8);
     c.world.floor({ id: 'stage', x0: -39.8, x1: -36.1, z0: -3.8, z1: 3.8, y: c.y + 0.35, tag: 'beach' });
-    c.mesh(PLANE, wallMat(), -36.14, 1.55, 0, [0, -HALF, 0], [7.4, 2.5, 1]);
     // keyboard on a stand, mic stand, monitor wedges, guitar amp
     c.box(m.darkPlastic || dark, -37.6, -37.2, 1.22, 1.3, 1.6, 2.8); c.box(m.blackMetal || m.metal, -37.42, -37.38, 0.35, 1.22, 1.7, 1.74); c.box(m.blackMetal || m.metal, -37.42, -37.38, 0.35, 1.22, 2.66, 2.7);
     c.box(m.blackMetal || m.metal, -38.72, -38.7, 0.35, 1.78, -0.01, 0.01); c.mesh(new THREE.SphereGeometry(0.035, 10, 8), m.steel || m.metal, -38.71, 1.8, 0);
@@ -792,14 +790,6 @@ Z({ id: 'beach', name: 'disco', deck: 1, y: Y.D1, box: [-58, -36, -8.5, 8.5], ne
     // lounge corners by the transom doors
     for (const sd of [-1, 1]) { c.put(F.sofa(m, { len: 2.6 }), -55.6, sd * 5.4, sd > 0 ? FACE.nz : FACE.pz); c.put(F.coffeeTable(m), -55.6, sd * 3.9, 0); c.put(F.armchair(m), -53.6, sd * 4.0, FACE.nx); }
     c.put(F.sofa(m, { len: 2.2 }), -42.6, -5.6, FACE.pz); c.put(F.sideTable(m), -41.0, -5.6, 0);
-    // moving beams from a ceiling truss + mirror ball
-    c.box(m.blackMetal || m.metal, -51.5, -45.5, 2.56, 2.62, -0.04, 0.04); c.box(m.blackMetal || m.metal, -48.54, -48.46, 2.56, 2.62, -3, 3);
-    const beams = new THREE.Group(); beams.name = 'y-beams'; beams.userData.keep = true; beams.position.set(0, c.y, 0);
-    const cone = new THREE.CylinderGeometry(0.04, 0.85, 2.5, 16, 1, true); cone.translate(0, -1.25, 0);
-    ['#ff2f8a', '#27b6ff', '#ffc24a', '#8a5cff', '#27ffb0', '#ff5a2a'].forEach((hex, i) => { const o = new THREE.Mesh(cone, beamMat(hex)); o.position.set(-50.6 + (i % 3) * 2.1, 2.56, i < 3 ? -1.4 : 1.4); o.userData.ph = i * 1.05; o.userData.sharedGeo = true; o.raycast = () => {}; o.renderOrder = 5; beams.add(o); });
-    const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 1), m.steel || m.chrome || m.metal); ball.position.set(-48.5, 2.2, 0); ball.raycast = () => {}; beams.add(ball); beams.userData.ball = ball;
-    c.sg.add(beams); c.zone.beams = beams;
-    c.light(-48.5, 2.3, 0, 1.3, '#ff3f9a', 9); c.light(-38, 2.4, 0, 1.2, '#ffc070', 8); c.light(-48.5, 2.2, 4.4, 0.7, '#ffd0a0'); c.light(-55.5, 2.2, 0, 0.6, '#7fb8ff'); c.light(-48.5, 2.2, -4.6, 0.6, '#8a5cff');
     // people: DJ, the band, dancers, guests at the bar
     c.person({ id: 'dj', role: 'djName', look: 'dj', x: -48.5, z: -6.1, yaw: 0, anim: 'dj' });
     c.person({ id: 'singer', role: 'singer', look: 'singer', x: -38.9, z: 0.35, yaw: -HALF, anim: 'sing', dy: 0.35, show: true });

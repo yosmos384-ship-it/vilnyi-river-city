@@ -45,15 +45,29 @@ export function clearance(x, z) {
 /** Unit direction of increasing clearance at (x, z) (to steer away from the shallows). */
 export function awayDir(x, z) { const e = 6, gx = clearance(x + e, z) - clearance(x - e, z), gz = clearance(x, z + e) - clearance(x, z - e), l = Math.hypot(gx, gz) || 1; return [gx / l, gz / l]; }
 
-// The scenic loop (anticlockwise seen from above): out past the fountain along the island's north side, round the wide
-// west basin and back along the north shore to the approach point off the pier.
+// The scenic loop. A mark is [x, z, speed (m/s, default: cruise), rounding radius (m, default 95)].
+//  1. off the pier she swings round to port in the open water south of the fountain and comes back heading for the
+//     buildings (VILNYI RIVER CITY ahead of the bow), then
+//  2. THE PASS: slowly north along the east shore, 95–125 m off the pier head, the project 340–400 m off to starboard,
+//  3. west through the fairway north of the fountain, round the wide west basin and back along the south shore,
+//  4. the same approach again — bow to the project, then her starboard side — ending stopped on the pier's axis
+//     (PASS_END), where she swings her bow to the lake and backs in.
+const SITE = [42, -47];                       // centre of the C3 / C4 plot (lake.js SITE)
+export const PROJECT = SITE;
+export const PASS_END = [-352.3, -12.5];      // on the pier's axis, 128 m from its root (= PIER.at(128))
+const APPROACH = [[-548, 184, 7, 60], [-478, 136, 6, 60], [-405, 72, 4.4, 60], [-364, 18, 3.2, 45]];
 export const LOOP = [
-  [-530, 48], [-660, 42], [-800, 24], [-960, -10], [-1090, -110], [-1170, -280], [-1190, -470], [-1240, -640], [-1300, -690],
-  [-1360, -610], [-1370, -430], [-1335, -250], [-1260, -90], [-1150, 80], [-1000, 190], [-820, 230], [-660, 190], [-560, 110],
+  [-420, 3, 7], [-515, 58, 9], [-610, 26, 9], [-700, 30, 9], [-752, 90, 8.5], [-748, 150, 8], [-700, 196, 7.5, 60], [-630, 206, 7, 60],
+  ...APPROACH, [PASS_END[0], PASS_END[1], 3, 40], [-354, -60, 2.6, 35], [-379, -121, 2.5, 35], [-440, -146, 3, 40],
+  [-510, -152, 6, 60], [-575, -150, 7, 60], [-628, -118, 7.5, 60], [-672, -62, 8.5], [-730, -10], [-830, 35], [-960, 5], [-1070, -70],
+  [-1150, -190], [-1235, -250], [-1300, -170], [-1290, -40], [-1200, 70], [-1040, 180], [-850, 222], [-710, 214, 8], [-630, 206, 7, 60],
+  ...APPROACH.map(m => m.slice()), [PASS_END[0], PASS_END[1], 2.2, 24],
 ];
 // extra fairway marks: the basin south of the island (reached round its west end; the footbridge closes the east side)
 // and the pocket east of the island
-const EXTRA = [[-560, -615], [-700, -560], [-880, -520], [-1040, -480], [-640, -120], [-460, -150]];
+// — and the far north-west of the lake and the open water off the pier, which the loop does not visit
+const EXTRA = [[-560, -615], [-700, -560], [-880, -520], [-1040, -480], [-640, -120], [-460, -150],
+  [-1190, -470], [-1240, -640], [-1300, -690], [-1360, -610], [-660, 42], [-660, 190], [-560, 110], [-530, 48]];
 const NODES = [...LOOP, ...EXTRA];
 /** Is the straight line a → b clear by at least `m` metres all the way? */
 export function clearLine(ax, az, bx, bz, m = 40, lead = 0) {   // lead: metres at the start that only need to be afloat
@@ -76,9 +90,10 @@ function edges() {
  * clear sight of the start (nose against a shore: back off first). goal: optional index of a LOOP mark to end at.
  */
 export function route(x, z, tx, tz, goal = -1) {
-  if (goal < 0 && clearLine(x, z, tx, tz, 45, 90)) return [[tx, tz]];
+  if (goal < 0 && clearLine(x, z, tx, tz, 60, 90)) return [[tx, tz]];
   const E = edges(), n = NODES.length, dist = new Array(n).fill(Infinity), prev = new Array(n).fill(-1), done = new Array(n).fill(false);
-  for (let i = 0; i < n; i++) if (clearLine(x, z, NODES[i][0], NODES[i][1], 30, 90)) dist[i] = Math.hypot(NODES[i][0] - x, NODES[i][1] - z);
+  // (the first leg may start in a tight spot, but a long one keeps the fairway's margin like every other leg)
+  for (let i = 0; i < n; i++) { const d = Math.hypot(NODES[i][0] - x, NODES[i][1] - z); if (clearLine(x, z, NODES[i][0], NODES[i][1], d < 170 ? 30 : 45, 90)) dist[i] = d; }
   if (!dist.some(isFinite)) return null;
   for (;;) {
     let u = -1; for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;

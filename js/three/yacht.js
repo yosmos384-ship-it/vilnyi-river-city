@@ -15,14 +15,16 @@ import { getMaterials } from './materials.js';
 import { createHelm } from './yacht-helm.js';
 import { createPeople } from './yacht-people.js';
 import { createAudio } from './yacht-audio.js';
+import { discoTick } from './yacht-disco.js';
+import { createHeli } from './yacht-heli.js';
 
 const EYE = 1.62, R = 0.28, SPEED = 1.4, RUN = 2.6, HALF = Math.PI / 2;
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const isTouch = () => (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
 // destination chips: [key, zone id]
-const DEST = [['quay', 'quay'], ['salon', 'salon'], ['dining', 'dining'], ['master', 'master'], ['cabin', 'vipS'], ['bridge', 'bridge'], ['sundeck', 'sundeck'], ['spa', 'spa'], ['disco', 'beach']];
-const AT = { quay: 'quay', dropoff: 'quay', aft: 'aft', salon: 'salon', dining: 'dining', master: 'master', bridge: 'bridge', sundeck: 'sundeck', spa: 'spa', disco: 'beach', swim: 'swim', cabin: 'vipS' };
+const DEST = [['quay', 'quay'], ['salon', 'salon'], ['dining', 'dining'], ['master', 'master'], ['cabin', 'vipS'], ['bridge', 'bridge'], ['sundeck', 'sundeck'], ['spa', 'spa'], ['casino', 'casino'], ['disco', 'beach']];
+const AT = { quay: 'quay', dropoff: 'quay', aft: 'aft', salon: 'salon', dining: 'dining', master: 'master', bridge: 'bridge', sundeck: 'sundeck', spa: 'spa', disco: 'beach', swim: 'swim', cabin: 'vipS', casino: 'casino' };
 
 const CSS = `
 .vw.yacht .vw-bottom,.vw.yacht .vw-map,.vw.yacht .vw-mapbtn,.vw.yacht .vw-modes,.vw.yacht .vw-ucard,.vw.yacht .vw-carchip,.vw.yacht .vw-lift,.vw.yacht .vw-floorsbtn,
@@ -116,6 +118,7 @@ class Yacht {
     // the pier's colliders for the ordinary walker (lake.js builds the pier; YACHT-CONTRACT.md)
     try { const pier = walk.scene.getObjectByName('vrc-pier'); if (pier && !walk.floors.some(e => e.src === 'yacht-pier')) walk._register(pier, 'yacht-pier'); } catch (e) { console.warn('[yacht] pier colliders', e); }
     this._hud();
+    this.heli = createHeli(this);   // the helicopter on the helipad and its scenic flight (yacht-heli.js)
     this.root.visible = false;
     this.ready = true;
   }
@@ -179,7 +182,7 @@ class Yacht {
     for (const d of z.doors) this.doors.delete(d.id); z.doors = [];
     this.world.remove(z.id);
   }
-  _visSet(cur) { const s = new Set([cur.id]); for (const id of cur.near) s.add(id); return s; }
+  _visSet(cur) { const s = new Set([cur.id]); for (const id of cur.near) s.add(id); if (this.heli) this.heli.vis(s); return s; }   // (from the helicopter: the open decks too)
   _zones(dt) {
     const cur = this.zoneAt();
     if (cur !== this.cur) { this.cur = cur; this._zoneChanged(cur); }
@@ -305,6 +308,8 @@ class Yacht {
     if (fade) await walk._fade(true);
     try {
       if (walk.drive && walk._exitCar) { try { await walk._exitCar(); } catch { /* */ } }
+      // (called again while aboard: out of the seat, the helicopter or the casino table first — place() below would leave them half on)
+      if (this.active) { await this._endPose(true); if (this.casino && this.casino.game) this.casino.leave(true); }
       if (!this.active) {
         this.active = true; this.root.visible = true; this._holdProxy(true);
         walk.root.classList.add('yacht'); walk.glide = null; walk.player.vel.set(0, 0, 0);
@@ -314,6 +319,7 @@ class Yacht {
         this._texts(); this._note();
       }
       const z = spot.zone || this.zoneAt({ ...spot, patch: null });
+      if (z && z.load) await z.load();   // a zone whose code is imported on demand (the casino)
       if (z && !z.built) { this.buildZone(z); }
       this.place(spot, spot.here ? walk.player.pitch : -0.03);
       this._hudUpdate(true);
@@ -326,7 +332,7 @@ class Yacht {
     this._endPose(true);
     if (s.dock && !this.helm.docked) { this.walk._toast(this.t('gangwayIn'), 2400); return; }
     await this.walk._fade(true);
-    try { const z = s.zone; if (!z.built) this.buildZone(z); this.place(s); this._hudUpdate(true); } finally { await this.walk._fade(false); }
+    try { const z = s.zone; if (z.load) await z.load(); if (!z.built) this.buildZone(z); this.place(s); this._hudUpdate(true); } finally { await this.walk._fade(false); }
   }
   async leave(o = {}) {
     const walk = this.walk; if (!this.active) return;
@@ -335,6 +341,9 @@ class Yacht {
     if (!seamless) await walk._fade(true);
     try {
       this._endPose(true); this.dropDrink(true);
+      // the lazily loaded parts own HUD, lens and sound of their own, and nothing ticks them once the yacht is left
+      if (this.casino) try { this.casino.away(); } catch (e) { console.warn('[yacht] casino', e); }
+      if (this.heli.state !== 'parked') this.heli.reset(true);   // (rotors still running down after a landing)
       // world pose of the walker for a hand-back on the spot
       const wp = this.toWorld(this.w.x, this.w.y, this.w.z), yawW = walk.player.yaw + (this.w.dock ? DOCK.yaw : this.helm.pose.yaw);
       this.active = false; walk.root.classList.remove('yacht', 'yhelm', 'ypose');
@@ -385,6 +394,7 @@ class Yacht {
     if (this.mode === 'walk' && !this.busy) this._walk(dt);
     this.helm.update(dt);
     this._pose();
+    this.heli.update(dt);
     if (this.mode === 'walk') { w.y += (w.ty - w.y) * damp(12, dt); P.eye += (EYE - P.eye) * damp(8, dt); }
     // hand back to the ordinary walker at the root of the pier
     if (w.dock && this.mode === 'walk' && w.x < -99.2 + 3.2 && !this.busy) { this._camera(); this.leave({ to: 'stay', seamless: true }); return; }
@@ -398,6 +408,7 @@ class Yacht {
     if (this.poseTick) this.poseTick(dt);
     this.shell.radar.rotation.y += dt * 2.2;
     this._camera();
+    if (this.casinoFrame) this.casinoFrame(dt);   // casino (lazy, ./casino/play.js): its HUD, and the camera while seated at a table
     // look of the shell: night lights, glazing clear from inside
     const out = this.cur && this.cur.out ? 1 : 0; this._outK = (this._outK ?? out) + (out - (this._outK ?? out)) * damp(4, dt);
     this.SM.setLook(walk.envMode, this._outK);
@@ -434,6 +445,7 @@ class Yacht {
     }
   }
   _camera() {
+    if (this.heli && this.heli.riding) return this.heli.camera();   // seated in the helicopter: its cabin carries the camera
     const walk = this.walk, P = walk.player, w = this.w, cam = walk.camera;
     const sway = this.helm.docked ? 0 : Math.sin(this.time * 0.9) * 0.004;
     this.toWorld(w.x, w.y + P.eye, w.z, w.dock, cam.position);
@@ -468,6 +480,7 @@ class Yacht {
     for (const id of this._vis || []) { const z = this.zones.get(id); if (z && z.built && z.group.visible) for (const o of z.targets) if (o.parent && o.visible !== false) objs.push(o); }
     for (const o of this.people.targets()) objs.push(o);
     if (this.extraTargets) for (const o of this.extraTargets) objs.push(o);
+    if (this.heli) for (const o of this.heli.targets()) objs.push(o);
     if (!objs.length) return null;
     const offs = [[0, 0]]; const rads = isTouch() ? [10, 20] : [6]; for (const r of rads) for (let i = 0; i < 8; i++) offs.push([Math.cos(i / 8 * 6.283) * r, Math.sin(i / 8 * 6.283) * r]);
     const eye = this.toLocal(this.walk.camera.position, this.w.dock);
@@ -636,15 +649,17 @@ class Yacht {
     e.note.querySelector('b').textContent = t('label'); e.note.querySelector('span').textContent = t('note');
     e.decks.innerHTML = ''; e.dest.innerHTML = '';
     const mk = (box, txt, ds, cls = 'vw-chip') => { const b = document.createElement('button'); b.className = cls; b.textContent = txt; Object.assign(b.dataset, ds); box.appendChild(b); return b; };
-    for (let d = 4; d >= 1; d--) mk(e.decks, d + ' · ' + t('d' + d), { deck: d });
+    const deckName = (d) => d + ' · ' + t('d' + d) + (d === 1 ? ' · ' + t('casino') : '');   // the casino is on the lower deck
+    for (let d = 4; d >= 1; d--) mk(e.decks, deckName(d), { deck: d });
     mk(e.decks, '← ' + t('back'), { y: 'back' }, 'vw-chip tp');
     for (const [k, z] of DEST) mk(e.dest, t(k), { dest: z });
     e.lift.querySelector('.hd').textContent = t('liftChoose');
     for (const b of [...e.lift.querySelectorAll('button')]) b.remove();
-    for (let d = 4; d >= 1; d--) mk(e.lift, d + ' · ' + t('d' + d), { lift: d }, '');
+    for (let d = 4; d >= 1; d--) mk(e.lift, deckName(d), { lift: d }, '');
     e.auto.textContent = t('autopilot'); e.ret.textContent = t('dock'); e.hleave.textContent = t('helmLeave'); e.kn.textContent = t('kn');
     e.hint.textContent = t(isTouch() ? 'helmHintTouch' : 'helmHint');
     e.snd.title = t('music'); this._sndBtn();
+    if (this.heli) this.heli.chips();
   }
   _sndBtn() { this.el.snd.classList.toggle('muted', this.audio.muted || !this.audio.unlocked); }
   _note(ms = 9000) { const n = this.el.note; n.classList.add('show'); clearTimeout(this._noteT); this._noteT = setTimeout(() => n.classList.remove('show'), ms); }
@@ -707,7 +722,8 @@ class Yacht {
 
   dispose() {
     this.disposed = true; this.active = false;
-    try { this.audio.dispose(); this.people.dispose(); this.helm.dispose(); } catch { /* */ }
+    try { if (this.casino) this.casino.dispose(); } catch { /* */ }
+    try { this.heli.dispose(); this.audio.dispose(); this.people.dispose(); this.helm.dispose(); } catch { /* */ }
     for (const z of this.zones.values()) if (z.built) this.dropZone(z);
     this.shell.dispose();
     if (this.root.parent) this.root.parent.remove(this.root);
@@ -722,11 +738,7 @@ Object.assign(Yacht.prototype, {
   // moving lights of the disco, helm screens, disco light colours
   _fxTick(dt) {
     const b = this.zones.get('beach');
-    if (b && b.built && b.group.visible && b.beams) {
-      const t = this.time; for (const o of b.beams.children) { if (o === b.beams.userData.ball) { o.rotation.y = t * 0.6; continue; } const ph = o.userData.ph; o.rotation.set(Math.sin(t * 0.9 + ph) * 0.55, 0, Math.cos(t * 0.7 + ph * 1.7) * 0.55); }
-      // the pooled lights of the dance floor follow the beat
-      const pool = this.walk._lightPool; if (pool && this._ls) this._ls.forEach((l, i) => { if (l && l[4] && l[5] === 9 && pool[i]) { pool[i].color.setHSL((t * 0.07 + this.audio.beatTime * 0.125) % 1, 0.85, 0.55); pool[i].intensity *= 0.55 + 0.6 * this.audio.beat; } });
-    }
+    if (b && b.built && b.group.visible) discoTick(this, b, dt);   // the look of the moment, the rig, the pooled lights (yacht-disco.js)
     if (this._screen && (this.cur && (this.cur.id === 'bridge' || this.cur.id === 'lobby4')) && this.time - (this._screenT || 0) > 0.4) { this._screenT = this.time; this._drawScreen(); }
     if (this.dance) { this.dance.t -= dt; if (this.dance.t <= 0) this.dance = null; }
   },
@@ -740,6 +752,7 @@ Object.assign(Yacht.prototype, {
     if (this.mode === 'massage') a = { label: this.t('massageEnd'), fn: () => this._endPose() };
     else if (this.mode === 'lie' || this.mode === 'sit') a = { label: this.t('getUp'), fn: () => this._endPose() };
     else if (this.held && this.mode === 'walk') a = this.held.level > 0 ? { label: this.t('drinkSip'), fn: () => this.sip() } : { label: this.t('drinkPut'), fn: () => this.held.put() };
+    if (!a && this.heli) a = this.heli.act();   // beside the helicopter: "Board the helicopter"
     if ((a && a.label) !== (this._act && this._act.label)) this.setAct(a);
   },
   hintTick() {

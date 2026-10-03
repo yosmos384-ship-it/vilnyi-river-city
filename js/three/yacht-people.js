@@ -4,6 +4,7 @@
 // is painted by yacht-crowd.js (mix-and-match, its own atlas per zone, loaded with the zone). Interactions are social only:
 // greeting, a toast, dancing together, a cheek-kiss hello, a high five / handshake.
 import * as THREE from 'three';
+import { discoFigureMat } from './yacht-disco.js';
 import { UBOX, colMat } from './yacht-kit.js';
 
 const TAU = Math.PI * 2, PXM = 284;                 // atlas pixels per metre
@@ -277,7 +278,7 @@ const nextFrame = () => new Promise(r => { let d = false; const f = () => { if (
 
 export function createPeople(yacht) {
   const crowds = new Map();   // zone id → [batch]: { mesh, arm, figs, … } — the painted "looks" and the mix-and-match party crowd
-  const cam = new THREE.Vector3(), tint = new THREE.Color();
+  const cam = new THREE.Vector3();
   let engaged = null;         // the figure in an interaction with the visitor
   const batches = (id) => crowds.get(id) || [];
   const add = (z, b) => { if (!crowds.has(z.id)) crowds.set(z.id, []); crowds.get(z.id).push(b); };
@@ -309,7 +310,8 @@ export function createPeople(yacht) {
     });
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx);
     ag.setAttribute('position', new THREE.BufferAttribute(apos, 3).setUsage(THREE.DynamicDrawUsage)); ag.setAttribute('uv', new THREE.BufferAttribute(auv, 2).setUsage(THREE.DynamicDrawUsage)); ag.setIndex(aidx);
-    const mesh = new THREE.Mesh(geo, A.mb), arm = new THREE.Mesh(ag, A.ma);
+    const disco = z.id === 'beach';   // in the disco the cards are lit by the room's colours (yacht-disco.js)
+    const mesh = new THREE.Mesh(geo, disco ? discoFigureMat(A.mb) : A.mb), arm = new THREE.Mesh(ag, disco ? discoFigureMat(A.ma) : A.ma);
     for (const m of [mesh, arm]) { m.frustumCulled = false; m.raycast = () => {}; m.name = 'yacht-people'; m.userData.sharedGeo = true; group.add(m); }
     batch.mesh = mesh; batch.arm = arm; add(z, batch);
   }
@@ -336,7 +338,7 @@ export function createPeople(yacht) {
     for (let i = 0; i < n; i++) { const a = n * NV + i * 4; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
     geo.setAttribute('position', new THREE.BufferAttribute(all, 3).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2).setUsage(THREE.DynamicDrawUsage)); geo.setIndex(idx);
     sg.setAttribute('position', new THREE.BufferAttribute(spos, 3).setUsage(THREE.DynamicDrawUsage)); sg.setAttribute('uv', new THREE.BufferAttribute(suv, 2)); sg.setIndex(sidx);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xf4efe8, side: THREE.DoubleSide, alphaTest: 0.5, alphaToCoverage: true }); mat.name = 'yacht-figure-card';
+    const mat = z.id === 'beach' ? discoFigureMat(null) : new THREE.MeshBasicMaterial({ color: 0xf4efe8, side: THREE.DoubleSide, alphaTest: 0.5, alphaToCoverage: true }); mat.name = 'yacht-figure-card';
     const mesh = new THREE.Mesh(geo, mat), shadow = new THREE.Mesh(sg, shadowMat());
     mesh.name = 'yacht-crowd'; shadow.name = 'yacht-crowd-shadow'; shadow.renderOrder = 3;
     for (const m of [mesh, shadow]) { m.frustumCulled = false; m.raycast = () => {}; m.userData.sharedGeo = true; m.visible = false; group.add(m); }
@@ -399,10 +401,8 @@ export function createPeople(yacht) {
       const z = yacht.zones.get(id); if (!z || !z.built || !z.group.visible) continue;
       for (const c of list) {
       if (c.mix && !c.ready) { if (c.released && !c.painting) c.done = paintMix(c).catch(e => { console.warn('[yacht] crowd ' + id, e); return null; }); continue; }
-      const k = z.out ? (mode === 'day' ? 1 : mode === 'dusk' ? 0.72 : 0.5) : (id === 'beach' ? 0.74 : 0.92);
+      const k = z.out ? (mode === 'day' ? 1 : mode === 'dusk' ? 0.72 : 0.5) : (id === 'beach' ? 1 : 0.92);   // (the disco's own material does its lighting)
       c.mesh.material.color.setRGB(0.957 * k, 0.937 * k, 0.91 * k);
-      // in the disco the party crowd takes a little of the floor lights' colour and pulses with the beat
-      if (c.mix && id === 'beach') { tint.setHSL(((yacht.time || 0) * 0.07 + bt * 0.125) % 1, 0.8, 0.62); const kk = 0.7 + 0.14 * beat; c.mesh.material.color.setRGB(kk * (0.7 + 0.3 * tint.r), kk * (0.68 + 0.3 * tint.g), kk * (0.68 + 0.3 * tint.b)); }
       if (c.arm !== c.mesh) c.arm.material.color.copy(c.mesh.material.color);
       const { pos, apos } = c; let uvDirty = false;
       for (const f of c.figs) {

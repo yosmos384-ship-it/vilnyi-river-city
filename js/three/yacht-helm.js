@@ -1,12 +1,13 @@
 // VILNYI Lifestyle yacht — under way: helm physics (throttle, rudder, inertia), soft limits of the navigable water with
-// a depth alarm, the autopilot (scenic loop → back to the pier), the stern-to docking manoeuvre and the wake.
+// a depth alarm, the autopilot (scenic loop with the slow pass in front of VILNYI RIVER CITY → back to the pier), the
+// stern-to docking manoeuvre and the wake.
 import * as THREE from 'three';
 import { PIER, DOCK, WATER_Y } from './yacht-pier.js';
-import { clearance, awayDir, LOOP, route, clearLine } from './yacht-nav.js';
+import { clearance, awayDir, LOOP, route, clearLine, PASS_END, PROJECT } from './yacht-nav.js';
+import { HT } from './yacht-heli-i18n.js';
 import { bearingOf } from '../data.js';
 
 const VMAX = 11, VCRUISE = 9.5, VAST = 3.2, RTURN = 115;   // m/s, m/s, m/s astern, turning radius at full rudder (m)
-const APPROACH_S = 235;                                    // pivot point off the pier (centre of the yacht, m along W from S)
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const yawOfDir = (dx, dz) => Math.atan2(-dz, dx);          // rotation.y whose local +x points along (dx, dz)
@@ -23,7 +24,8 @@ export function createHelm(yacht) {
     manual() { if (H.mode === 'docked') castOff(); if (H.mode !== 'manual') { H.mode = 'manual'; H.phase = null; input.throttle = H.throttle; } },
     // scenic loop: from the pier the whole circuit; from elsewhere join it at the nearest mark by fairway and carry on
     auto() { if (H.mode === 'auto') return H.manual(); const fresh = H.docked; if (H.docked) castOff(); H.mode = 'auto'; H.phase = null; H.queue = fresh ? LOOP.slice() : joinLoop(); H.stuck = 0; },
-    ret() { if (H.docked) return; H.mode = 'return'; H.phase = 'route'; H.queue = route(pose.x, pose.z, A[0], A[1]); H.stuck = 0; },
+    // back to the pier from anywhere: by the fairway to the approach point on the pier's axis (where the loop ends too)
+    ret() { if (H.docked) return; H.mode = 'return'; H.stuck = 0; planReturn(); },
     // hands off the helm while under way → the autopilot takes her round the loop
     release() { if (!H.docked && H.mode === 'manual') { H.mode = 'auto'; H.phase = null; H.queue = joinLoop(); H.stuck = 0; } },
     update, dispose,
@@ -37,14 +39,18 @@ export function createHelm(yacht) {
       const ang = Math.abs(wrap(yawOfDir(r[0][0] - pose.x, r[0][1] - pose.z) - pose.yaw)); c += ang * 120; if (c < bc) { bc = c; best = [...r, ...LOOP.slice(k + 1)]; } }
     return best;   // null: no mark in clear sight (backs off first)
   }
-  const A = PIER.at(APPROACH_S);
+  // the approach point: on the pier's axis 128 m from its root (the yacht's centre; her stern then swings 30 m clear of
+  // the pier head, and no shore, islet or the fountain is nearer than 60 m to any part of the hull while she pivots)
+  const A = PASS_END;
+  function planReturn() { H.phase = 'route'; H.queue = route(pose.x, pose.z, A[0], A[1]); }
   // steer towards a point; returns the distance to it
   function steerTo(tx, tz, vmax, dt) {
     const dx = tx - pose.x, dz = tz - pose.z, d = Math.hypot(dx, dz), err = wrap(yawOfDir(dx, dz) - pose.yaw);
     H.rudder += (clamp(err * 2.2, -1, 1) - H.rudder) * Math.min(1, dt * 2.5);
     // far off the bearing (a mark astern after "Return" or a manual excursion): take the way off and swing round on the
     // thrusters — a U-turn at speed is 230 m wide and used to end with the bow in the shallows of the island
-    if (Math.abs(err) > 0.9) { vmax = Math.min(vmax, 0.8); if (H.speed > 1.2) H.speed *= Math.max(0, 1 - dt * 0.4); }
+    H.err = err;
+    if (Math.abs(err) > 0.9) { vmax = Math.min(vmax, 0.45); if (H.speed > 1.0) H.speed *= Math.max(0, 1 - dt * 0.45); }
     const slow = 1 - 0.6 * Math.min(1, Math.abs(err) / 1.0);
     H.throttle += (clamp(vmax * slow / VMAX, 0, 1) - H.throttle) * Math.min(1, dt * 0.8);
     return d;
@@ -55,18 +61,28 @@ export function createHelm(yacht) {
     if (!H.queue) {
       H.rudder += (0 - H.rudder) * Math.min(1, dt * 2); H.throttle += (-0.45 - H.throttle) * Math.min(1, dt); H.stuck += dt;
       // (until the bow has water under it again — the soft limit holds her while it is in the shallows — or 25 s at most)
-      if (H.stuck > 3 && (H.stuck > 25 || clearance(pose.x + Math.cos(pose.yaw) * 70, pose.z - Math.sin(pose.yaw) * 70) > 28)) { H.stuck = 0; H.queue = H.mode === 'return' ? route(pose.x, pose.z, A[0], A[1]) : joinLoop(); }
+      if (H.stuck > 3 && (H.stuck > 25 || clearance(pose.x + Math.cos(pose.yaw) * 70, pose.z - Math.sin(pose.yaw) * 70) > 28)) { H.stuck = 0; if (H.mode === 'return') planReturn(); else H.queue = joinLoop(); }
       return false;
     }
     if (!H.queue.length) return true;
-    const [tx, tz] = H.queue[0], d = steerTo(tx, tz, VCRUISE, dt);
+    const mk = H.queue[0], tx = mk[0], tz = mk[1];   // (a mark may carry its own speed and rounding radius)
+    // she keeps to the leg — the straight line from the last mark (or from where the route was planned), which is the
+    // line whose clearance was checked — by steering for a point 110 m ahead on it, not straight for the mark
+    if (H.legQ !== H.queue) { H.legQ = H.queue; H.leg = [pose.x, pose.z]; }
+    let ax = tx, az = tz;
+    { const lx = tx - H.leg[0], lz = tz - H.leg[1], L = Math.hypot(lx, lz);
+      if (L > 1) { const u = ((pose.x - H.leg[0]) * lx + (pose.z - H.leg[1]) * lz) / L, a = Math.min(L, Math.max(0, u) + 110); ax = H.leg[0] + lx / L * a; az = H.leg[1] + lz / L * a; } }
+    steerTo(ax, az, mk[2] ?? VCRUISE, dt);
+    const d = Math.hypot(tx - pose.x, tz - pose.z);
     // a mark counts as rounded when close, or when it has come abeam (no orbiting round a mark inside the turning circle)
     const ahead = (tx - pose.x) * Math.cos(pose.yaw) + (tz - pose.z) * -Math.sin(pose.yaw);
     // (only a mark that has been ahead of the bow: one that starts astern has to be steered for, not skipped)
     if (ahead > 0) H.seen = H.queue[0];
-    if (d < 95 || (d < 280 && ahead < 0 && H.queue.length > 1 && H.seen === H.queue[0])) { H.queue.shift(); H.stuck = 0; if (!H.queue.length) return true; }
+    // — and only once the next mark is in clear sight from here: a corner is never cut across a shore or the fountain
+    if ((d < (mk[3] ?? 95) || (d < 280 && ahead < 0 && H.queue.length > 1 && H.seen === H.queue[0])) && (H.queue.length < 2 || d < 28 || clearLine(pose.x, pose.z, H.queue[1][0], H.queue[1][1], 45, 40))) { H.leg = [tx, tz]; H.queue.shift(); H.stuck = 0; if (!H.queue.length) return true; }
     // not getting anywhere (a mark behind a headland after a manual excursion): re-plan
-    if (Math.abs(H.speed) < 0.4) { H.stuck += dt; if (H.stuck > 12) { H.stuck = 0; H.queue = null; } } else H.stuck = 0;
+    // (swinging round on the thrusters is not being stuck)
+    if (Math.abs(H.speed) < 0.4 && Math.abs(H.err) < 0.9) { H.stuck += dt; if (H.stuck > 12) { H.stuck = 0; H.queue = null; } } else H.stuck = 0;
     return false;
   }
   function update(dt) {
@@ -83,7 +99,9 @@ export function createHelm(yacht) {
       } else H.rudder += (0 - H.rudder) * Math.min(1, dt * 1.5);
       H.throttle = input.throttle;
     } else if (H.mode === 'auto') {
-      if (follow(dt)) { H.mode = 'return'; H.phase = 'route'; H.queue = route(pose.x, pose.z, A[0], A[1]); }
+      // the loop ends on the pier's axis off the pier head: the last mark is the docking manoeuvre's approach point
+      if (H.queue && H.queue.length === 1 && H.queue[0][0] === A[0] && H.queue[0][1] === A[1]) { H.mode = 'return'; H.phase = 'approach'; H.queue = null; H.stuck = 0; }
+      else if (follow(dt)) { H.mode = 'return'; H.stuck = 0; planReturn(); }
     } else if (H.mode === 'return') docking(dt);
     // ---- soft limits: slow down and turn away from shallow water (the autopilot's docking manoeuvre is exempt)
     let vcap = VMAX;
@@ -91,7 +109,8 @@ export function createHelm(yacht) {
       const fx = Math.cos(pose.yaw), fz = -Math.sin(pose.yaw), sgn = H.speed >= -0.05 ? 1 : -1;
       const px = pose.x + sgn * fx * 70, pz = pose.z + sgn * fz * 70;                 // bow (or stern when going astern)
       const ahead = Math.max(20, Math.abs(H.speed) * 7), c0 = clearance(px, pz), c1 = clearance(px + sgn * fx * ahead, pz + sgn * fz * ahead), c = Math.min(c0, c1);
-      if (c < 45) {
+      // (the alarm is for the hand on the helm; the autopilot's marks keep their own margins, so its bow may sweep closer)
+      if (c < (H.mode === 'manual' ? 45 : 32)) {
         vcap = VMAX * clamp((c0 - 6) / 45, 0, 1) + 0.6 * clamp(c0 / 10, 0, 1);
         if (H.mode === 'manual') {
           const [ax, az] = awayDir(px, pz), turn = wrap(yawOfDir(ax, az) - pose.yaw);     // steer to where the water is deeper
@@ -114,6 +133,7 @@ export function createHelm(yacht) {
     const t = performance.now() / 1000, k = Math.min(1, Math.abs(H.speed) / 6);
     pose.roll += (clamp(-H.omega * H.speed * 0.9, -0.03, 0.03) + Math.sin(t * 0.7) * 0.004 * k - pose.roll) * Math.min(1, dt * 1.2);
     pose.pitch = Math.sin(t * 0.53) * 0.0025 * k; pose.heave = Math.sin(t * 0.61) * 0.05 * k;
+    passWatch(dt);
     wake(dt);
   }
   // ---- return to the pier: route → approach point → stop → pivot (bow to the lake) → back in along the pier axis → moored
@@ -127,6 +147,8 @@ export function createHelm(yacht) {
       const dx = A[0] - pose.x, dz = A[1] - pose.z, off = Math.abs(wrap(yawOfDir(dx, dz) - pose.yaw));
       const d = steerTo(A[0], A[1], clamp(Math.hypot(dx, dz) / 12, 1.2, VCRUISE), dt);
       if (d < 14 || (d < 60 && Math.abs(H.speed) < 0.5)) { H.phase = 'stop'; return; }
+      // already out on the pier's axis (just cast off, or drifted past the point): no need to go round — stop and back in
+      { const [s, tt] = PIER.local(pose.x, pose.z); if (s > 106 && s < 300 && Math.abs(tt) < 45 && Math.abs(H.speed) < 1.0) { H.phase = 'stop'; return; } }
       // on the bearing but not getting anywhere (the straight line is not clear from here): back off and plan again
       if (off < 0.9 && Math.abs(H.speed) < 0.3) { H.stuck += dt; if (H.stuck > 8) { H.stuck = 0; H.phase = 'route'; H.queue = null; } } else H.stuck = 0;
       return;
@@ -139,17 +161,33 @@ export function createHelm(yacht) {
     if (H.phase === 'pivot') {   // thrusters: turn on the spot until the bow points down the pier axis to the lake
       const err = wrap(DOCK.yaw - pose.yaw);
       H.omega += (clamp(err * 0.5, -0.11, 0.11) - H.omega) * Math.min(1, dt * 1.2); H.speed = 0; H.throttle = 0; H.rudder = clamp(err, -1, 1);
+      slide(dt, 0.45);
       if (Math.abs(err) < 0.006 && Math.abs(H.omega) < 0.004) { H.phase = 'back'; H.omega = 0; pose.yaw = DOCK.yaw; }
       return;
     }
     if (H.phase === 'back') {    // astern along the axis: slide onto the line, slow down on the last metres, make fast
       const [s, tt] = PIER.local(pose.x, pose.z), left = s - DOCK.s;
-      const v = -clamp(left * 0.12, 0.25, 2.6); H.speed += (v - H.speed) * Math.min(1, dt * 0.8); H.throttle = H.speed / (2 * VAST); H.rudder = 0; H.omega = 0; pose.yaw = DOCK.yaw;
-      const lat = clamp(-tt, -0.5 * dt, 0.5 * dt); pose.x += PIER.T[0] * lat; pose.z += PIER.T[1] * lat;
-      if (left < 0.12) { H.reset(); yacht.audio.sfx('horn'); walk._toast(yacht.t('docked'), 2600); }
+      // (she comes astern only as fast as she is getting onto the line: never against the pier off its axis)
+      const v = left < 0.12 ? 0 : -clamp(left * 0.12, 0.25, 2.6) * clamp(1 - (Math.abs(tt) - 0.4) / 4, left > 14 ? 0.12 : 0, 1); H.speed += (v - H.speed) * Math.min(1, dt * 0.8); H.throttle = H.speed / (2 * VAST); H.rudder = 0; H.omega = 0; pose.yaw = DOCK.yaw;
+      slide(dt, 0.6);
+      if (left < 0.12 && Math.abs(tt) < 0.3) { H.reset(); yacht.audio.sfx('horn'); walk._toast(yacht.t('docked'), 2600); }
     }
   }
 
+  // thrusters: sideways onto the pier's axis
+  function slide(dt, vmax) { const tt = PIER.local(pose.x, pose.z)[1], lat = clamp(-tt, -vmax * dt, vmax * dt); pose.x += PIER.T[0] * lat; pose.z += PIER.T[1] * lat; }
+  // ---- the pass: a line on the screen when the project comes ahead of the bow / abeam (any mode, a few times a trip)
+  const said = { ahead: -1e9, side: -1e9 }; let passClock = 0;
+  function passWatch(dt) {
+    passClock += dt;
+    const dx = PROJECT[0] - pose.x, dz = PROJECT[1] - pose.z, d = Math.hypot(dx, dz); H.projectDist = d;
+    const rel = wrap(yawOfDir(dx, dz) - pose.yaw);          // > 0: to port (rotation.y grows anticlockwise seen from above)
+    H.projectRel = rel;
+    if (d > 640 || Math.abs(H.speed) < 0.8) return;
+    const a = Math.abs(rel);
+    if (a < 0.3 && H.speed > 0 && d > 430 && passClock - said.ahead > 150 && passClock - said.side > 60) { said.ahead = passClock; walk._toast(HT(yacht.lang, 'passAhead'), 4200); }
+    else if (a > 0.95 && a < 2.1 && d < 470 && passClock - said.side > 150) { said.side = passClock; walk._toast(HT(yacht.lang, rel > 0 ? 'passPort' : 'passStbd'), 5200); H.passSide = rel > 0 ? 'port' : 'starboard'; H.passes = (H.passes || 0) + 1; }
+  }
   // ---- wake: a foam ribbon laid on the water behind the stern (world space) + a soft churn patch at the transom
   const N = 56, trail = [];
   const geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 2 * 3), uv = new Float32Array(N * 2 * 2), al = new Float32Array(N * 2), idx = [];
