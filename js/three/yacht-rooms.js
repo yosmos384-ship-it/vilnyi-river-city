@@ -6,6 +6,7 @@ import { F, FX } from './furniture.js';
 import { Y, TIERS, tierHalf, hullHalf, PLATES } from './yacht-pier.js';
 import { LOBBY, STERN_STAIR } from './yacht-hull.js';
 import { UBOX, colMat, shellMaterials } from './yacht-kit.js';
+import { CROWD } from './yacht-crowd-spots.js';
 
 const PI = Math.PI, HALF = PI / 2;
 // furniture faces +z at rotation 0; FACE.px = facing +x (towards the bow) …
@@ -425,8 +426,9 @@ Z({ id: 'sundeck', name: 'sundeck', deck: 4, y: Y.D4, out: true, box: [-36, -4, 
     roundPool(c, -31.6, 0, 1.5, 0.55);
     steam(c, -31.6, 0.5, 0, 1.3, 1.6);
     // sunbeds: two rows beside the pool, a row aft; some are taken by guests
-    for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) sunbed(c, -26 + i * 2.3, sd * 5.6, sd > 0 ? FACE.nz : FACE.pz, { taken: (i === 1 && sd > 0) || (i === 2 && sd < 0) });
-    for (const z of [-3.6, 3.6]) sunbed(c, -34.2, z, FACE.px);
+    const taken = (x, z) => CROWD.sundeck.some(s => s.bed && Math.abs(s.bed[0] - x) < 0.1 && Math.abs(s.bed[1] - z) < 0.1);
+    for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) sunbed(c, -26 + i * 2.3, sd * 5.6, sd > 0 ? FACE.nz : FACE.pz, { taken: taken(-26 + i * 2.3, sd * 5.6) });
+    for (const z of [-3.6, 3.6]) sunbed(c, -34.2, z, FACE.px, { taken: taken(-34.2, z) });
     for (const sd of [-1, 1]) for (const i of [0, 2]) c.put(F.sideTable(m), -24.85 + i * 2.3, sd * 5.9, 0);
     // bar under the hardtop (port), lounge (starboard)
     const b = bar(c, -9.4, -5.4, -3.3, 1, { gap: 1.45 });
@@ -438,14 +440,8 @@ Z({ id: 'sundeck', name: 'sundeck', deck: 4, y: Y.D4, out: true, box: [-36, -4, 
     c.light(-7.4, 2.5, -2.4, 1.1); c.light(-10.5, 2.5, 4.6, 0.9); c.light(-22, 2.2, 0, 0.9, '#7fd8ff'); c.light(-31.6, 1.6, 0, 0.6, '#7fd8ff');
     // people: bartender, guests by the pool
     c.person({ id: 'bartender', role: 'bartender', look: 'barman', x: -7.4, z: -4.15, yaw: 0, anim: 'bar', say: 'sayBar' });
-    c.person({ role: 'guest', look: 'w_swim_a', x: -23.7, z: 5.6, yaw: FACE.nz, anim: 'sunbathe', bed: [-23.7, 5.6, FACE.nz] });
-    c.person({ role: 'guest', look: 'm_swim_a', x: -21.4, z: -5.6, yaw: FACE.pz, anim: 'sunbathe', bed: [-21.4, -5.6, FACE.pz] });
-    c.person({ role: 'guest', look: 'w_swim_b', x: -22.5, z: 0.6, yaw: 1.2, anim: 'swim', dy: -0.72 });
-    c.person({ role: 'guest', look: 'm_swim_b', x: -19.5, z: -1.0, yaw: -0.6, anim: 'swim', dy: -0.72 });
-    c.person({ role: 'guest', look: 'w_resort_a', x: -7.9, z: -1.7, yaw: 2.6, anim: 'chat', glass: true });
-    c.person({ role: 'guest', look: 'm_resort_a', x: -6.6, z: -1.5, yaw: -2.7, anim: 'chat', glass: true });
-    c.person({ role: 'guest', look: 'w_resort_b', x: -13.4, z: 2.2, yaw: 0.9, anim: 'idle', glass: true });
-    c.person({ role: 'guest', look: 'w_swim_c', x: -31.0, z: 0.5, yaw: -1.9, anim: 'swim', dy: -0.62 });
+    // the party crowd: bathers, sunbathers, guests at the bar and round the pool (yacht-crowd-spots.js)
+    for (const sp of CROWD.sundeck) c.person({ role: 'guest', ...sp, bed: sp.bed && [sp.bed[0], sp.bed[1], FACE[sp.bed[2]]] });
   } });
 // ---- sun-deck lobby (top of the stair, lift, door to the bridge and to the sun deck)
 Z({ id: 'lobby4', name: 'lobby', deck: 4, y: Y.D4, box: [-4, 4, -4.1, 4.1], near: ['sundeck', 'bridge', 'lobby3'], spot: [-0.3, 0.2, HALF],
@@ -809,14 +805,9 @@ Z({ id: 'beach', name: 'disco', deck: 1, y: Y.D1, box: [-58, -36, -8.5, 8.5], ne
     c.person({ id: 'singer', role: 'singer', look: 'singer', x: -38.9, z: 0.35, yaw: -HALF, anim: 'sing', dy: 0.35, show: true });
     c.person({ id: 'guitar', role: 'guest', look: 'guitarist', x: -37.6, z: -1.6, yaw: -HALF, anim: 'band', dy: 0.35, show: true, noTalk: true });
     c.person({ id: 'keys', role: 'guest', look: 'keys', x: -36.9, z: 2.2, yaw: -HALF - 0.3, anim: 'band', dy: 0.35, show: true, noTalk: true });
-    c.person({ role: 'guest', look: 'w_party_a', x: -49.6, z: -0.9, yaw: 0.6, anim: 'dance', floor: true });
-    c.person({ role: 'guest', look: 'm_party_a', x: -47.2, z: 0.8, yaw: -2.2, anim: 'dance', floor: true });
-    c.person({ role: 'guest', look: 'w_party_b', x: -48.1, z: -1.9, yaw: 2.4, anim: 'dance', floor: true });
-    c.person({ role: 'guest', look: 'w_party_c', x: -46.6, z: -1.2, yaw: -1.0, anim: 'dance', floor: true });
-    c.person({ role: 'guest', look: 'm_party_b', x: -50.2, z: 1.6, yaw: 1.2, anim: 'dance', floor: true });
     c.person({ id: 'bartender2', role: 'bartender', look: 'barwoman', x: -48.5, z: 5.75, yaw: Math.PI, anim: 'bar', say: 'sayBar' });
-    c.person({ role: 'guest', look: 'w_resort_c', x: -51.4, z: 3.9, yaw: 0.4, anim: 'chat', glass: true });
-    c.person({ role: 'guest', look: 'm_resort_c', x: -45.6, z: 3.8, yaw: -0.5, anim: 'chat', glass: true });
+    // the party crowd: dancers on the floor, guests at the bar, by the DJ, the lounge and the stage (yacht-crowd-spots.js)
+    for (const sp of CROWD.beach) c.person({ role: 'guest', ...sp });
   } });
 
 // ---- open decks without furniture of their own (names / visibility only). Keep these LAST: zoneAt() takes the first match.

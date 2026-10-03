@@ -1,6 +1,7 @@
 // VILNYI Lifestyle yacht — people: crew and guests as painted figure cards (the concierge technique of commons.js:
 // canvas-painted figures on alpha-tested cards, lit as drawn), batched per zone into two draw calls (bodies + arms).
-// Everyone is an adult in resort wear, evening wear, uniform or modest swimwear. Interactions are social only:
+// Everyone is an adult in resort wear, evening wear, uniform or swimwear; the party crowd of the pool deck and the disco
+// is painted by yacht-crowd.js (mix-and-match, its own atlas per zone, loaded with the zone). Interactions are social only:
 // greeting, a toast, dancing together, a cheek-kiss hello, a high five / handshake.
 import * as THREE from 'three';
 import { UBOX, colMat } from './yacht-kit.js';
@@ -259,33 +260,118 @@ function atlas() {
 
 // ------------------------------------------------------------------ crowd per zone
 const GX = 2, GY = 6, NV = (GX + 1) * (GY + 1);     // body card grid
+// soft contact shadows and the rings round the bathers: one small texture (left half blob, right half ring)
+let SHADOW = null;
+function shadowMat() {
+  if (SHADOW) return SHADOW;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64; const g = c.getContext('2d');
+  let r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, 'rgba(0,0,0,0.72)'); r.addColorStop(0.5, 'rgba(0,0,0,0.4)'); r.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  r = g.createRadialGradient(96, 32, 8, 96, 32, 31); r.addColorStop(0, 'rgba(255,255,255,0)'); r.addColorStop(0.5, 'rgba(255,255,255,0.1)'); r.addColorStop(0.74, 'rgba(255,255,255,0.75)'); r.addColorStop(0.86, 'rgba(255,255,255,0.2)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(64, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  SHADOW = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); SHADOW.name = 'yacht-crowd-shadow';
+  return SHADOW;
+}
+let CROWD_MOD = null;
+const crowdMod = () => CROWD_MOD || (CROWD_MOD = import('./yacht-crowd.js'));
+const nextFrame = () => new Promise(r => { let d = false; const f = () => { if (!d) { d = true; r(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
+
 export function createPeople(yacht) {
-  const crowds = new Map();   // zone id → { mesh, arm, figs, … }
-  const cam = new THREE.Vector3();
+  const crowds = new Map();   // zone id → [batch]: { mesh, arm, figs, … } — the painted "looks" and the mix-and-match party crowd
+  const cam = new THREE.Vector3(), tint = new THREE.Color();
   let engaged = null;         // the figure in an interaction with the visitor
+  const batches = (id) => crowds.get(id) || [];
+  const add = (z, b) => { if (!crowds.has(z.id)) crowds.set(z.id, []); crowds.get(z.id).push(b); };
 
   function build(z, group) {
-    if (!z.people.length) return;
-    const A = atlas(), n = z.people.length;
+    const looks = z.people.filter(sp => !sp.mix), mixed = z.people.filter(sp => sp.mix);
+    if (looks.length) buildLooks(z, group, looks);
+    if (mixed.length) buildMix(z, group, mixed);
+  }
+  const mkFig = (z, sp, i, L, D) => ({ sp, L, D, i, x: sp.x, y: sp.y, z: sp.z, hx: sp.x, hz: sp.z, t: Math.random() * 10, ph: Math.random() * TAU, anim: sp.anim || 'idle', glass: !!sp.glass, hasArm: true, arm: 0, armT: 0, lean: 0, reach: 0, act: null, greeted: false, zone: z, visible: true, hop: 0,
+    cw: 0.9 * (1 - 3 / CW), ch: 1.8 * (1 - 3 / CH), axu: 0.5, y0: 0, km: 1, pivX: 0, pivY: 0 });
+  const mkProxy = (f, group) => { const px = new THREE.Mesh(UBOX, colMat()); px.name = 'y-person'; px.userData.yact = () => talk(f); px.userData.reach = 6; f.proxy = px; group.add(px); placeProxy(f); };
+  function buildLooks(z, group, people) {
+    const A = atlas(), n = people.length;
     const geo = new THREE.BufferGeometry(), pos = new Float32Array(n * NV * 3), uv = new Float32Array(n * NV * 2), idx = [];
     const ag = new THREE.BufferGeometry(), apos = new Float32Array(n * 4 * 3), auv = new Float32Array(n * 4 * 2), aidx = [];
-    const figs = z.people.map((sp, i) => {
+    const batch = { z, pos, apos, auv, geo, ag, aq: [[-0.36 * 0.45, -0.86 * 0.9], [0.64 * 0.45, -0.86 * 0.9], [-0.36 * 0.45, 0.14 * 0.9], [0.64 * 0.45, 0.14 * 0.9]] };
+    batch.setArm = (f) => { setArmUV(auv, f); ag.attributes.uv.needsUpdate = true; };
+    batch.figs = people.map((sp, i) => {
       const li = Math.max(0, LOOK_IDS.indexOf(sp.look)), L = LOOKS[LOOK_IDS[li]], D = dims(L.sex);
       const u0 = (li % COLS) * CW / 2048, vTop = 1 - Math.floor(li / COLS) * CH / 2048, du = CW / 2048, dv = CH / 2048, e = 1.5 / 2048;
       for (let r = 0; r <= GY; r++) for (let c = 0; c <= GX; c++) { const k = i * NV + r * (GX + 1) + c; uv[k * 2] = u0 + e + (du - 2 * e) * c / GX; uv[k * 2 + 1] = vTop - dv + e + (dv - 2 * e) * r / GY; }
       for (let r = 0; r < GY; r++) for (let c = 0; c < GX; c++) { const a = i * NV + r * (GX + 1) + c, b = a + 1, d = a + GX + 1, q = d + 1; idx.push(a, b, q, a, q, d); }
-      const hasArm = !(L.mic || L.guitar || L.seated);
-      const f = { sp, L, D, i, x: sp.x, y: sp.y, z: sp.z, hx: sp.x, hz: sp.z, t: Math.random() * 10, ph: Math.random() * TAU, anim: sp.anim || 'idle', glass: !!sp.glass, hasArm, arm: 0, armT: 0, lean: 0, reach: 0, act: null, greeted: false, li, zone: z, visible: true, hop: 0 };
+      const f = mkFig(z, sp, i, L, D); f.li = li; f.batch = batch; f.hasArm = !(L.mic || L.guitar || L.seated);
+      f.km = L.sex === 'm' ? 0.95 : 1; f.pivX = -(D.sh - 0.012) * f.km; f.pivY = (D.yS - 0.03) * f.km;
       aidx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3);
-      setArmUV(auv, f);
-      const px = new THREE.Mesh(UBOX, colMat()); px.name = 'y-person'; px.userData.yact = () => talk(f); px.userData.reach = 6; f.proxy = px; group.add(px); placeProxy(f);
+      setArmUV(auv, f); mkProxy(f, group);
       return f;
     });
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx);
     ag.setAttribute('position', new THREE.BufferAttribute(apos, 3).setUsage(THREE.DynamicDrawUsage)); ag.setAttribute('uv', new THREE.BufferAttribute(auv, 2).setUsage(THREE.DynamicDrawUsage)); ag.setIndex(aidx);
     const mesh = new THREE.Mesh(geo, A.mb), arm = new THREE.Mesh(ag, A.ma);
     for (const m of [mesh, arm]) { m.frustumCulled = false; m.raycast = () => {}; m.name = 'yacht-people'; m.userData.sharedGeo = true; group.add(m); }
-    crowds.set(z.id, { mesh, arm, figs, pos, apos, auv, geo, ag });
+    batch.mesh = mesh; batch.arm = arm; add(z, batch);
+  }
+  // The party crowd (sp.mix): bodies and hinged arms share one geometry and one atlas — a single draw call — plus one for
+  // the contact shadows. The atlas is painted by yacht-crowd.js a figure per frame; the crowd appears when it is done.
+  function buildMix(z, group, people) {
+    const n = people.length;
+    const geo = new THREE.BufferGeometry(), all = new Float32Array(n * (NV + 4) * 3), uvs = new Float32Array(n * (NV + 4) * 2), idx = [];
+    const pos = all.subarray(0, n * NV * 3), apos = all.subarray(n * NV * 3), uv = uvs.subarray(0, n * NV * 2), auv = uvs.subarray(n * NV * 2);
+    all.fill(-999);
+    const sg = new THREE.BufferGeometry(), spos = new Float32Array(n * 12), suv = new Float32Array(n * 8), sidx = [];
+    const batch = { z, mix: true, pos, apos, auv, uv, geo, ag: geo, sg, spos, ready: false, dead: false, aq: null, plan: null };
+    batch.figs = people.map((sp, i) => {
+      const sex = sp.mix.sex || 'w', f = mkFig(z, sp, i, { sex, mix: true }, { H: sex === 'm' ? 1.84 : 1.72, sh: 0.16, yS: 1.39 });
+      f.batch = batch; f.hasArm = sp.mix.kind !== 'lounge' && sp.mix.kind !== 'swim'; f.dv = i % 3; f.sit = 0; f.nextSit = 6 + Math.random() * 20; f.sip = 0; f.nextSip = 4 + Math.random() * 10;
+      if (f.anim === 'dance') f.ph = (i % 2) * Math.PI + (Math.random() - 0.5) * 0.5;
+      if (f.anim === 'swim') { f.wl = sp.wl ?? 1.16; f.y = sp.y + (sp.water ?? 0.43) - f.wl; }
+      for (let r = 0; r < GY; r++) for (let c = 0; c < GX; c++) { const a = i * NV + r * (GX + 1) + c, b = a + 1, d = a + GX + 1, q = d + 1; idx.push(a, b, q, a, q, d); }
+      const k = i * 4; sidx.push(k, k + 1, k + 2, k + 2, k + 1, k + 3);
+      const ring = f.anim === 'swim', u0 = ring ? 0.5 : 0; [[u0, 0], [u0 + 0.5, 0], [u0, 1], [u0 + 0.5, 1]].forEach((q, j) => { suv[(k + j) * 2] = q[0]; suv[(k + j) * 2 + 1] = q[1]; });
+      mkProxy(f, group);
+      return f;
+    });
+    for (let i = 0; i < n; i++) { const a = n * NV + i * 4; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+    geo.setAttribute('position', new THREE.BufferAttribute(all, 3).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2).setUsage(THREE.DynamicDrawUsage)); geo.setIndex(idx);
+    sg.setAttribute('position', new THREE.BufferAttribute(spos, 3).setUsage(THREE.DynamicDrawUsage)); sg.setAttribute('uv', new THREE.BufferAttribute(suv, 2)); sg.setIndex(sidx);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xf4efe8, side: THREE.DoubleSide, alphaTest: 0.5, alphaToCoverage: true }); mat.name = 'yacht-figure-card';
+    const mesh = new THREE.Mesh(geo, mat), shadow = new THREE.Mesh(sg, shadowMat());
+    mesh.name = 'yacht-crowd'; shadow.name = 'yacht-crowd-shadow'; shadow.renderOrder = 3;
+    for (const m of [mesh, shadow]) { m.frustumCulled = false; m.raycast = () => {}; m.userData.sharedGeo = true; m.visible = false; group.add(m); }
+    batch.mesh = mesh; batch.arm = mesh; batch.shadow = shadow; add(z, batch);
+    // the arm sprite by what the arm is doing: 0 hanging, 1 holding a glass, 2 bent for dancing
+    batch.setArm = (f, mode = f.glass ? 1 : 0) => { const P = batch.plan; if (!P) return; const C = P.arm(f.armKey, mode), rc = C.rect, S = P.size, e = 1.5; f.armMode = mode;
+      const q = [[rc[0] + e, rc[1] + rc[3] - e], [rc[0] + rc[2] - e, rc[1] + rc[3] - e], [rc[0] + e, rc[1] + e], [rc[0] + rc[2] - e, rc[1] + e]];
+      f.aq = [[-C.px, C.py - C.h], [C.w - C.px, C.py - C.h], [-C.px, C.py], [C.w - C.px, C.py]];
+      for (let j = 0; j < 4; j++) { auv[(f.i * 4 + j) * 2] = q[j][0] / S; auv[(f.i * 4 + j) * 2 + 1] = 1 - q[j][1] / S; } geo.attributes.uv.needsUpdate = true; };
+    const big = !matchMedia('(pointer: coarse)').matches && (navigator.deviceMemory || 0) >= 8 && yacht.walk.renderer.capabilities.maxTextureSize >= 4096;
+    batch.done = crowdMod().then(mod => {
+      if (batch.dead) return null;
+      const P = batch.plan = mod.planCrowd(z.id, people.map(sp => sp.mix), { scale: big ? 2 : 1 }), S = P.size;
+      batch.figs.forEach((f, i) => {
+        const p = P.figs[i], e = 1.5, rc = p.rect, fl = p.flip ? -1 : 1; f.plan = p; f.flip = fl; f.D = { H: p.H, sh: p.sh, yS: p.yS }; f.armKey = p.armKey; f.hasArm = !p.both;
+        f.cw = p.cw * (1 - 2 * e / rc[2]); f.ch = p.ch * (1 - 2 * e / rc[3]); f.axu = fl > 0 ? p.ax / p.cw : 1 - p.ax / p.cw; f.y0 = p.y0; f.pivX = -p.sh; f.pivY = p.yS; f.rc = [(rc[0] + e) / S, 1 - (rc[1] + rc[3] - e) / S, (rc[2] - 2 * e) / S, (rc[3] - 2 * e) / S];
+        for (let r = 0; r <= GY; r++) for (let c = 0; c <= GX; c++) { const k = i * NV + r * (GX + 1) + c; uv[k * 2] = f.rc[0] + f.rc[2] * (fl > 0 ? c / GX : 1 - c / GX); uv[k * 2 + 1] = f.rc[1] + f.rc[3] * r / GY; }
+        batch.setArm(f); placeProxy(f);
+      });
+      return paintMix(batch);
+    }).catch(e => { console.warn('[yacht] crowd ' + z.id, e); return null; });
+  }
+  // paint (or repaint) a party crowd's atlas a figure per frame, then show the crowd. Only one such atlas is kept:
+  // when this one is up, the atlas of any other crowd that is out of sight is released (it is repainted on return).
+  function paintMix(batch) {
+    const t0 = performance.now(), n = batch.figs.length; batch.painting = true; batch.released = false;
+    return batch.plan.paint(window.VRC_CROWD_FAST ? () => Promise.resolve() : nextFrame, () => batch.dead).then(res => {   // (dev pages paint in one go)
+      batch.painting = false;
+      if (!res || batch.dead) return null;
+      const t = new THREE.CanvasTexture(res.canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+      const mat = batch.mesh.material; mat.map = t; mat.needsUpdate = true; batch.tex = t; batch.ready = true; batch.mesh.visible = batch.shadow.visible = true;
+      batch.stats = { figures: n, painted: batch.plan.painted, atlas: res.canvas.width, pxPerM: batch.plan.px, paintMs: Math.round(res.total), worstStepMs: Math.round(res.worst), readyMs: Math.round(performance.now() - t0) };
+      for (const [id, list] of crowds) for (const c of list) if (c.mix && c !== batch && c.ready) { const z = yacht.zones.get(id); if (!z || !z.group || !z.group.visible) { c.ready = false; c.released = true; c.mesh.visible = c.shadow.visible = false; c.mesh.material.map = null; c.mesh.material.needsUpdate = true; c.tex.dispose(); c.tex = null; } }
+      return batch.stats;
+    });
   }
   function setArmUV(auv, f) {
     const k = f.li, gl = f.glass ? 2 : 0, u0 = (k % ACOLS) * AW / 2048, vTop = 1 - (Math.floor(k / ACOLS) + gl) * AH / 1024, du = AW / 2048, dv = AH / 1024, e = 1.5 / 1024;
@@ -295,65 +381,96 @@ export function createPeople(yacht) {
   function placeProxy(f) {
     const lying = f.anim === 'sunbathe', px = f.proxy;
     if (lying) { const b = f.sp.bed, al = Math.abs(Math.cos(b[2])) > 0.5; px.position.set(f.x, f.y + 0.55, f.z); px.scale.set(al ? 0.7 : 1.9, 0.45, al ? 1.9 : 0.7); }
+    else if (f.wl != null) px.position.set(f.x, f.y + f.wl + 0.3, f.z), px.scale.set(0.55, 0.6, 0.55);
     else { const h = f.anim === 'swim' ? 0.9 : f.L.seated ? 1.3 : f.D.H; px.position.set(f.x, f.y + (f.anim === 'swim' ? f.D.H - 0.45 : h / 2), f.z); px.scale.set(0.55, h, 0.55); }
     px.updateMatrixWorld(true);
   }
-  function drop(z) { const c = crowds.get(z.id); if (!c) return; c.geo.dispose(); c.ag.dispose(); crowds.delete(z.id); if (engaged && engaged.zone === z) engaged = null; }
-  function targets() { const out = []; for (const [id, c] of crowds) { const z = yacht.zones.get(id); if (z && z.built && z.group.visible) for (const f of c.figs) if (f.visible) out.push(f.proxy); } return out; }
+  function drop(z) {
+    for (const c of batches(z.id)) { c.dead = true; c.geo.dispose(); if (c.ag !== c.geo) c.ag.dispose(); if (c.sg) c.sg.dispose(); if (c.tex) c.tex.dispose(); if (c.mix) c.mesh.material.dispose(); }
+    crowds.delete(z.id); if (engaged && engaged.zone === z) engaged = null;
+  }
+  function targets() { const out = []; for (const [id, list] of crowds) { const z = yacht.zones.get(id); if (z && z.built && z.group.visible) for (const c of list) for (const f of c.figs) if (f.visible) out.push(f.proxy); } return out; }
 
   // ---- per frame: animate and write the cards
   function update(dt) {
     yacht.toLocal(yacht.walk.camera.position, false, cam);
     const mode = yacht.walk.envMode, beat = yacht.audio.beat || 0, bt = yacht.audio.beatTime || 0, showOn = yacht.audio.show === 'live';
-    for (const [id, c] of crowds) {
+    for (const [id, list] of crowds) {
       const z = yacht.zones.get(id); if (!z || !z.built || !z.group.visible) continue;
+      for (const c of list) {
+      if (c.mix && !c.ready) { if (c.released && !c.painting) c.done = paintMix(c).catch(e => { console.warn('[yacht] crowd ' + id, e); return null; }); continue; }
       const k = z.out ? (mode === 'day' ? 1 : mode === 'dusk' ? 0.72 : 0.5) : (id === 'beach' ? 0.74 : 0.92);
-      c.mesh.material.color.setRGB(0.957 * k, 0.937 * k, 0.91 * k); c.arm.material.color.copy(c.mesh.material.color);
-      const { pos, apos } = c;
+      c.mesh.material.color.setRGB(0.957 * k, 0.937 * k, 0.91 * k);
+      // in the disco the party crowd takes a little of the floor lights' colour and pulses with the beat
+      if (c.mix && id === 'beach') { tint.setHSL(((yacht.time || 0) * 0.07 + bt * 0.125) % 1, 0.8, 0.62); const kk = 0.7 + 0.14 * beat; c.mesh.material.color.setRGB(kk * (0.7 + 0.3 * tint.r), kk * (0.68 + 0.3 * tint.g), kk * (0.68 + 0.3 * tint.b)); }
+      if (c.arm !== c.mesh) c.arm.material.color.copy(c.mesh.material.color);
+      const { pos, apos } = c; let uvDirty = false;
       for (const f of c.figs) {
         f.t += dt; const t = f.t + f.ph;
         // stage performers appear with the live show only; the DJ plays otherwise
         if (f.sp.show) f.visible = showOn; if (f.sp.id === 'dj') f.visible = !showOn;
         if (!f.visible) { for (let k2 = 0; k2 < NV; k2++) pos[(f.i * NV + k2) * 3 + 1] = -999; for (let j = 0; j < 4; j++) apos[(f.i * 4 + j) * 3 + 1] = -999; continue; }
         action(f, dt);
-        const D = f.D, cw = 0.9 * (1 - 3 / CW), ch = 1.8 * (1 - 3 / CH);
+        const cw = f.cw, ch = f.ch, mixf = !!c.mix;
         let rx, rz, fx, fz;                                  // right and forward (towards the viewer) unit vectors
         const lying = f.anim === 'sunbathe';
-        if (lying) { const b = f.sp.bed, hx = Math.sin(b[2]), hz = Math.cos(b[2]); rx = hz; rz = -hx; fx = -hx; fz = -hz; }
+        if (lying) { const b = f.sp.bed, hx = Math.sin(b[2]), hz = Math.cos(b[2]); rx = hz; rz = -hx; fx = -hx; fz = -hz; if (mixf) { rx = -rx; rz = -rz; fx = -fx; fz = -fz; } }   // (the party crowd lies head to the backrest)
         else { let dx = cam.x - f.x, dz = cam.z - f.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; fx = dx; fz = dz; rx = dz; rz = -dx; }
         // motion parameters
-        let bob = 0, sway = 0, hip = 0, tilt = 0, lean = f.lean; const breath = Math.sin(t * 1.6) * 0.004;
+        let bob = 0, sway = 0, hip = 0, tilt = 0, lean = f.lean, step = 0; const breath = Math.sin(t * 1.6) * 0.004;
         const dist = Math.hypot(cam.x - f.x, cam.z - f.z);
-        if (f.anim === 'dance' || f.dancing) { const ph = bt * Math.PI + f.ph; bob = Math.abs(Math.sin(ph)) * 0.05 * (0.6 + 0.4 * beat); hip = Math.sin(ph) * 0.05; sway = Math.sin(ph * 0.5 + f.ph) * 0.035; tilt = Math.sin(ph * 0.5) * 0.05; if (f.hasArm && !f.act) f.armT = f.glass ? 0.3 + Math.sin(ph) * 0.2 : 2.2 + Math.sin(ph) * 0.5; }
+        if (f.anim === 'dance' || f.dancing) {
+          const ph = bt * Math.PI + f.ph; bob = Math.abs(Math.sin(ph)) * 0.05 * (0.6 + 0.4 * beat); hip = Math.sin(ph) * 0.05; sway = Math.sin(ph * 0.5 + f.ph) * 0.035; tilt = Math.sin(ph * 0.5) * 0.05;
+          if (mixf) { const dv = f.dv; hip *= dv === 2 ? 1.5 : 1; bob *= dv === 1 ? 1.25 : 0.9; step = dv === 1 ? Math.sin(ph * 0.5) * 0.09 : 0; if (f.hasArm && (!f.act || f.dancing)) f.armT = f.glass ? 0.3 + Math.sin(ph) * 0.2 : dv === 0 ? 1.45 + Math.sin(ph) * 0.3 : dv === 1 ? 1.0 + Math.sin(ph) * 0.45 : 0.45 + Math.sin(ph * 0.5) * 0.3; }
+          else if (f.hasArm && !f.act) f.armT = f.glass ? 0.3 + Math.sin(ph) * 0.2 : 2.2 + Math.sin(ph) * 0.5;
+        }
         else if (f.anim === 'dj') { const ph = bt * Math.PI; bob = Math.abs(Math.sin(ph)) * 0.03; tilt = Math.sin(ph) * 0.04; if (f.hasArm && !f.act) f.armT = 2.5 + Math.sin(ph * 2) * 0.35; }
         else if (f.anim === 'sing' || f.anim === 'band') { sway = Math.sin(t * 1.1) * 0.03; tilt = Math.sin(t * 0.8) * 0.04; bob = Math.abs(Math.sin(bt * Math.PI)) * 0.012; }
-        else if (f.anim === 'swim') { bob = Math.sin(t * 1.3) * 0.03; sway = Math.sin(t * 0.7) * 0.02; f.x = f.hx + Math.sin(t * 0.21) * 0.5; f.z = f.hz + Math.cos(t * 0.17) * 0.35; }
-        else if (f.anim === 'chat') { sway = Math.sin(t * 0.6) * 0.012; tilt = Math.sin(t * 0.9) * 0.03 + Math.sin(t * 2.3) * 0.01; if (f.glass && !f.act) f.armT = 0.08 + Math.max(0, Math.sin(t * 0.33)) * 0.25; }
+        else if (f.anim === 'swim') { const dr = f.sp.drift || [0.5, 0.35]; bob = Math.sin(t * 1.3) * (mixf ? 0.022 : 0.03) + (mixf ? Math.sin(t * 0.37) * 0.03 : 0); sway = Math.sin(t * 0.7) * 0.02; tilt = mixf ? Math.sin(t * 0.5) * 0.03 : 0; f.x = f.hx + Math.sin(t * 0.21) * dr[0]; f.z = f.hz + Math.cos(t * 0.17) * dr[1]; }
+        else if (f.anim === 'chat') { sway = Math.sin(t * 0.6) * 0.012; tilt = Math.sin(t * 0.9) * 0.03 + Math.sin(t * 2.3) * 0.01; if (mixf) hip = Math.sin(t * 0.45) * 0.018; if (f.glass && !f.act) f.armT = 0.08 + Math.max(0, Math.sin(t * 0.33)) * 0.25; }
         else if (f.anim === 'massage') { const ph = t * 2.2; lean = 0.16 + Math.sin(ph) * 0.05; sway = Math.sin(ph * 0.5) * 0.03; if (f.hasArm) f.armT = 0.9 + Math.sin(ph) * 0.18; }
         else if (f.anim === 'bar') { sway = Math.sin(t * 0.5) * 0.01; tilt = Math.sin(t * 0.7) * 0.02; }
         else { sway = Math.sin(t * 0.45) * 0.008; tilt = Math.sin(t * 0.6) * 0.015; if (f.glass && !f.act) f.armT = 0.08; }
+        if (mixf) {
+          if (f.hasArm) { const am = f.glass ? 1 : (f.dancing || (f.anim === 'dance' && !f.act)) ? 2 : 0; if (am !== f.armMode) c.setArm(f, am); }
+          // a sip now and then; on the sunbed, sitting up a little and settling back
+          if (f.glass && f.hasArm && !f.act && f.anim !== 'dance') { f.nextSip -= dt; if (f.nextSip < 0) { f.sip = 1.6; f.nextSip = 9 + Math.random() * 12; } if (f.sip > 0) { f.sip -= dt; f.armT = 0.5 * Math.sin(Math.min(1, (1.6 - f.sip) / 0.5) * Math.PI / 2) * Math.min(1, Math.max(0, f.sip) / 0.4); tilt -= 0.02; } }
+          if (lying) { f.nextSit -= dt; if (f.nextSit < 0) { f.sitT = 0; f.nextSit = 16 + Math.random() * 24; } if (f.sitT != null) { f.sitT += dt; const u = f.sitT / 5; f.sit = u >= 1 ? 0 : Math.sin(u * Math.PI) ** 2; if (u >= 1) f.sitT = null; } }
+        }
         if (!lying && f.anim !== 'swim' && !f.act && dist < 3.2 && !f.greeted && f.sp.say && yacht.mode === 'walk') { f.greeted = true; f.hop = 0.6; yacht.say(f.sp.say); }
         if (f.hop > 0) { f.hop = Math.max(0, f.hop - dt); tilt += Math.sin((1 - f.hop / 0.6) * Math.PI) * 0.1; }
         f.arm += (f.armT - f.arm) * Math.min(1, dt * 7);
-        // body card
-        const by = f.y + (lying ? 0.47 + (f.sp.lift || 0) : bob), base = f.i * NV * 3;
+        // body card (the bathers' cards are cut at the waterline, wherever the bobbing puts it)
+        const by = f.y + (lying ? (mixf ? 0.405 : 0.47) + (f.sp.lift || 0) : bob), base = f.i * NV * 3, top = f.y0 + ch;
+        const yb = f.wl != null ? clamp(f.wl - bob, f.y0, top - 0.25) : f.y0;
+        if (f.wl != null) { const u2 = f.i * NV * 2; for (let r = 0; r <= GY; r++) { const vv = f.rc[1] + f.rc[3] * (yb + (top - yb) * r / GY - f.y0) / ch; for (let cc = 0; cc <= GX; cc++) c.uv[u2 + (r * (GX + 1) + cc) * 2 + 1] = vv; } uvDirty = true; }
         for (let r = 0; r <= GY; r++) for (let cc = 0; cc <= GX; cc++) {
-          const u = cc / GX - 0.5, v = r / GY, hgt = v * ch, kk = base + (r * (GX + 1) + cc) * 3;
+          const u = cc / GX - f.axu, hgt = yb + (top - yb) * r / GY, v = Math.min(1, hgt / 1.8), kk = base + (r * (GX + 1) + cc) * 3;
           const up = sstep(0.45, 1, v), mid = Math.sin(Math.PI * v);
-          const ox = u * cw * (1 + breath * (v > 0.6 && v < 0.85 ? 1 : 0)) + hip * mid + sway * up + tilt * sstep(0.74, 1, v) * (hgt - 1.35), of = lean * up * up * 0.9;
-          if (lying) { pos[kk] = f.x + rx * ox - fx * (hgt - 0.95); pos[kk + 1] = by + Math.sin(t * 1.5) * 0.004 * mid + (v > 0.62 ? 0.14 * sstep(0.62, 0.9, v) : 0); pos[kk + 2] = f.z + rz * ox - fz * (hgt - 0.95); }
+          const ox = u * cw * (1 + breath * (v > 0.6 && v < 0.85 ? 1 : 0)) + hip * mid + sway * up + step + tilt * sstep(0.74, 1, v) * (hgt - 1.35), of = lean * up * up * 0.9;
+          if (lying) { const raise = mixf ? (0.2 + 0.16 * f.sit) * sstep(0.6, 0.98, v) : (v > 0.62 ? 0.14 * sstep(0.62, 0.9, v) : 0); pos[kk] = f.x + rx * ox - fx * (hgt - 0.95); pos[kk + 1] = by + Math.sin(t * 1.5) * 0.004 * mid + raise; pos[kk + 2] = f.z + rz * ox - fz * (hgt - 0.95); }
           else { pos[kk] = f.x + rx * ox + fx * of; pos[kk + 1] = by + hgt - lean * up * 0.12; pos[kk + 2] = f.z + rz * ox + fz * of; }
         }
         // the hinged arm: pivot at the figure's right shoulder (viewer's left), rotating in the card plane, in front of the body
         const ab = f.i * 12;
         if (f.hasArm && !lying) {
-          const km = f.L.sex === 'm' ? 0.95 : 1, sx = -(D.sh - 0.012) * km + sway + tilt * 0.05, sy = (D.yS - 0.03) * km + bob, a = -f.arm, ca = Math.cos(a), sa = Math.sin(a);
-          const quad = [[-0.36 * 0.45, -0.86 * 0.9], [0.64 * 0.45, -0.86 * 0.9], [-0.36 * 0.45, 0.14 * 0.9], [0.64 * 0.45, 0.14 * 0.9]];
-          for (let j = 0; j < 4; j++) { const qx = quad[j][0], qy = quad[j][1], x2 = sx + qx * ca - qy * sa, y2 = sy + qx * sa + qy * ca, of = 0.015 + lean * 0.8 + f.reach * Math.max(0, -qy);
+          const fl = f.flip || 1, sx = sway + step + tilt * 0.05, sy = f.pivY + bob, a = -f.arm, ca = Math.cos(a), sa = Math.sin(a), quad = f.aq || c.aq;   // (a mirrored twin's arm hinges on the other shoulder)
+          for (let j = 0; j < 4; j++) { const qx = quad[j][0], qy = quad[j][1], x2 = sx + fl * (f.pivX + qx * ca - qy * sa), y2 = sy + qx * sa + qy * ca, of = 0.015 + lean * 0.8 + f.reach * Math.max(0, -qy);
             apos[ab + j * 3] = f.x + rx * x2 + fx * of; apos[ab + j * 3 + 1] = f.y + y2 - (lean ? lean * 0.1 : 0); apos[ab + j * 3 + 2] = f.z + rz * x2 + fz * of; }
         } else for (let j = 0; j < 4; j++) apos[ab + j * 3 + 1] = -999;
+        // contact shadow on the deck / the sunbed, or the ring where a bather breaks the water
+        if (mixf) {
+          const sp = c.spos, sb = f.i * 12; let hx2 = 0.36, hz2 = 0.36, sy = f.y + 0.012, cx = f.x, cz = f.z;
+          if (lying) { const b = f.sp.bed, al = Math.abs(Math.cos(b[2])) > 0.5; hx2 = al ? 0.4 : 0.98; hz2 = al ? 0.98 : 0.4; sy = f.y + 0.362; cx = f.x - fx * 0.12; cz = f.z - fz * 0.12; }
+          else if (f.wl != null) { const s = 0.36 + 0.05 * Math.sin(t * 1.3); hx2 = hz2 = s; sy = f.y + f.wl + 0.008; }
+          else { sy = f.y + 0.012 + (f.sp.floor ? 0.022 : 0); cx = f.x + rx * step; cz = f.z + rz * step; }
+          sp[sb] = cx - hx2; sp[sb + 1] = sy; sp[sb + 2] = cz + hz2; sp[sb + 3] = cx + hx2; sp[sb + 4] = sy; sp[sb + 5] = cz + hz2; sp[sb + 6] = cx - hx2; sp[sb + 7] = sy; sp[sb + 8] = cz - hz2; sp[sb + 9] = cx + hx2; sp[sb + 10] = sy; sp[sb + 11] = cz - hz2;
+        }
       }
-      c.geo.attributes.position.needsUpdate = true; c.ag.attributes.position.needsUpdate = true;
+      c.geo.attributes.position.needsUpdate = true; if (c.ag !== c.geo) c.ag.attributes.position.needsUpdate = true;
+      if (uvDirty) c.geo.attributes.uv.needsUpdate = true;
+      if (c.sg) c.sg.attributes.position.needsUpdate = true;
+      }
     }
   }
 
@@ -377,7 +494,7 @@ export function createPeople(yacht) {
     items.push([t('hello'), () => { f.hop = 0.6; if (f.hasArm && !f.glass && !lying) { f.armT = 2.6; setTimeout(() => { f.armT = 2.2; setTimeout(() => { f.armT = 2.6; setTimeout(() => { if (!f.act) f.armT = 0; }, 350); }, 220); }, 260); } yacht.say(f.sp.say || (f.sp.role === 'guest' ? 'sayHi' : 'sayWelcome')); }]);
     if (f.sp.role === 'guest' && !fixed && !f.sp.noTalk) {
       items.push([t('toast'), () => { if (!yacht.held) return yacht.walk._toast(t('needDrink'), 2400);
-        if (!f.glass) { f.glass = true; const c = crowds.get(f.zone.id); setArmUV(c.auv, f); c.ag.attributes.uv.needsUpdate = true; }
+        if (!f.glass) { f.glass = true; f.batch.setArm(f, 1); }
         start(f, { dist: 0.95, dur: 1.9, onDo: () => yacht.clink(), tick: (tt) => { f.armT = 0.55 * Math.sin(Math.min(1, tt / 0.5) * Math.PI / 2); f.reach = 0.25 * Math.sin(Math.min(1, tt / 0.6) * Math.PI); }, onEnd: () => yacht.say('sayCheers') }); }]);
       items.push([t('dance'), () => { if (!yacht.cur || yacht.cur.id !== 'beach') return yacht.walk._toast(t('needFloor'), 2400);
         start(f, { dist: 1.25, dur: 14, onDo: () => { f.dancing = true; yacht.say('sayDance'); yacht.danceWith(14); } }); }]);
@@ -388,8 +505,13 @@ export function createPeople(yacht) {
     }
     yacht.menu(role, items);
   }
-  function setAnim(id, anim) { for (const c of crowds.values()) for (const f of c.figs) if (f.sp.id === id) { f.anim = anim; f.armT = 0; f.lean = 0; } }
-  function find(id) { for (const c of crowds.values()) for (const f of c.figs) if (f.sp.id === id) return f; return null; }
-  function dispose() { for (const c of crowds.values()) { c.geo.dispose(); c.ag.dispose(); } crowds.clear(); if (ATLAS) { ATLAS.tb.dispose(); ATLAS.ta.dispose(); ATLAS.mb.dispose(); ATLAS.ma.dispose(); ATLAS = null; } }
-  return { build, drop, update, targets, setAnim, find, dispose, talk, atlas, get count() { let n = 0; for (const c of crowds.values()) n += c.figs.length; return n; }, looks: LOOK_IDS };
+  const each = (fn) => { for (const list of crowds.values()) for (const c of list) for (const f of c.figs) fn(f, c); };
+  function setAnim(id, anim) { each(f => { if (f.sp.id === id) { f.anim = anim; f.armT = 0; f.lean = 0; } }); }
+  function find(id) { let r = null; each(f => { if (!r && f.sp.id === id) r = f; }); return r; }
+  function dispose() { for (const id of [...crowds.keys()]) drop({ id }); if (ATLAS) { ATLAS.tb.dispose(); ATLAS.ta.dispose(); ATLAS.mb.dispose(); ATLAS.ma.dispose(); ATLAS = null; } }
+  // the party crowd of a zone: resolves when its atlas is painted (tests) / its numbers
+  const mixOf = (id) => batches(id).find(c => c.mix);
+  const ready = (id) => { const c = mixOf(id); return c ? c.done : Promise.resolve(null); };
+  const stats = (id) => { const c = mixOf(id); return c ? c.stats || null : null; };
+  return { build, drop, update, targets, setAnim, find, dispose, talk, atlas, ready, stats, mixOf, get count() { let n = 0; each(() => n++); return n; }, looks: LOOK_IDS };
 }
