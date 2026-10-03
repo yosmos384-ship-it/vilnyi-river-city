@@ -1681,6 +1681,48 @@ function tap(p, m, x, y, z, h = 0.3, mat) {
   rod(g, 0.007, 0.08, t, 0.03, h * 0.55, 0, [0, 0, -1.1]);
   return g;
 }
+// Basin taps (bathroom vanities). Origin: the mounting point — the centre of the deck flange (deck kinds) or of the
+// wall rosette (kind 'wall', with z = the wall face). The spout runs towards +z and ends `reach` away, over the middle
+// of the bowl. Returns {top, tipY} relative to y: the highest point of the fitting and where the water leaves it.
+//   'mixer' — single-lever mixer with a straight spout (h = body height: tall for vessel bowls, standard otherwise)
+//   'goose' — swan-neck spout (o.cross: with a pair of cross-head valves beside it, else a side lever)
+//   'wall'  — spout out of the wall with a separate lever rosette beside it
+function basinTap(p, m, x, y, z, o = {}) {
+  const t = o.mat || m.tap, g = grp(p, x, y, z), kind = o.kind || 'mixer', h = o.h || 0.2, reach = o.reach || 0.2;
+  if (kind === 'wall') {
+    rod(g, 0.034, 0.012, t, 0, 0, 0.006, [HALF, 0, 0], 20);
+    rod(g, 0.013, reach, t, 0, 0, reach / 2, [HALF, 0, 0], 12);
+    cyl(g, 0.011, 0.011, 0.022, t, 0, -0.03, reach - 0.013, 12);
+    const lx = o.leverX ?? 0.14;
+    rod(g, 0.03, 0.012, t, lx, 0, 0.006, [HALF, 0, 0], 20); rod(g, 0.014, 0.05, t, lx, 0, 0.03, [HALF, 0, 0], 12);
+    rod(g, 0.006, 0.075, t, lx, 0.03, 0.046, null, 8);
+    return { top: 0.07, tipY: -0.03 };
+  }
+  cyl(g, 0.027, 0.03, 0.012, t, 0, 0, 0, 18);
+  if (kind === 'goose') {
+    const R = reach / 2;
+    rod(g, 0.013, h, t, 0, h / 2, 0, null, 12);
+    cyl(g, 0.018, 0.02, 0.05, t, 0, 0.012, 0, 14);
+    torus(g, R, 0.013, t, 0, h, R, [0, HALF, 0], Math.PI, 20);
+    rod(g, 0.013, 0.03, t, 0, h - 0.015, reach, null, 12);
+    if (o.cross) {
+      for (const sx of [-1, 1]) {
+        const cx = sx * 0.105;
+        cyl(g, 0.02, 0.023, 0.012, t, cx, 0, 0, 14); cyl(g, 0.012, 0.015, 0.11, t, cx, 0.012, 0, 12);
+        rod(g, 0.0055, 0.07, t, cx, 0.13, 0, [0, 0, HALF], 8); rod(g, 0.0055, 0.07, t, cx, 0.13, 0, [HALF, 0, 0], 8);
+        sph(g, 0.009, t, cx, 0.139, 0, [1, 0.7, 1], 8);
+      }
+    } else rod(g, 0.006, 0.075, t, 0.034, 0.075, 0, [0, 0, -1.1], 8);
+    return { top: h + R + 0.013, tipY: h - 0.03 };
+  }
+  // mixer: body, a cap, the spout a little below the cap, a slim lever out to the side
+  cyl(g, 0.019, 0.021, h, t, 0, 0, 0, 16);
+  rod(g, 0.011, reach, t, 0, h - 0.03, reach / 2, [HALF, 0, 0], 12);
+  cyl(g, 0.011, 0.011, 0.02, t, 0, h - 0.05, reach - 0.011, 12);
+  cyl(g, 0.016, 0.019, 0.012, t, 0, h, 0, 16);
+  rod(g, 0.0055, 0.075, t, 0, h + 0.022, 0.028, [HALF - 0.3, 0, 0], 8);
+  return { top: h + 0.04, tipY: h - 0.05 };
+}
 function coffeeMachine(m, o = {}) {
   const g = new THREE.Group(), s = m.fam;
   const body = s === 'nordic' ? m.plastic : s === 'milano' ? m.steel : m.ceramic;
@@ -2226,7 +2268,7 @@ const splashMat = () => fxMat('splash', FX_VS, `void main(){ float r = length(vU
 // flush: three foam arms spiralling down the bowl
 const swirlMat = () => fxMat('swirl', FX_VS, `void main(){ float a = atan(vP.z, vP.x), s = length(vP.xz);
   float foam = smoothstep(0.1, 0.95, sin(a * 3. + s * 60. + uT * 10.) * 0.5 + 0.5);
-  gl_FragColor = vec4(mix(vec3(0.16, 0.5, 0.74), vec3(0.86, 0.95, 1.), foam), uK * (0.55 + 0.4 * foam));` + END_FS);
+  gl_FragColor = vec4(mix(vec3(0.07, 0.36, 0.66), vec3(0.95, 0.98, 1.), foam), uK * (0.7 + 0.3 * foam));` + END_FS);
 // shower rain: streaks falling in a widening cone (unit cone: radius 1 at the floor, height 1, apex side at y = 0);
 // only streaks between uA and uB of the fall are drawn (the water front on start, the tail on stop)
 const rainMat = () => fxMat('rain', `attribute vec4 aS; attribute vec2 aE; uniform float uT, uK, uA, uB; varying float vS; varying float vA;
@@ -2422,9 +2464,29 @@ function soapLedge(g, dyn, m, piece, x, y, z0, o = {}) {
 }
 
 // ================================================================== BATH
-// Wall-hung pan, back at z = 0 (against the wall), bowl extends to +z. The bowl is hollow with standing water; the lid
-// is hinged (tap the pan: it lifts / soft-closes) and the flush plate on the wall flushes: foam spirals down the bowl,
-// the water drops away and refills.
+// Wall-hung pan, back at z = 0 (against the wall), bowl extends to +z. The bowl is hollow with standing water and the
+// lid is hinged. Taps: the closed pan lifts the lid; the dual-flush plate on the wall flushes (lifting the lid first if
+// it is down, so the flush is seen); the open bowl / seat flushes too; the raised lid closes it again. A flush: the
+// plate's key dips, foam spirals down the bowl, the water drops away and refills. The first time a visitor stands in
+// front of a toilet a one-time hint is shown (window 'vrc:hint' {key:'flush', text} + the walkthrough's toast).
+const FLUSH_HINT = {
+  en: 'Tap the wall plate or the bowl to flush', he: 'הקישו על לוחית ההדחה או על האסלה כדי להדיח', ru: 'Нажмите на клавишу смыва или на чашу, чтобы смыть',
+  uk: 'Торкніться клавіші змиву або чаші, щоб змити', ro: 'Atinge clapeta de pe perete sau vasul pentru a trage apa', fr: 'Touchez la plaque ou la cuvette pour tirer la chasse',
+  it: 'Tocca la placca o il vaso per tirare lo sciacquone', de: 'Spülplatte oder WC antippen, um zu spülen',
+};
+let FLUSH_HINTED = false;
+const HV = new THREE.Vector3();
+function flushHint(piece, camera) {
+  if (FLUSH_HINTED || !camera || typeof document === 'undefined') return;
+  HV.setFromMatrixPosition(camera.matrixWorld); piece.worldToLocal(HV);
+  if (HV.z < 0.35 || HV.z > 1.9 || Math.abs(HV.x) > 0.9 || HV.y < 1 || HV.y > 2.2) return;   // standing in front of the pan
+  const toast = document.querySelector('.vw-toast'); if (!toast) return;                      // (only inside the walkthrough)
+  FLUSH_HINTED = true;
+  const text = FLUSH_HINT[String(document.documentElement.lang || 'en').slice(0, 2)] || FLUSH_HINT.en;
+  try { window.dispatchEvent(new CustomEvent('vrc:hint', { detail: { key: 'flush', text } })); } catch { /* no DOM */ }
+  // after the room-name toast of walking in; cleared like any other toast
+  setTimeout(() => { toast.textContent = text; toast.classList.add('show'); setTimeout(() => { if (toast.textContent === text) toast.classList.remove('show'); }, 4200); }, 900);
+}
 const LID_OPEN = 1.53;
 function makeSwirlFx() {
   const st = { t0: 0 };
@@ -2440,9 +2502,10 @@ function toilet(m, o = {}) {
   lathe(g, [[0.127, 0.402], [0.186, 0.402], [0.188, 0.412], [0.184, 0.421], [0.131, 0.421], [0.126, 0.412], [0.127, 0.402]], m.porcelain, 0, 0, bz, 36, [1, 1, SZ]);   // seat
   for (const sx of [-1, 1]) rod(g, 0.008, 0.03, m.chrome, sx * 0.075, 0.43, 0.058, [0, 0, HALF], 8);                 // lid hinges
   fxFlat(g, m.aoSoft, 'disc', 0, 0.012, 0.28, 0.5, 0.62);
-  // flush plate on the wall
-  box(g, 0.24, 0.16, 0.012, m.fam === 'nordic' ? m.blackMetal : m.brass, 0, 0.95, 0.006);
-  box(g, 0.1, 0.13, 0.004, m.fam === 'nordic' ? m.darkPlastic : m.chrome, -0.055, 0.965, 0.013);
+  // dual-flush plate on the wall above the pan (clear of the raised lid): frame, small key; the big key is in `dyn`
+  const PY = 1.0, PH = 0.17, PW = 0.26, plateM = m.fam === 'nordic' ? m.blackMetal : m.brass;
+  box(g, PW, PH, 0.012, plateM, 0, PY, 0.006);
+  box(g, 0.075, PH - 0.034, 0.005, m.chrome, PW / 2 - 0.017 - 0.0375, PY + 0.017, 0.0125);
   // toilet roll holder
   rod(g, 0.006, 0.14, m.tap, 0.36, 0.72, 0.08, [0, 0, HALF]);
   cyl(g, 0.055, 0.055, 0.1, m.linen, 0.36, 0.67, 0.08, 16, [0, 0, HALF]);
@@ -2451,6 +2514,8 @@ function toilet(m, o = {}) {
   const dyn = playGroup(g, 'toilet-dyn');
   const piv = grp(dyn, 0, 0.424, 0.058);
   const lid = soft(piv, 0.375, 0.028, 0.5, m.porcelain, 0, 0, 0.245, null, { e: [0.5, 0.6, 0.55], seg: 22 }); lid.raycast = NORAY; lid.name = 'toilet-lid';
+  lid.onBeforeRender = (rn, sc, camera) => flushHint(dyn, camera);   // (dyn: the baked build keeps only this group live)
+  const key = box(dyn, 0.135, PH - 0.034, 0.006, m.chrome, -PW / 2 + 0.017 + 0.0675, PY + 0.017, 0.0125); key.raycast = NORAY; key.name = 'toilet-flush-key';
   const bw = grp(dyn, 0, 0, bz); bw.scale.z = SZ; bw.visible = false; bw.name = 'toilet-water';
   const WY = 0.262, lvl = { t0: -99, live: false };
   const rAt = (y) => y >= 0.225 ? 0.078 + (y - 0.225) / 0.075 * 0.037 : 0.04 + (y - 0.195) / 0.03 * 0.038;   // inner bowl radius at height y
@@ -2458,11 +2523,11 @@ function toilet(m, o = {}) {
   water.raycast = NORAY; water.renderOrder = 2; water.position.y = WY; water.scale.set(rAt(WY) - 0.001, 1, rAt(WY) - 0.001); bw.add(water);
   water.onBeforeRender = () => {
     const t = sec() - lvl.t0; if (t > 5.2 && !lvl.live) return;
-    const dy = t < 0.4 ? 0.006 * t / 0.4 : t < 1.9 ? 0.006 - 0.05 * easeIO((t - 0.4) / 1.5) : t < 2.5 ? -0.044 : -0.044 * (1 - easeIO(sat((t - 2.5) / 2.4)));
+    const dy = t < 0.4 ? 0.006 * t / 0.4 : t < 1.9 ? 0.006 - 0.06 * easeIO((t - 0.4) / 1.5) : t < 2.5 ? -0.054 : -0.054 * (1 - easeIO(sat((t - 2.5) / 2.4)));
     lvl.live = t <= 5.2; const y = WY + dy, r = rAt(y) - 0.001; water.position.y = y; water.scale.set(r, 1, r);
   };
   let open = false, tok = 0, swirl = null;
-  const st = { get open() { return open; }, get flushing() { return sec() - lvl.t0 < 5.2; }, lid: piv, water: bw, parts: {} };
+  const st = { get open() { return open; }, get flushing() { return sec() - lvl.t0 < 5.2; }, lid: piv, water: bw, parts: {}, flush: () => flush(), setLid: (on) => setLid(on) };
   const setLid = (on) => {
     const want = on === undefined ? !open : !!on; if (want === open) return Promise.resolve();
     open = want; const my = ++tok, a0 = piv.rotation.x, a1 = want ? -LID_OPEN : 0;
@@ -2471,19 +2536,24 @@ function toilet(m, o = {}) {
     if (want) bw.visible = true;
     return tweenMs(Math.max(160, 650 * Math.abs(a1 - a0) / LID_OPEN), k => { if (my !== tok) return; piv.rotation.x = a0 + (a1 - a0) * easeIO(k); if (k === 1 && !want) bw.visible = false; });
   };
-  const flush = () => {
-    if (st.flushing) return Promise.resolve();
+  const flush = async () => {
+    if (st.flushing) return;
+    if (!open) await setLid(true);                         // the lid lifts first, so the flush is seen
+    if (st.flushing) return;
     lvl.t0 = sec(); lvl.live = true; flushPx.userData.open = flushPx.userData._open = true;
     if (!swirl) swirl = fxTake('swirl', makeSwirlFx);
     swirl.userData.st.t0 = lvl.t0; bw.add(swirl);
     sfx('flush');
+    tweenMs(520, k => { key.position.z = 0.0125 - 0.003 * Math.sin(Math.PI * Math.min(1, k * 1.15)); });   // the key dips and springs back
     setTimeout(() => { if (swirl) { fxGive('swirl', swirl); swirl = null; } flushPx.userData.open = flushPx.userData._open = false; }, 3800);
     return new Promise(res => setTimeout(res, 300));
   };
-  // the pan's proxy stands a little proud of the furniture collider; the raised lid gets its own (to close it again)
-  const lidPx = playProxy(dyn, m, 'toilet', 'toiletLid', 0.43, 0.19, 0.62, 0, 0.3, 0.31, setLid);
-  const upPx = playProxy(dyn, m, 'toilet', 'toiletLid', 0.42, 0.46, 0.09, 0, 0.46, 0.045, setLid); upPx.raycast = NORAY;
-  const flushPx = playProxy(dyn, m, 'toilet', 'flush', 0.27, 0.19, 0.05, 0, 0.935, 0.025, flush);
+  // the pan's proxy stands a little proud of the furniture collider: closed → lifts the lid, open → flushes (an
+  // explicit toggle(true / false) still just sets the lid); the raised lid has its own proxy, which closes it
+  const lidPx = playProxy(dyn, m, 'toilet', 'toiletLid', 0.43, 0.19, 0.62, 0, 0.3, 0.31, (on) => on === undefined ? (open ? flush() : setLid(true)) : setLid(on));
+  const upPx = playProxy(dyn, m, 'toilet', 'toiletLid', 0.42, 0.44, 0.09, 0, 0.46, 0.045, setLid); upPx.raycast = NORAY;
+  // generous tap area around the plate (a thumb on a phone), from just above the raised lid
+  const flushPx = playProxy(dyn, m, 'toilet', 'flush', 0.46, 0.4, 0.05, 0, 0.905, 0.025, flush);
   st.parts = { lid: lidPx, lidUp: upPx, flush: flushPx };
   g.userData.toilet = dyn.userData.toilet = st;
   return g;
@@ -2523,41 +2593,69 @@ function vanity(m, o = {}) {           // floating vanity, back at z=0, basin(s)
   }
   box(g, L, 0.04, D + 0.01, m.counter, 0, H - 0.04, D / 2);
   const basins = L > 1.3 ? [-L / 4, L / 4] : [0];
-  // every basin tap runs: [x, tap z, tap height, where the stream lands (above the counter)]
+  // Each bowl gets its own tap, standing behind the bowl on its centre line (or coming out of the wall above it) with
+  // the spout ending over the middle of the bowl. The whole fitting stays below g.userData.tapTop, which is where
+  // apartment.js hangs the mirror cabinet — one cabinet centred on each bowl — so no tap ever reaches into a cabinet.
+  // every basin tap runs: [x, spout tip z, tip height above the counter, where the stream lands (above the counter)]
   const outs = [], dyn = playGroup(g, 'vanity-dyn');
+  let tapTop = 0, bz = D / 2 + 0.05, brx = 0.2, brz = 0.2;
   for (const bx of basins) {
+    let tp, tz = 0.065, land;
     if (m.styleId === 'kyoto') {
-      // carved travertine vessel basin (thick rim, honed) with a bronze wall-style spout
-      lathe(g, [[0.001, 0], [0.17, 0], [0.2, 0.06], [0.21, 0.13], [0.19, 0.135], [0.17, 0.07], [0.12, 0.035], [0.001, 0.03]], m.stone, bx, H, D / 2 + 0.04, 32);
-      tap(g, m, bx, H, 0.06, 0.32); outs.push([bx, 0.06, 0.32, 0.036]);
-      continue;
+      // carved travertine vessel basin (thick rim, honed); a bronze spout out of the wall above it (deck mixer in the cutaway)
+      bz = D / 2 + 0.05; brx = brz = 0.21; land = 0.036;
+      lathe(g, [[0.001, 0], [0.17, 0], [0.2, 0.06], [0.21, 0.13], [0.19, 0.135], [0.17, 0.07], [0.12, 0.035], [0.001, 0.03]], m.stone, bx, H, bz, 32);
+      if (o.cut) { tz = 0.055; tp = basinTap(g, m, bx, H, tz, { kind: 'mixer', h: 0.27, reach: bz - tz }); }
+      else { tz = 0.004; const ty = 0.25; tp = basinTap(g, m, bx, H + ty, tz, { kind: 'wall', reach: bz - tz, leverX: bx > 0 ? -0.15 : 0.15 }); tp = { top: tp.top + ty, tipY: tp.tipY + ty }; }
+    } else if (m.styleId === 'monaco') {
+      // Calacatta Oro vessel bowl on the Nero counter, tall brass mixer
+      brx = brz = 0.2; land = 0.03;
+      lathe(g, [[0.001, 0], [0.11, 0], [0.18, 0.06], [0.2, 0.14], [0.19, 0.145], [0.165, 0.08], [0.1, 0.03], [0.001, 0.025]], m.marble, bx, H, bz, 32);
+      torus(g, 0.196, 0.006, m.brass, bx, H + 0.143, bz, [HALF, 0, 0], Math.PI * 2, 32);
+      tp = basinTap(g, m, bx, H, tz, { kind: 'mixer', h: 0.28, reach: bz - tz });
+    } else if (s === 'nordic') {
+      // nordic: a low oval countertop basin, standard-height black mixer
+      bz = D / 2 + 0.03; brx = 0.224; brz = 0.16; tz = 0.07; land = 0.017;
+      lathe(g, [[0.001, 0], [0.13, 0], [0.185, 0.03], [0.2, 0.085], [0.192, 0.09], [0.178, 0.04], [0.12, 0.016], [0.001, 0.014]], m.porcelain, bx, H, bz, 32, [1.12, 1, 0.8]);
+      tp = basinTap(g, m, bx, H, tz, { kind: 'mixer', h: 0.19, reach: bz - tz });
+    } else {
+      // milano: porcelain bowl + tall mixer; riviera: glazed ceramic bowl + swan neck; paris: swan neck with cross-head valves
+      brx = brz = 0.2; land = 0.047;
+      lathe(g, [[0, 0], [0.12, 0], [0.19, 0.08], [0.2, 0.14], [0.19, 0.14], [0.17, 0.09], [0.001, 0.02]], s === 'milano' ? m.porcelain : m.ceramic, bx, H, bz, 28);
+      tp = s === 'milano' ? basinTap(g, m, bx, H, tz, { kind: 'mixer', h: 0.27, reach: bz - tz })
+        : basinTap(g, m, bx, H, tz, { kind: 'goose', h: 0.22, reach: bz - tz, cross: paris });
     }
-    if (m.styleId === 'monaco') {
-      // Calacatta Oro vessel bowl on the Nero counter, brass tap
-      lathe(g, [[0.001, 0], [0.11, 0], [0.18, 0.06], [0.2, 0.14], [0.19, 0.145], [0.165, 0.08], [0.1, 0.03], [0.001, 0.025]], m.marble, bx, H, D / 2 + 0.05, 32);
-      torus(g, 0.196, 0.006, m.brass, bx, H + 0.143, D / 2 + 0.05, [HALF, 0, 0], Math.PI * 2, 32);
-      tap(g, m, bx, H, 0.08, 0.34); outs.push([bx, 0.08, 0.34, 0.03]);
-      continue;
-    }
-    // nordic: a low oval countertop basin
-    if (s === 'nordic') lathe(g, [[0.001, 0], [0.13, 0], [0.185, 0.03], [0.2, 0.085], [0.192, 0.09], [0.178, 0.04], [0.12, 0.016], [0.001, 0.014]], m.porcelain, bx, H, D / 2 + 0.03, 32, [1.12, 1, 0.8]);
-    else lathe(g, [[0, 0], [0.12, 0], [0.19, 0.08], [0.2, 0.14], [0.19, 0.14], [0.17, 0.09], [0.001, 0.02]], s === 'milano' ? m.porcelain : m.ceramic, bx, H, D / 2 + 0.05, 28);
-    tap(g, m, bx, H, 0.08, s === 'nordic' ? 0.22 : 0.3); outs.push([bx, 0.08, s === 'nordic' ? 0.22 : 0.3, s === 'nordic' ? 0.017 : 0.047]);
+    tapTop = Math.max(tapTop, tp.top); outs.push([bx, bz, tp.tipY, land]);
   }
-  g.userData.taps = dyn.userData.taps = outs.map(([bx, tz, th, land]) => {
-    const out = waterOutlet(dyn, m, 'vanity', 'tap', { x: bx, y: H + th - 0.06, z: tz + 0.16, drop: th - 0.06 - land, ring: 0.045 });
-    out.proxy(0.16, 0.21, 0.3, bx, H, tz + 0.09);       // kept below the mirror cabinet's door
+  g.userData.tapTop = H + tapTop; g.userData.basins = basins.slice();
+  g.userData.taps = dyn.userData.taps = outs.map(([bx, z, ty, land]) => {
+    const out = waterOutlet(dyn, m, 'vanity', 'tap', { x: bx, y: H + ty - 0.002, z, drop: ty - land, ring: 0.045 });
+    out.proxy(Math.min(0.4, L / basins.length - 0.04), tapTop + 0.01, 0.46, bx, H, 0.24);   // the tap and its bowl, up to just under the mirror cabinet
     return out;
   });
-  // accessories
-  lathe(g, [[0, 0], [0.03, 0], [0.03, 0.14], [0.012, 0.16], [0.006, 0.19], [0, 0.19]], s === 'milano' ? m.ceramic2 : m.ceramic, L / 2 - 0.1, H, 0.12, 12);
-  lathe(g, [[0, 0], [0.035, 0], [0.035, 0.1], [0, 0.1]], m.bottle, L / 2 - 0.2, H, 0.1, 12);
-  tray(g, m, -L / 2 + 0.16, H, 0.14, 0.2, 0.14);
-  sph(g, 0.03, m.ceramic, -L / 2 + 0.12, H + 0.025, 0.14, [1.3, 0.6, 1], 10);
-  // folded towel stack (rounded folds)
-  soft(g, 0.3, 0.055, 0.21, m.towel, L / 2 - 0.2, H, D - 0.13, null, { e: [0.12, 0.7, 0.3], seg: 16 });
-  soft(g, 0.3, 0.05, 0.2, m.towel, L / 2 - 0.2, H + 0.05, D - 0.13, [0, 0.05, 0], { e: [0.12, 0.7, 0.3], seg: 16 });
-  soft(g, 0.28, 0.048, 0.19, m.towel2, L / 2 - 0.2, H + 0.097, D - 0.13, [0, -0.04, 0], { e: [0.12, 0.7, 0.3], seg: 16 });
+  // accessories: only where the counter is free of bowls and taps
+  const free = (x, z, r) => Math.abs(x) + r <= L / 2 && basins.every(bx => Math.hypot((x - bx) / (brx + r + 0.012), (z - bz) / (brz + r + 0.012)) > 1 && !(Math.abs(x - bx) < 0.14 + r && z < 0.12 + r));
+  const side = L / 2 - (basins[basins.length - 1] + brx);          // free counter beside the outer bowl
+  const vx = basins.length > 1 ? L / 2 - 0.05 : L / 2 - 0.1, bxx = basins.length > 1 ? -L / 2 + 0.055 : L / 2 - 0.2;
+  if (free(vx, 0.12, 0.03)) lathe(g, [[0, 0], [0.03, 0], [0.03, 0.14], [0.012, 0.16], [0.006, 0.19], [0, 0.19]], s === 'milano' ? m.ceramic2 : m.ceramic, vx, H, 0.12, 12);
+  if (free(bxx, 0.1, 0.035)) lathe(g, [[0, 0], [0.035, 0], [0.035, 0.1], [0, 0.1]], m.bottle, bxx, H, 0.1, 12);
+  const tx = basins.length > 1 ? 0 : -L / 2 + 0.13, tzz = basins.length > 1 ? 0.12 : 0.14;
+  if ([-1, 1].every(sx => [-1, 1].every(sz => free(tx + sx * 0.1, tzz + sz * 0.07, 0.004)))) {
+    tray(g, m, tx, H, tzz, 0.2, 0.14);
+    sph(g, 0.03, m.ceramic, tx - 0.04, H + 0.025, tzz, [1.3, 0.6, 1], 10);
+  }
+  // folded towel stack (rounded folds): flat beside the bowl where there is room, turned end-on on a narrower strip,
+  // between the bowls of a double vanity — never over a bowl
+  const tw = (x, z, ry, k = 1) => {
+    const tg = grp(g, x, H, z, ry);
+    soft(tg, 0.3 * k, 0.055, 0.21, m.towel, 0, 0, 0, null, { e: [0.12, 0.7, 0.3], seg: 16 });
+    soft(tg, 0.3 * k, 0.05, 0.2, m.towel, 0, 0.05, 0, [0, 0.05, 0], { e: [0.12, 0.7, 0.3], seg: 16 });
+    soft(tg, 0.28 * k, 0.048, 0.19, m.towel2, 0, 0.097, 0, [0, -0.04, 0], { e: [0.12, 0.7, 0.3], seg: 16 });
+  };
+  const gap = basins.length > 1 ? basins[1] - basins[0] - 2 * brx : 0;
+  if (side >= 0.36) tw(L / 2 - 0.035 - 0.15, D - 0.13, 0);
+  else if (side >= 0.22) tw(L / 2 - 0.012 - 0.105, D - 0.19, HALF, 0.9);
+  else if (gap >= 0.24) tw(0, D - 0.17, HALF, 0.8);
   g.userData.solidBox = { w: L, d: D, h: H, z: D / 2 };
   return g;
 }
@@ -2602,23 +2700,22 @@ function mirrorCabinet(m, o = {}) {
     fxQuad(c, m.glow, s === 'milano' ? 'grad' : 'disc', [0, H / 2, 0.006], [W * 0.95, 0, 0], [0, H * 0.95, 0]);
     box(c, W * 0.6, 0.006, 0.01, m.led, 0, s === 'nordic' ? H * 0.82 : H - 0.03, Dp - 0.02);
   });
-  // door(s): mirror + thin frame, hinged at the outer edge(s)
-  const doorsN = s === 'milano' && W > 0.7 ? 2 : 1;
+  // one mirror door per cabinet (the basin and its tap are centred under it), hinged on the left edge or — o.hinge = 1,
+  // the right-hand cabinet of a pair — on the right one
+  const hs = o.hinge > 0 ? 1 : -1;
   if (s === 'milano') {
-    for (let k = 0; k < doorsN; k++) {
-      const x0 = -W / 2 + k * W / doorsN, x1 = x0 + W / doorsN, side = doorsN === 2 ? (k ? 1 : -1) : -1;
-      const dr = hinged(g, x0, x1, -0.02, Dp, side, comp), cx = dr.userData.cx, dw = x1 - x0;
-      box(dr, dw - 0.002, H + 0.04, 0.012, fm, cx, 0, 0.006);
-      box(dr, dw - 0.03, H, 0.004, m.mirror, cx, 0.02, 0.014);
-    }
+    const dr = hinged(g, -W / 2, W / 2, -0.02, Dp, hs, comp), cx = dr.userData.cx;
+    box(dr, W - 0.002, H + 0.04, 0.012, fm, cx, 0, 0.006);
+    box(dr, W - 0.03, H, 0.004, m.mirror, cx, 0.02, 0.014);
+    box(dr, 0.012, 0.16, 0.012, fm, cx - hs * (W / 2 - 0.004), H / 2 - 0.06, 0.012);       // edge pull on the opening side
   } else if (s === 'nordic') {
-    const dr = hinged(g, -R, R, 0, Dp, -1, comp);
-    add(dr, cg(`mcD${r3(R)}`, () => new THREE.CylinderGeometry(R, R, 0.016, 48)), fm, R, R, 0.008, [HALF, 0, 0]);
-    add(dr, cg(`mcM${r3(R)}`, () => new THREE.CylinderGeometry(R - 0.015, R - 0.015, 0.004, 48)), m.mirror, R, R, 0.018, [HALF, 0, 0]);
+    const dr = hinged(g, -R, R, 0, Dp, hs, comp), cx = dr.userData.cx;
+    add(dr, cg(`mcD${r3(R)}`, () => new THREE.CylinderGeometry(R, R, 0.016, 48)), fm, cx, R, 0.008, [HALF, 0, 0]);
+    add(dr, cg(`mcM${r3(R)}`, () => new THREE.CylinderGeometry(R - 0.015, R - 0.015, 0.004, 48)), m.mirror, cx, R, 0.018, [HALF, 0, 0]);
   } else {
-    const dr = hinged(g, -R, R, 0, Dp, -1, comp);
-    add(dr, cg(`archF${r3(W)}|${r3(H)}`, () => { const sh = new THREE.Shape(); sh.moveTo(-W / 2, 0); sh.lineTo(W / 2, 0); sh.lineTo(W / 2, H - W / 2); sh.absarc(0, H - W / 2, W / 2, 0, Math.PI, false); sh.lineTo(-W / 2, 0); return new THREE.ExtrudeGeometry(sh, { depth: 0.02, bevelEnabled: false, curveSegments: 20 }); }), fm, R, 0, 0);
-    add(dr, cg(`archM${r3(W)}|${r3(H)}`, () => { const s2 = new THREE.Shape(); const w = W - 0.03, h = H - 0.03; s2.moveTo(-w / 2, 0.015); s2.lineTo(w / 2, 0.015); s2.lineTo(w / 2, h - w / 2); s2.absarc(0, h - w / 2 + 0.0, w / 2, 0, Math.PI, false); s2.lineTo(-w / 2, 0.015); return new THREE.ShapeGeometry(s2, 20); }), m.mirror, R, 0, 0.021);
+    const dr = hinged(g, -R, R, 0, Dp, hs, comp), cx = dr.userData.cx;
+    add(dr, cg(`archF${r3(W)}|${r3(H)}`, () => { const sh = new THREE.Shape(); sh.moveTo(-W / 2, 0); sh.lineTo(W / 2, 0); sh.lineTo(W / 2, H - W / 2); sh.absarc(0, H - W / 2, W / 2, 0, Math.PI, false); sh.lineTo(-W / 2, 0); return new THREE.ExtrudeGeometry(sh, { depth: 0.02, bevelEnabled: false, curveSegments: 20 }); }), fm, cx, 0, 0);
+    add(dr, cg(`archM${r3(W)}|${r3(H)}`, () => { const s2 = new THREE.Shape(); const w = W - 0.03, h = H - 0.03; s2.moveTo(-w / 2, 0.015); s2.lineTo(w / 2, 0.015); s2.lineTo(w / 2, h - w / 2); s2.absarc(0, h - w / 2 + 0.0, w / 2, 0, Math.PI, false); s2.lineTo(-w / 2, 0.015); return new THREE.ShapeGeometry(s2, 20); }), m.mirror, cx, 0, 0.021);
   }
   g.userData.noSolid = true;
   return g;

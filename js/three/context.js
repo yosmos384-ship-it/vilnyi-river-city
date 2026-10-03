@@ -222,12 +222,14 @@ function ribbon(n, A, B) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
   g.computeVertexNormals(); return g;
 }
-function radialTexture() {
-  const [c, g] = makeCanvas(128, 128);
-  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-  return tex(c, { srgb: false, repeat: false, aniso: 1 });
+function radialTexture() {   // plain bytes, not a canvas gradient (premultiplied + dithered gradients speckle on phones)
+  const n = 128, d = new Uint8Array(n * n * 4);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const r = Math.hypot((i + 0.5) / n * 2 - 1, (j + 0.5) / n * 2 - 1), a = r < 0.35 ? 1 - 0.55 * r / 0.35 : r < 1 ? 0.45 * (1 - (r - 0.35) / 0.65) : 0, o = (j * n + i) * 4;
+    d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = Math.round(255 * a);
+  }
+  const t = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+  return t;
 }
 
 // ------------------------------------------------------------------ main
@@ -284,6 +286,11 @@ export function createContext({ shadows = false, lowDetail = false } = {}) {
       segBox(concrete, seg, 0, seg.len, -0.35, 0.1, h + 1.0, h + 1.1, P.roofEdge);
       // ground-floor canopy over shopfronts / entrances
       if (ph === 'I') segBox(concrete, seg, 0.4, seg.len - 0.4, 0, 1.6, GH - 0.3, GH - 0.1, '#e9e2d3');
+      // at eye level the painted ground floor read as a flat box: real stone piers between the shopfront bays, a base
+      // course and (Faza III) a slim canopy give it depth and parallax — all in the merged concrete mesh
+      for (let i = 0; i <= nb; i++) { const c = i * bw, a0 = i === 0 ? 0 : c - bw * 0.07, a1 = i === nb ? seg.len : c + bw * 0.07; segBox(concrete, seg, a0, a1, 0, 0.26, 0, GH - 0.3, P.plinth, 0.97); }
+      segBox(concrete, seg, 0, seg.len, 0, 0.32, 0, 0.22, P.plinth, 0.82);
+      if (ph !== 'I') segBox(concrete, seg, 0.4, seg.len - 0.4, 0, 0.9, GH - 0.3, GH - 0.14, P.slab);
     }
     add(new THREE.Mesh(mergeGeometries(quads), mat)).name = 'context-facade-' + ph;
     for (const r of rects) {

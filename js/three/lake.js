@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LAKE, COMPASS, geoToWorld } from '../data.js';
+import { PIER, DOCK, buildPierGeo, buildPierColliders, buildProxyGeo } from './yacht-pier.js';
 
 const TAU = Math.PI * 2;
 export const WATER_Y = -0.45;             // water level (the promenade / ground is at y ≈ 0)
@@ -454,6 +455,22 @@ export function createLake({ lowDetail = false } = {}) {
   const staticMat = glowMaterial({ roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide }, U.uNight, '#ffc27a', 3);
   const statMesh = new THREE.Mesh(gb.build(), staticMat); statMesh.name = 'lake-hardscape'; group.add(statMesh);
 
+  // ---------------- 2b. VILNYI Lifestyle concept berth (YACHT-CONTRACT.md): the finger pier and a one-draw-call proxy of
+  // the yacht at the pier head. Neither exists on the real reservoir, so both stay out of the views from inside the
+  // buildings until the visitor has entered the concept experience (window.VRC_LIFESTYLE) — see update().
+  // yacht.js hides the proxy while its detailed model is shown or the yacht is under way (userData.hold).
+  const pier = new THREE.Group(); pier.name = 'vrc-pier'; pier.userData.pier = PIER;
+  const proxy = new THREE.Group(); proxy.name = 'vrc-yacht-proxy'; proxy.userData.hold = false;
+  {
+    const pg = new GB(); buildPierGeo(pg);
+    const pm = new THREE.Mesh(pg.build(), staticMat); pm.name = 'vrc-pier-mesh'; pier.add(pm);
+    disposables.push(buildPierColliders(pier));
+    const yg = new GB(); buildProxyGeo(yg);
+    const ym = new THREE.Mesh(yg.build(), staticMat); ym.name = 'vrc-yacht-proxy-mesh'; proxy.add(ym);
+    proxy.position.set(DOCK.pos[0], DOCK.y, DOCK.pos[1]); proxy.rotation.y = DOCK.yaw;
+    group.add(pier, proxy);
+  }
+
   // ---------------- 3. promenade (pavers, red running track, coping, lawn edge) — ribbon along the shore
   {
     const outer = offsetShore(PW), N = SHORE.length;
@@ -612,6 +629,8 @@ export function createLake({ lowDetail = false } = {}) {
   {
     const line = offsetShore(PW - 1.6), N = SHORE.length; let acc = 0;
     for (let i = 0; i < N; i++) { const [x, z] = SHORE[i], [x2, z2] = SHORE[(i + 1) % N]; acc += Math.hypot(x2 - x, z2 - z); if (acc < 26) continue; acc = 0; lampPts.push([line[i][0], 0.06, line[i][1]]); }
+    // keep the pier approach (quay landing → pier, YACHT-CONTRACT) clear: a lamp standing on that axis steps aside along the quay
+    for (const p of lampPts) { const [s, t] = PIER.local(p[0], p[2]); if (Math.abs(t) < 6 && Math.abs(s) < 14) { const d = (t < 0 ? -7 : 7) - t; p[0] += PIER.T[0] * d; p[2] += PIER.T[1] * d; } }
     const il = islandOutline(90, 8); il.forEach(([s, t], i) => { if (i % 3 === 0) { const [x, z] = islToWorld(s, t); lampPts.push([x, IY, z]); } });
     for (const [x, z] of bridgeLamps) lampPts.push([x, 0.9, z]);
     const post = new THREE.CylinderGeometry(0.055, 0.09, 4.2, 6); post.translate(0, 2.1, 0);
@@ -1031,8 +1050,13 @@ export function createLake({ lowDetail = false } = {}) {
   }
   setMode('dusk');
 
-  function update(dt) {
+  function update(dt, camera) {
     U.uTime.value += Math.min(dt || 0, 0.1);
+    // concept berth: shown on the shore / on the road / once the Lifestyle experience has been entered — never as an
+    // unlabelled part of the lake view from an apartment or of the site's hero views
+    const p = camera && camera.position, life = typeof window !== 'undefined' && !!window.VRC_LIFESTYLE;
+    const show = life || !!(p && p.y < 3.2);
+    pier.children[0].visible = show; proxy.visible = show && !proxy.userData.hold;
   }
 
   function dispose() {
@@ -1049,5 +1073,6 @@ export function createLake({ lowDetail = false } = {}) {
     get mode() { return mode; },
     // extras (optional): debug flag used by the lake-view scorer, uniforms for tuning
     uniforms: U,
+    pier, yachtProxy: proxy,
   };
 }

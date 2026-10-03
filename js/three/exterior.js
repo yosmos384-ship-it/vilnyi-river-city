@@ -105,7 +105,7 @@ function pane(buf, F, u0, u1, y0, y1, v, t) {
 
 // ------------------------------------------------------------------ materials
 const GLSL_EXT_HEAD = /* glsl */`
-uniform vec4 uHideB; uniform vec4 uHideU; uniform vec2 uHi; uniform sampler2D uUnitTex; uniform float uGlow; uniform float uLit; uniform float uTime; uniform vec3 uGold;
+uniform vec4 uHideB; uniform vec4 uHideU; uniform vec2 uHi; uniform vec2 uLobby; uniform sampler2D uUnitTex; uniform float uGlow; uniform float uLit; uniform float uTime; uniform vec3 uGold;
 varying vec3 vTag; varying vec2 vUvE; varying vec3 vEW; varying vec3 vEN;
 float ex_h(float n){ return fract(sin(mod(n, 4096.) * 12.9898 + floor(n / 4096.) * 1.618) * 43758.5453); }
 bool ex_hidden(){
@@ -128,7 +128,19 @@ function extMaterial(kind, params, envBase, EXT_U) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTag = aTag; vUvE = uv; vEW = (modelMatrix * vec4(position, 1.)).xyz; vEN = normalize(mat3(modelMatrix) * normal);');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + GLSL_EXT_HEAD)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (ex_hidden()) discard;')
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        if (ex_hidden()) discard;
+        #ifdef EXT_GLASS
+          // Lobby entrances (seed 20003): from afar a glowing pane stands in for the lobby. Near a walker whose building
+          // has its real lobby loaded (commons.js: glazed front, doors, the lit hall) the pane dissolves so one looks in.
+          {
+            float sdL = floor(vTag.z + .5);
+            if (sdL > 20002.5 && sdL < 20003.5 && abs(vTag.x - uLobby.x) < .5) {
+              float nL = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056, .00583715))));
+              if (distance(cameraPosition, vEW) < uLobby.y - 1.2 * nL) discard;
+            }
+          }
+        #endif`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float exVert = 1. - abs(vEN.y);
         float exAlong = dot(vEW.xz, vec2(-vEN.z, vEN.x));          // metres along a vertical surface
@@ -236,6 +248,7 @@ export function createComplex(opts = {}) {
     uHideB: { value: new THREE.Vector4(-999, -999, -999, -999) },
     uHideU: { value: new THREE.Vector4(-1, -1, -1, -1) },
     uHi: { value: new THREE.Vector2(-999, -999) },
+    uLobby: { value: new THREE.Vector2(-999, 0) },   // (ground band code of the building whose lobby is loaded, reveal distance)
     uUnitTex: { value: unitTex },
     uGold: { value: new THREE.Color('#e0a84e') },
   };
@@ -374,6 +387,8 @@ export function createComplex(opts = {}) {
     }
   }
   function setHiddenFloor(bId, floor) { setHiddenFloors(bId, floor == null ? [] : [floor]); }
+  // The walkthrough has the ground-floor lobbies of `bId` loaded (or null): their entrance panes open up within `dist` m.
+  function setLobbyOpen(bId, dist = 13) { EXT_U.uLobby.value.set(bId && BUILDINGS[bId] ? bandCode(bId, 0) : -999, dist); }
 
   function highlightFloor(bId, floor) {
     if (floor == null || !BUILDINGS[bId]) { EXT_U.uHi.value.set(-999, -999); outline.userData.set(null); return; }
@@ -401,7 +416,7 @@ export function createComplex(opts = {}) {
     unitTex.dispose();
   }
 
-  return { group, buildings, pickables, highlightFloor, hoverFloor, setHiddenFloor, setHiddenFloors, setUnitHighlight, dispose };
+  return { group, buildings, pickables, highlightFloor, hoverFloor, setHiddenFloor, setHiddenFloors, setLobbyOpen, setUnitHighlight, dispose };
 }
 
 const PICK_MAT = new THREE.MeshBasicMaterial({ visible: false });
@@ -665,7 +680,7 @@ function buildBuilding(bId, bufs) {
           const ss = (entr.entrance[0] - e.o[0]) * e.U[0] + (entr.entrance[1] - e.o[1]) * e.U[1];
           box(bufs.stone, e, s0, ss - 2.3, 0, yTop, -0.3, 0, tag, 'V');
           box(bufs.stone, e, ss + 2.3, s1, 0, yTop, -0.3, 0, tag, 'V');
-          pane(bufs.glass, e, ss - 2.3, ss + 2.3, 0, yTop, -0.22, { b: code, u: -1, s: 20001 });
+          pane(bufs.glass, e, ss - 2.3, ss + 2.3, 0, yTop, -0.22, { b: code, u: -1, s: 20003 });
           for (const x of [ss - 2.3, ss - 0.8, ss + 0.8, ss + 2.3]) box(bufs.frame, e, x - 0.05, x + 0.05, 0, yTop, -0.24, -0.12, tag, 'VuU');
           box(bufs.frame, e, ss - 3.2, ss + 3.2, yTop - 0.05, yTop + 0.2, 0, 3.0, tag, 'YVuU');
           box(bufs.soffit, e, ss - 3.2, ss + 3.2, yTop - 0.05, yTop + 0.2, 0, 3.0, { b: code, u: -2, s: 0 }, 'y');

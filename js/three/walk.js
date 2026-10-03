@@ -143,6 +143,19 @@ const BELL_TXT = {
     'ic.goApt': 'Zu dieser Wohnung gehen', 'ic.enter': 'Lobby betreten', 'ic.again': 'Andere Wohnung', 'ic.close': 'Schließen', 'ic.locked': 'Die Tür ist verschlossen — bitte die Gegensprechanlage daneben benutzen' },
 };
 for (const [l, o] of Object.entries(BELL_TXT)) for (const [k, v] of Object.entries(o)) (LOCAL[l] ||= {})['walk.' + k] = v;
+// VILNYI Lifestyle: the concierge's limousine button (same wording as limo.js LIMO_TXT[lang].cg — copied so the lobby does
+// not have to load limo.js), her spoken confirmation, and the loading veil's wording while the yacht streams in.
+const LIFE_TXT = {
+  en: { 'cg.limo': 'Limousine to the yacht', 'cg.say.limo': 'With pleasure. Your limousine is waiting at the entrance.', yachtLoading: 'Preparing the yacht…' },
+  he: { 'cg.limo': 'לימוזינה אל היאכטה', 'cg.say.limo': 'בשמחה. הלימוזינה ממתינה לכם בכניסה.', yachtLoading: 'מכינים את היאכטה…' },
+  ro: { 'cg.limo': 'Limuzină spre iaht', 'cg.say.limo': 'Cu plăcere. Limuzina vă așteaptă la intrare.', yachtLoading: 'Pregătim iahtul…' },
+  ru: { 'cg.limo': 'Лимузин к яхте', 'cg.say.limo': 'С удовольствием. Лимузин ждёт вас у входа.', yachtLoading: 'Готовим яхту…' },
+  uk: { 'cg.limo': 'Лімузин до яхти', 'cg.say.limo': 'Із задоволенням. Лімузин чекає на вас біля входу.', yachtLoading: 'Готуємо яхту…' },
+  fr: { 'cg.limo': 'Limousine vers le yacht', 'cg.say.limo': 'Avec plaisir. Votre limousine vous attend à l’entrée.', yachtLoading: 'Préparation du yacht…' },
+  it: { 'cg.limo': 'Limousine verso lo yacht', 'cg.say.limo': 'Con piacere. La limousine vi attende all’ingresso.', yachtLoading: 'Stiamo preparando lo yacht…' },
+  de: { 'cg.limo': 'Limousine zur Yacht', 'cg.say.limo': 'Sehr gern. Ihre Limousine wartet am Eingang.', yachtLoading: 'Die Yacht wird vorbereitet…' },
+};
+for (const [l, o] of Object.entries(LIFE_TXT)) for (const [k, v] of Object.entries(o)) (LOCAL[l] ||= {})['walk.' + k] = v;
 const ENTRY_HOLD_MS = 9000, ENTRY_UNLOCK_MS = 600000, ENTRY_GRACE_MS = 25000;   // lobby doors after an intercom release / after leaving
 const INTERCOM_DX = 0.95 + 0.42;   // the intercom totem stands this far beside the entrance axis (commons.js)
 const BD_OPEN_R = 1.4, BD_CLOSE_R = 2.5, BD_CLOSE_S = 2, BD_REARM_R = 1.9, BD_HINT_R = 2.4;
@@ -190,6 +203,19 @@ function pointInPoly(p, poly) {
 }
 function polyCentroid(poly) { let x = 0, y = 0; for (const p of poly) { x += p[0]; y += p[1]; } return [x / poly.length, y / poly.length]; }
 function isTouchDevice() { return (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window; }
+// The concierge's voice per language: preferred natural female system voices (matched by name, best first), locale, pace.
+const CG_VOICES = {
+  he: { lc: 'he-IL', names: ['carmit', 'hila'], rate: 0.94, pitch: 1.05 },
+  en: { lc: 'en-GB', names: ['ava', 'samantha', 'allison', 'susan', 'zoe', 'serena', 'kate', 'stephanie', 'sonia', 'libby', 'jenny', 'aria', 'karen', 'moira', 'tessa', 'hazel', 'zira', 'google uk english female', 'google us english'], rate: 0.97, pitch: 1.06 },
+  ro: { lc: 'ro-RO', names: ['ioana', 'alina'], rate: 0.96, pitch: 1.05 },
+  ru: { lc: 'ru-RU', names: ['milena', 'katya', 'svetlana', 'dariya', 'irina'], rate: 0.96, pitch: 1.05 },
+  uk: { lc: 'uk-UA', names: ['lesya', 'polina'], rate: 0.96, pitch: 1.05 },
+  fr: { lc: 'fr-FR', names: ['amélie', 'amelie', 'audrey', 'aurélie', 'aurelie', 'marie', 'denise', 'eloise', 'julie', 'hortense'], rate: 0.97, pitch: 1.05 },
+  it: { lc: 'it-IT', names: ['alice', 'federica', 'elsa', 'isabella', 'emma'], rate: 0.97, pitch: 1.05 },
+  de: { lc: 'de-DE', names: ['anna', 'petra', 'katja', 'helena', 'hedda', 'amala'], rate: 0.96, pitch: 1.05 },
+};
+const CG_MALE = /\b(male|man|daniel|alex|fred|tom|aaron|arthur|gordon|oliver|thomas|jorge|luca|david|mark|george|james|ryan|guy|yuri|pavel|dmitry|ostap|asaf|avri|andrei|emil|henri|paul|claude|cosimo|diego|stefan|conrad|killian|markus|yannick|martin|rishi|nathan|evan|lee)\b/;
+const CG_NOVELTY = /bad news|good news|bahh|bells|boing|bubbles|cellos|wobble|jester|organ|superstar|trinoids|whisper|zarvox|albert|junior|ralph|kathy|deranged|hysterical|eddy|flo\b|grandma|grandpa|reed|rocko|sandy|shelley/;
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 function disposeMaterial(m) {
@@ -657,7 +683,11 @@ const CSS = `
 .vw-cg .who span{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--g);opacity:.9}
 .vw-cg .ib{flex:0 0 32px;height:32px;border-radius:50%;border:1px solid var(--ln);display:flex;align-items:center;justify-content:center;color:var(--g2);font-size:13px}
 .vw-cg .ib.on{background:rgba(201,164,92,.18);border-color:var(--g2)}
-.vw-cg .msg{margin:9px 2px 10px;font-size:13.5px;line-height:1.5;color:#f3ead7;text-align:start;unicode-bidi:plaintext}
+.vw-cg.talk .av{border-color:var(--g2);animation:vwCgTalk 1.1s ease-in-out infinite}
+@keyframes vwCgTalk{0%,100%{box-shadow:0 0 0 0 rgba(230,201,135,.5)}50%{box-shadow:0 0 0 7px rgba(230,201,135,0)}}
+@media (prefers-reduced-motion:reduce){.vw-cg.talk .av{animation:none}}
+.vw-cg .acts{margin-top:10px}
+.vw-cg .msg{margin:9px 2px 0;font-size:13.5px;line-height:1.5;color:#f3ead7;text-align:start;unicode-bidi:plaintext}
 .vw-cg .acts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .vw-cg .acts button{min-height:40px;padding:6px 10px;border-radius:11px;border:1px solid var(--ln);background:rgba(255,255,255,.03);color:#efe5cf;font-size:12.5px;line-height:1.25;text-align:start;display:flex;align-items:center;gap:7px}
 .vw-cg .acts button i{font-style:normal;color:var(--g);flex:0 0 auto;font-size:13px;width:16px;text-align:center}
@@ -752,6 +782,8 @@ export class Walkthrough {
     this._ready = this._init();
     this._loop = this._loop.bind(this);
     this._raf = requestAnimationFrame(this._loop);
+    this._yachtApi();   // VILNYI Lifestyle yacht: window.VRC.yacht (the yacht itself loads lazily — yacht.js)
+    this._limoApi();    // VILNYI Lifestyle limousine: window.VRC.startLimo / limoBack (limo.js streams in with the world)
   }
 
   // ======================= i18n =======================
@@ -839,6 +871,7 @@ export class Walkthrough {
       () => this._initEnv(),
       () => this._initComplex(),
       () => { this._initCars(); if (this.commons) this._adoptParking(this.commons); },
+      () => this._initLimo(),   // VILNYI Lifestyle limousine + chauffeur (limo.js), after the streets and the fleet
     ];
     this._worldP = (async () => {
       await next(); await new Promise(r => setTimeout(r, 450));    // let the page's reveal (fade of the still) finish first
@@ -1024,7 +1057,9 @@ export class Walkthrough {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    try { if (this._cgSpoke && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
+    try { this._yachtApi(false); } catch { /* optional */ }
+    try { this._limoApi(false); } catch { /* optional */ }
+    try { this._cgHush(); clearTimeout(this._cgVt); if (this._cgSS && this._cgVc) this._cgSS.removeEventListener('voiceschanged', this._cgVc); } catch { /* optional */ }
     cancelAnimationFrame(this._raf);
     if (this._pano) {
       const p = this._pano; this._pano = null;
@@ -1337,6 +1372,8 @@ export class Walkthrough {
   // Which facade floor bands to hide so the exterior never covers the interior we are in.
   _hideFloorsForWalker(force) {
     if (!this.complex || !this.complex.setHiddenFloor || this.floor == null) return;
+    // the lobbies of the loaded ground floor show through their entrances from the forecourt (exterior.js)
+    if (this.complex.setLobbyOpen) this.complex.setLobbyOpen(this.floor === 0 && this.commons && this.commons.floor === 0 ? this.commons.bId : null);
     if (this._isOutside(this.player.pos) || (this.floor === -1 && this.player.pos.y > -2.5)) {
       if (!force && this._hiddenKey === 'out') return;
       this._hiddenKey = 'out';
@@ -2835,25 +2872,28 @@ export class Walkthrough {
     if (!this.el) return;
     if (this._icOpen) this._icClose();
     this._cgStair = stair ?? cg.stair;   // the lifts she sends you to (called from an entrance intercom: that staircase)
+    this._cgVoiceInit();
     if (!this.el.cg) {
       const d = document.createElement('div'); d.className = 'vw-cg vw-panel'; d.setAttribute('role', 'dialog');
       d.innerHTML = `<div class="hd"><span class="av" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e6c987" stroke-width="1.3" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M15.2 5.6c1.3.2 2.2 1.2 2 2.4"/><path d="M5 20c.6-4 3.4-6.2 7-6.2s6.4 2.2 7 6.2"/><path d="M10 14.2 12 17l2-2.8"/></svg></span>
         <div class="who"><b></b><span></span></div><button class="ib vo" data-cg="voice" aria-pressed="false"></button><button class="ib" data-cg="close">✕</button></div>
-        <p class="msg" aria-live="polite"></p><div class="acts"></div>`;
+        <p class="msg" aria-live="polite" hidden></p><div class="acts"></div>`;
       this.el.hud.appendChild(d); this.el.cg = d;
-      this._cgVoice = lsGet('vrc.walk.voice') === '1';
     }
     this._cgCur = cg; this._cgAuto = auto; this._cgOpen = true;
     this._cgRender('main');
     this.el.cg.classList.add('show');
     if (!auto) cg.greet();
-    const ua = typeof navigator !== 'undefined' && navigator.userActivation;
-    if (this._cgVoice && (!auto || !ua || ua.hasBeenActive)) this._cgSpeak(this.t('walk.cg.hello'));
+    // she greets out loud — once per approach, not every time the panel re-opens while she is still talking
+    const now = performance.now();
+    if (!(this._cgTalk && this._cgLine === 'hello') && (!auto || !cg._helloAt || now - cg._helloAt > 20000)) { cg._helloAt = now; this._cgSay('hello'); }
   }
-  _cgClose() {
+  // bye: the visitor closed the panel — she says goodbye. Walking away just closes it (she finishes her sentence).
+  _cgClose(bye = false) {
     this._cgOpen = false;
     if (this.el && this.el.cg) this.el.cg.classList.remove('show');
-    try { if (this._cgSpoke && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
+    if (this._cgQueue && !this._cgQueue.keep) this._cgQueue = null;
+    if (bye) this._cgSay('bye', null, true);
   }
   _cgRender(view = 'main') {
     const d = this.el && this.el.cg; if (!d) return;
@@ -2872,15 +2912,18 @@ export class Walkthrough {
     const x = d.querySelector('[data-cg=close]'); x.title = t('close'); x.setAttribute('aria-label', t('close'));
     const msg = d.querySelector('.msg'), acts = d.querySelector('.acts');
     const u = this.unit;
+    // she speaks instead of writing; the written line only appears when she cannot be heard (muted, or no speech on this device)
+    const written = !this._cgVoice || !this._cgCanSpeak();
+    msg.hidden = !written;
     if (view === 'floors') {
-      msg.textContent = t('pickFloor');
+      msg.textContent = written ? t('pickFloor') : '';
       acts.className = 'acts fl';
       const fl = [-1, 0, ...Array.from({ length: TOP_FLOOR }, (_, i) => i + 1)];
       acts.innerHTML = fl.map(f => `<button data-cg="f" data-f="${f}" class="${f === this.floor ? 'here' : ''}${u && f === u.floor ? ' mine' : ''}"${f === this.floor ? ' aria-current="true"' : ''}>${f === -1 ? '−1' : f === 0 ? 'P' : f}</button>`).join('')
         + `<button class="wide" data-cg="back">${esc(t('back'))}</button>`;
       return;
     }
-    msg.textContent = t('hello');
+    msg.textContent = written ? t('hello') : '';
     acts.className = 'acts';
     const fName = u ? (u.floor === 0 ? this.t('walk.ground') : `${this.t('walk.floor')} ${u.floor}`) : '';
     acts.innerHTML = `
@@ -2888,27 +2931,29 @@ export class Walkthrough {
       <button data-cg="floors"><i>⇅</i><span>${esc(t('floors'))}</span></button>
       <button data-cg="park"><i>P</i><span>${esc(t('parking'))}</span></button>
       <button data-cg="model"><i>◇</i><span>${esc(t('model'))}</span></button>
+      <button data-cg="limo" style="grid-column:1/-1"><i>⚓</i><span>${esc(t('limo'))}</span></button>
       <button data-cg="book" style="grid-column:1/-1"><i>✦</i><span>${esc(t('book'))}</span></button>
       <button class="wide" data-cg="close">${esc(t('close'))}</button>`;
   }
   async _cgAction(k, b) {
     this._click && this._click(0.3);
-    if (k === 'close') return this._cgClose();
+    if (k === 'close') return this._cgClose(true);
     if (k === 'back') return this._cgRender('main');
-    if (k === 'floors') return this._cgRender('floors');
+    if (k === 'floors') { this._cgRender('floors'); this._cgSay('pick'); return; }
     if (k === 'voice') {
-      this._cgVoice = !this._cgVoice; lsSet('vrc.walk.voice', this._cgVoice ? '1' : '0');
+      this._cgVoice = !this._cgVoice; lsSet('vrc.walk.cgvoice', this._cgVoice ? '1' : '0');
+      if (this._cgVoice) this._cgSay(this._cgView === 'floors' ? 'pick' : 'hello'); else this._cgHush();
       this._cgRender(this._cgView);
-      if (this._cgVoice) this._cgSpeak(this.el.cg.querySelector('.msg').textContent);
-      else try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* optional */ }
       return;
     }
-    if (k === 'f') { const f = +b.dataset.f; if (f === this.floor) return; this._cgClose(); return this._cgRide(f); }
+    // every choice gets a short spoken confirmation (started here, inside the tap)
+    if (k === 'f') { const f = +b.dataset.f; if (f === this.floor) return; this._cgClose(); this._cgSay(f === -1 ? 'park' : f === 0 ? 'ground' : 'floor', { n: f }, true); return this._cgRide(f); }
     this._cgClose();
-    if (k === 'apt') return this._cgGoApt();
-    if (k === 'park') return this._cgRide(-1);
-    if (k === 'model') return this._goto('apartment');
-    if (k === 'book') return this._cgBook();
+    if (k === 'apt') { this._cgSay('apt', null, true); return this._cgGoApt(); }
+    if (k === 'park') { this._cgSay('park', null, true); return this._cgRide(-1); }
+    if (k === 'model') { this._cgSay('model', null, true); return this._goto('apartment'); }
+    if (k === 'book') { this._cgSay('book', null, true); return this._cgBook(); }
+    if (k === 'limo') { this._cgSay('limo', null, true); const V = window.VRC; return V && V.startLimo ? V.startLimo(this.bId) : undefined; }
   }
   // Take the lift by the reception to another floor: call it, step in, press the key, ride.
   async _cgRide(floor) {
@@ -2944,20 +2989,127 @@ export class Walkthrough {
       try { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); else location.hash = 'contact'; } catch { /* optional */ }
     }, 60);
   }
-  _cgSpeak(text) {
-    if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined' || !text) return;
+  // ---- her voice. The device's speech synthesis in the site language, with a natural female voice picked by name
+  // where the platform has one (CG_VOICES). Browsers only speak after a user gesture — and iOS Safari only once an
+  // utterance has been started inside one — so the first tap/drag in the walkthrough primes it (a silent utterance),
+  // and a line that comes up before that waits for the next gesture.
+  _cgVoiceInit() {
+    if (this._cgVi) return; this._cgVi = true;
+    this._cgVoice = lsGet('vrc.walk.cgvoice') !== '0';   // sound is on unless the visitor muted her
+    const ss = this._cgSS = (typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') ? speechSynthesis : null;
+    if (!ss || !this.root) return;
+    this._cgT0 = performance.now();
+    const load = () => {
+      let had = this._cgVoices && this._cgVoices.length;
+      try { this._cgVoices = Array.from(ss.getVoices() || []); } catch { this._cgVoices = []; }
+      this._cgPicks = {};
+      if (!had && this._cgVoices.length && this._cgOpen) this._cgRender(this._cgView);
+    };
+    load();
+    this._cgVc = load;
+    try { ss.addEventListener('voiceschanged', load); } catch { try { ss.onvoiceschanged = load; } catch { /* optional */ } }
+    // a device that never lists a voice cannot speak: after a moment the written greeting comes back
+    this._cgVt = setTimeout(() => { if (!this.disposed && this._cgOpen) this._cgRender(this._cgView); }, 3200);
+    this._cgPrimeH = () => this._cgPrime();
+    for (const n of ['pointerup', 'touchend', 'click', 'keydown']) this.root.addEventListener(n, this._cgPrimeH, true);
+  }
+  _cgPrime() {
+    const ss = this._cgSS; if (!ss || this.disposed) return;
+    const q = this._cgQueue;
+    if (q) { this._cgQueue = null; this._cgPrimed = true; if (this._cgVoice && (q.keep || this._cgOpen)) this._cgSpeak(q.key, q.vars, q.keep); return; }
+    if (this._cgPrimed) return;
+    this._cgPrimed = true; this._cgWarmAt = performance.now();
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = this._cgPickVoice(this._cgLang2()).lc; ss.speak(u); } catch { /* optional */ }
+  }
+  _cgLang2() { const l = String(this.lang || 'en').slice(0, 2).toLowerCase(); return CG_VOICES[l] ? l : 'en'; }
+  // can she be heard at all on this device? (unknown while the voice list is still loading → assume yes)
+  _cgCanSpeak() {
+    const ss = this._cgSS; if (!ss || this._cgFail) return false;
+    const vs = this._cgVoices || [];
+    if (!vs.length) return performance.now() - (this._cgT0 || 0) < 3000;
+    return !!(this._cgPickVoice(this._cgLang2()).voice || this._cgPickVoice('en').voice);
+  }
+  // best voice for a language: named natural female voices first, then "enhanced/premium/neural" ones, never the novelty set
+  _cgPickVoice(l2) {
+    const P = this._cgPicks || (this._cgPicks = {}); if (P[l2]) return P[l2];
+    const def = CG_VOICES[l2] || CG_VOICES.en, vs = this._cgVoices || [];
+    let best = null, bs = -1e9;
+    for (const v of vs) {
+      const vl = String(v.lang || '').toLowerCase().replace('_', '-');
+      if (!(vl.startsWith(l2) || (l2 === 'he' && vl.startsWith('iw')))) continue;
+      const n = String(v.name || '').toLowerCase(), uri = String(v.voiceURI || '').toLowerCase();
+      let s = 0; const i = def.names.findIndex(x => n.includes(x));
+      if (i >= 0) s += 60 - i * 2;
+      if (/premium|enhanced|natural|neural|siri|online/.test(n + ' ' + uri)) s += 25;
+      if (/female|woman/.test(n)) s += 20;
+      if (CG_MALE.test(n)) s -= 50;
+      if (CG_NOVELTY.test(n) || uri.includes('eloquence')) s -= 200;
+      if (uri.includes('compact')) s -= 4;
+      if (vl === def.lc.toLowerCase()) s += 6;
+      if (v.default) s += 3;
+      if (s > bs) { bs = s; best = v; }
+    }
+    return (P[l2] = { voice: best, lc: def.lc, rate: def.rate, pitch: def.pitch });
+  }
+  // the line she says: `walk.cg.say.*` (brand name spelled the way each language pronounces it)
+  _cgLineText(key, vars, l2, own) {
+    const k = 'walk.cg.say.' + key;
+    let s = own ? this.t(k) : (I18N[l2] && I18N[l2][k]);
+    if (typeof s !== 'string' || !s || s === k || s === key) s = (LOCAL[l2] && LOCAL[l2][k]) || (I18N.en && I18N.en[k]) || LOCAL.en[k] || '';
+    return vars ? s.replace(/\{(\w+)\}/g, (m, n) => (vars[n] ?? m)) : s;
+  }
+  // say a line now, or on the visitor's next gesture if the browser has not let her speak yet. keep: also after the panel closed
+  _cgSay(key, vars = null, keep = false) {
+    if (!this._cgVi) this._cgVoiceInit();
+    if (!this._cgVoice || !this._cgSS) return false;
+    if (!this._cgPrimed) { this._cgQueue = { key, vars, keep }; return true; }
+    return this._cgSpeak(key, vars, keep);
+  }
+  _cgSpeak(key, vars, keep) {
+    const ss = this._cgSS; if (!ss) return false;
     try {
-      const l2 = String(this.lang).slice(0, 2).toLowerCase();
-      const LC = { he: 'he-IL', en: 'en-GB', ro: 'ro-RO', ru: 'ru-RU', uk: 'uk-UA', fr: 'fr-FR', it: 'it-IT', de: 'de-DE' };
-      speechSynthesis.cancel();
+      let l2 = this._cgLang2(), pick = this._cgPickVoice(l2), own = true;
+      // no voice for this language on the device (but others): she says it in English rather than not at all
+      if (!pick.voice && (this._cgVoices || []).length) { const en = this._cgPickVoice('en'); if (en.voice) { pick = en; l2 = 'en'; own = false; } }
+      const text = this._cgLineText(key, vars, l2, own); if (!text) return false;
       const ut = new SpeechSynthesisUtterance(text);
-      ut.lang = LC[l2] || 'en-GB'; ut.rate = 0.97; ut.pitch = 1.05;
-      const vs = (speechSynthesis.getVoices && speechSynthesis.getVoices()) || [];
-      const cand = vs.filter(v => String(v.lang || '').toLowerCase().replace('_', '-').startsWith(l2));
-      const v = cand.find(v => /female|woman|samantha|victoria|karen|moira|tessa|serena|carmit|zira|hedda|katja|anna|alice|amelie|aurelie|milena|ioana|lesya|paulina/i.test(v.name)) || cand[0];
-      if (v) ut.voice = v;
-      speechSynthesis.speak(ut); this._cgSpoke = true;
-    } catch (e) { console.warn('[walk] speech', e); }
+      if (pick.voice) { ut.voice = pick.voice; ut.lang = pick.voice.lang || pick.lc; } else ut.lang = pick.lc;
+      ut.rate = pick.rate; ut.pitch = pick.pitch; ut.volume = 1;
+      const tok = this._cgTok = (this._cgTok || 0) + 1, mine = () => tok === this._cgTok && !this.disposed;
+      ut.onstart = () => { if (mine()) { this._cgStarted = true; this._cgTalking(true); } };
+      ut.onend = () => { if (mine()) this._cgTalking(false); };
+      ut.onerror = ev => {
+        if (!mine()) return;
+        this._cgTalking(false);
+        const er = ev && ev.error;
+        if (er === 'not-allowed') { this._cgPrimed = false; this._cgQueue = { key, vars, keep }; }       // wait for the next gesture
+        else if (er && er !== 'interrupted' && er !== 'canceled') { this._cgFail = true; if (this._cgOpen) this._cgRender(this._cgView); }
+      };
+      this._cgUt = ut; this._cgLine = key; this._cgStarted = false; this._cgSpoke = true;
+      this._cgSaid = { key, text, lang: ut.lang, voice: pick.voice ? pick.voice.name : null };   // (inspection / tests)
+      // iPhone/iPad: system speech is silent while the ringer switch is on mute, and a page cannot detect that — say so once
+      if (key === 'hello' && !lsGet('vrc.walk.cghint') && typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))) {
+        lsSet('vrc.walk.cghint', '1'); this._toast(this.t('walk.cg.soundHint'), 4600);
+      }
+      const go = () => { if (!mine()) return; try { ss.speak(ut); } catch (e) { console.warn('[walk] speech', e); this._cgTalking(false); } };
+      const warm = performance.now() - (this._cgWarmAt || -1e9) < 400;   // the silent primer of this very gesture: queue behind it
+      if ((ss.speaking || ss.pending) && !warm) { ss.cancel(); clearTimeout(this._cgGoT); this._cgGoT = setTimeout(go, 90); } else go();
+      // lips move for the length of the line even where the browser reports no start/end events
+      this._cgTalking(true);
+      clearTimeout(this._cgEndT); this._cgEndT = setTimeout(() => { if (mine()) this._cgTalking(false); }, 1400 + text.length * 95);
+      return true;
+    } catch (e) { console.warn('[walk] speech', e); return false; }
+  }
+  _cgTalking(on) {
+    this._cgTalk = !!on;
+    if (!on) clearTimeout(this._cgEndT);
+    for (const c of (this.commons && this.commons.concierges) || []) { try { c.speak && c.speak(on && c === (this._cgCur || c)); } catch { /* older commons */ } }
+    if (this.el && this.el.cg) this.el.cg.classList.toggle('talk', !!on);
+  }
+  _cgHush() {
+    this._cgQueue = null; this._cgTok = (this._cgTok || 0) + 1; clearTimeout(this._cgGoT);
+    try { if (this._cgSS && this._cgSpoke) this._cgSS.cancel(); } catch { /* optional */ }
+    this._cgTalking(false);
   }
   // The walker crossed into an apartment (past its entrance door line): tell the page and draw the curtains open.
   _aptEnterWatch() {
@@ -2985,6 +3137,9 @@ export class Walkthrough {
 
   _update(dt) {
     const P = this.player;
+    if (this.yacht && this.yacht.active) return this.yacht.frame(dt);   // aboard the yacht: yacht.js owns the walker
+    this._yachtWatch();
+    if (this.limo && this.limo.update(dt)) return this._limoFrame(dt);   // in the limousine: limo.js owns the camera
     if (this.drive) {
       if (!this.busy) this._driveUpdate(dt);
       this._autoDoors(dt); this._outdoorWatch(); this._cullWorld();
@@ -3378,6 +3533,7 @@ export class Walkthrough {
     e.reserve.querySelector('.lbl').textContent = this.t('walk.reserve');
     if (this._cgOpen) this._cgRender(this._cgView);
     if (this._icOpen) this._icRender();
+    if (this.limo) this.limo.applyTexts();
     e.exit.querySelector('.lbl').textContent = this.t('walk.exit');
     e.exit.setAttribute('aria-label', this.t('walk.exit'));
     e.helpBtn.title = this.t('walk.help');
@@ -3475,6 +3631,8 @@ export class Walkthrough {
     for (const k of ['entrance', 'lobby', 'corridor', 'apartment', 'balcony', 'parking']) {
       const b = document.createElement('button'); b.className = 'vw-chip tp'; b.dataset.tp = k; b.textContent = this.t('walk.' + k); box.appendChild(b);
     }
+    this._limoChip(box);
+    this._yachtChip(box);
   }
   _renderRooms() {
     if (!this.el) return;
@@ -3513,7 +3671,7 @@ export class Walkthrough {
     let fl = this.riding ? this._liftFloorNow ?? this.floor : this.floor;
     const outside = !this.riding && !inf && this._isOutside(this.player.pos);
     if (this.riding || inf) place = this.t('walk.lift');
-    else if (outside) { place = this.t('walk.outside'); kind = 'outdoor'; fl = 0; }
+    else if (outside) { place = (this.limo && this.limo.zoneName(this.player.pos)) || this.t('walk.outside'); kind = 'outdoor'; fl = 0; }
     else if (room) { place = room.label; if (OUTDOOR.has(room.kind)) kind = 'outdoor'; if (room.level === 1) fl = this.unit.floor + 1; }
     else if (this.floor === -1) place = this.t('walk.parking');
     else if (this.floor === 0) place = this.t('walk.lobby');
@@ -3640,6 +3798,7 @@ export class Walkthrough {
     c.addEventListener('touchstart', this._h.touch, { passive: false });
     c.addEventListener('touchmove', this._h.touch, { passive: false });
     this.root.addEventListener('pointerdown', this._h.poke, true);
+    this._cgVoiceInit();   // the concierge's voice: primed by the first gesture in here
     this.root.addEventListener('gesturestart', this._h.gesture);
     this.root.addEventListener('gesturechange', this._h.gesture);
     window.addEventListener('orientationchange', this._h.orient);
@@ -3830,6 +3989,8 @@ export class Walkthrough {
   _tap(x, y, now = performance.now()) {
     const prev = this._taps;
     if (now - this._suppressTap < 600) { this._taps = null; return; }
+    if (this.yacht && this.yacht.active) return this.yacht.tap(x, y, now);
+    if (this.limo && this.limo.tap(x, y)) { this._taps = null; return; }   // the limousine / its chauffeur (and every tap while seated in it)
     if (prev && now - prev.t < 360 && Math.hypot(x - prev.x, y - prev.y) < 40) {
       this._taps = null;
       this._glideTap(x, y);
@@ -3867,6 +4028,7 @@ export class Walkthrough {
     if (tgt && tgt.closest && tgt.closest('input,textarea,select,[contenteditable="true"]')) return;
     const code = ev.code;
     if (down && code === 'Escape' && this.el.help.classList.contains('show')) { this._showHelp(false); return; }
+    if (this.yacht && this.yacht.active && this.yacht.key(ev, down)) return;
     if (down && !ev.repeat && (code === 'KeyF' || code === 'Enter')) {
       if (this.drive) { ev.preventDefault(); return this._exitCar(); }
       if (this._chipRec) { ev.preventDefault(); return this._enterCar(this._chipRec); }
@@ -4004,7 +4166,7 @@ export class Walkthrough {
     else if (P.y > -0.6 && P.y < 1.5 && !this.drive) {
       for (const id of Object.keys(BUILDINGS)) for (const c of coresOf(id)) {
         const [x, z] = localToWorldXZ(id, c.entrance[0], c.entrance[1]);
-        if (Math.hypot(P.x - x, P.z - z) < 7) want = [id, 0];
+        if (Math.hypot(P.x - x, P.z - z) < 15) want = [id, 0];   // (before the entrance pane opens up at 13 m: exterior.js setLobbyOpen)
       }
     }
     if (!want || (this.floor === want[1] && (want[1] === -1 || this.bId === want[0]))) return;
@@ -4401,6 +4563,7 @@ export class Walkthrough {
   _cullWorld() {
     const now = performance.now(); if (now - (this._cwT || 0) < 250) return; this._cwT = now;
     const c = this.camera.position;
+    this._cullInteriors(c);
     // (the street shows only up the ramp: on it, or from the cone of the hall that looks up through its trench)
     const under = c.y < -0.6 && !seesOutside(c);
     // the apartments overhead are behind the car-park slab too (they may finish loading while we are down here)
@@ -4421,11 +4584,60 @@ export class Walkthrough {
     }
   }
 
+  // Outdoors the facades hide everything behind them (their glazing is opaque from outside; the lobby panes only open
+  // within 13 m of an entrance), so interiors that cannot be seen from where the camera is are not drawn:
+  //  · 60 m or more outside the buildings' bounding box (the lake road, the quay, the yacht): no commons, no apartments;
+  //  · on the ground outside a building: no apartments from floor 2 up; the commons only within 70 m of one of its
+  //    entrances — and of them only the parts within 45 m (the car park: within 50 m of the head of its ramp).
+  _cullInteriors(c) {
+    // kept: what stands outside the facade (entrance doors, intercom), what other code shows and hides itself (lift
+    // cars, apartment doors) and the invisible colliders
+    const KEEP_OUT = /^(vrc-door-|vrc-lift-|vrc-solid|vrc-floor|walk-lift-pads|lobby-door-block|lobby-slide-door|vrc-intercom)/;
+    let B = this._siteBox;
+    if (!B && this.complex && this.complex.group) { try { B = this._siteBox = new THREE.Box3().setFromObject(this.complex.group); } catch { B = null; } }
+    const far = !!B && !B.isEmpty() && (c.x < B.min.x - 60 || c.x > B.max.x + 60 || c.z < B.min.z - 60 || c.z > B.max.z + 60);
+    const ground = !far && !this._pano && c.y > -0.75 && c.y < 3.2 && !this._inFootprint(c.x, c.z) && !(this.unit && this.unit.floor === 0 && this.rooms && this._currentRoom());   // (not from a ground-floor terrace)
+    const hide = new Set(), was = this._intHidden;
+    if (far || ground) {
+      const cm = this.commons;
+      // (lights stay in the scene graph: a changing light count would recompile every lit material — only the meshes go)
+      // beyond: 0 = the whole group; else only its parts whose bounding box is farther than that from the camera
+      const take = (g, beyond = 0) => {
+        const lit = new Set(); g.traverse(o => { if (o.isLight) for (let q = o; q && q !== g.parent; q = q.parent) lit.add(q); });
+        if (!lit.size && !beyond) return hide.add(g);
+        const gone = k => {
+          if (!beyond) return true;
+          const M = this._cullBoxes || (this._cullBoxes = new WeakMap()); let b = M.get(k); if (!b) M.set(k, b = new THREE.Box3().setFromObject(k));
+          return !b.isEmpty() && b.distanceToPoint(c) > beyond;
+        };
+        const walk = o => { for (const k of o.children) { if (lit.has(k) || (beyond && !k.isMesh && k.children.length && !k.name)) { if (!k.isLight) walk(k); } else if (!KEEP_OUT.test(k.name) && gone(k)) hide.add(k); } }; walk(g);
+      };
+      for (const o of this.scene.children) {
+        const n = o.name; if (!n || (!o.visible && !(was && was.has(o)))) continue;   // (hidden by somebody else: theirs)
+        if (n.startsWith('apartment-')) { if (far || +n.split('-')[2] >= 2) take(o); }
+        else if (n.startsWith('walk-bldg-')) {
+          const id = n.slice(10); let near = false;
+          if (!far && cm && cm.bId === id) {
+            if (cm.floor === -1) near = Math.hypot(c.x - (RAMP.x0 + RAMP.x1) / 2, c.z - RAMP.z0) < 50;
+            else for (const k of coresOf(id)) { const [ex, ez] = localToWorldXZ(id, k.entrance[0], k.zOut); if (Math.hypot(c.x - ex, c.z - ez) < 70) { near = true; break; } }
+          }
+          // in front of an entrance its lobby shows through the doors: only what lies 45 m or more away is left out
+          if (!near) take(o); else if (cm.floor !== -1) take(o, 45);
+        }
+      }
+    }
+    if (was) for (const o of was) if (!hide.has(o)) o.visible = true;
+    // (only what was showing is taken over: an object somebody else has hidden stays theirs)
+    for (const o of hide) if (!(was && was.has(o))) { if (o.visible) o.visible = false; else hide.delete(o); }
+    this._intHidden = hide.size ? hide : null;
+  }
+
   _onHudClick(ev) {
     if (this._phone && ev.target.closest('.vw-map')) return this._setMapOpen(false);
     const b = ev.target.closest('button'); if (!b) return;
     if (b.dataset.cg) return this._cgAction(b.dataset.cg, b);
     if (b.dataset.ic) return this._icAction(b.dataset.ic, b);
+    if (b.dataset.limo) return this._limoHud(b.dataset.limo, b);
     const k = b.dataset.k;
     if (k === 'gear') return this._setPopover(!this._popOpen);
     if (k === 'flabel') return;
@@ -4454,8 +4666,121 @@ export class Walkthrough {
     if (b.dataset.m) return this.setMode(b.dataset.m);
     if (b.dataset.t) return this.setTimeMode(b.dataset.t);
     if (b.dataset.s) { this.el.tools.classList.add('col'); return this.setStyle(b.dataset.s); }
+    if (b.dataset.tp === 'yacht') return window.VRC.yacht.board();
     if (b.dataset.tp) return this._goto(b.dataset.tp);
     if (b.dataset.room != null) { const r = this.rooms[+b.dataset.room]; if (r) return this._goto({ room: r }); }
     if (b.dataset.f != null && b.parentElement === this.el.liftGrid) { const inf = this._carOf(this.player.pos); if (inf) this._pressKey(inf, +b.dataset.f); }
   }
 }
+
+// ======================= VILNYI Lifestyle yacht (concept experience) — hooks only; everything else lives in yacht.js =======================
+// YACHT-CONTRACT.md: window.VRC.yacht = { board, leave, preload, active, ready }. The yacht code is imported on first use
+// (the "Yacht" chip, board(), the limousine's arrival, or walking / driving up to the quay), never with the apartment.
+const YACHT_CHIP = { en: 'Yacht', he: 'יאכטה', ro: 'Iaht', ru: 'Яхта', uk: 'Яхта', fr: 'Yacht', it: 'Yacht', de: 'Yacht' };
+Object.assign(Walkthrough.prototype, {
+  _yachtApi(on = true) {
+    if (typeof window === 'undefined') return;
+    const V = (window.VRC = window.VRC || {});
+    if (!on) {
+      if (this._yachtEv) window.removeEventListener('vrc:limo-arrived', this._yachtEv);
+      window.VRC_LIFESTYLE = false;   // (the walkthrough is closing: the hero behind it shows no concept yacht)
+      if (V.yacht && V.yacht._walk === this) delete V.yacht;
+      if (this.yacht) this.yacht.dispose(); this.yacht = null; return;
+    }
+    const self = this;
+    V.yacht = {
+      _walk: this,
+      preload: () => self._yachtLoad(),
+      // (the flag again once aboard: boarding from the buildings fades out there, where _yachtWatch drops it)
+      board: async (o = {}) => { const y = await self._yachtLoad(true); if (!y) return false; const r = await y.enter(o); if (y.active) window.VRC_LIFESTYLE = true; return r; },
+      leave: (o) => (self.yacht && self.yacht.active ? self.yacht.leave(o) : Promise.resolve()),
+      get active() { return !!(self.yacht && self.yacht.active); },
+      get ready() { return !!(self.yacht && self.yacht.ready); },
+    };
+    this._yachtEv = () => { this._yachtLoad(); };
+    window.addEventListener('vrc:limo-arrived', this._yachtEv);
+  },
+  // import yacht.js once, after the surroundings have streamed in; `veil` shows the loading veil meanwhile
+  _yachtLoad(veil = false) {
+    if (!this._yachtP) {
+      const lt = veil && this.el && this.el.loading.querySelector('.lt');
+      if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
+      this._yachtP = (async () => {
+        await this._ready; await (this._worldP || this._streamWorld());
+        const mod = await import('./yacht.js');
+        if (this.disposed) return null;
+        return (this.yacht = mod.createYacht(this));
+      })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
+    }
+    return this._yachtP;
+  },
+  // near the lake at ground level → load the yacht; on the pier → the yacht takes the walker over (yacht.watch)
+  _yachtWatch() {
+    const now = performance.now(); if (now - (this._ywT || 0) < 400) return; this._ywT = now;
+    const c = this.camera.position;
+    // the concept berth belongs to the experience: back at the buildings (and off the limousine) the apartment views —
+    // and the site's hero once the tour is closed — are free of the pier and the yacht again
+    if (typeof window !== 'undefined' && window.VRC_LIFESTYLE && c.x > -150 && !(this.limo && this.limo.state !== 'idle')) window.VRC_LIFESTYLE = false;
+    if (this.yacht) return this.yacht.watch(c);
+    if (c.x < -150 && c.y < 12 && this._worldReady) this._yachtLoad();
+  },
+  _yachtChip(box) {
+    const b = document.createElement('button'); b.className = 'vw-chip tp'; b.dataset.tp = 'yacht';
+    b.textContent = YACHT_CHIP[String(this.lang).slice(0, 2)] || YACHT_CHIP.en; box.appendChild(b);
+  },
+});
+
+// ======================= VILNYI Lifestyle limousine (concept experience) — hooks only; everything else lives in limo.js =======================
+// The limousine and its chauffeur wait at the drop-off court of the concierge lobby (staircase 2) the visitor comes out
+// of; limo.js owns the greeting, the door, the seat, the ride to the quay and the HUD for all of it.
+// window.VRC.startLimo(bId?) brings the visitor to the limousine (destination chip, concierge dialog), window.VRC.limoBack()
+// returns him to the entrance. YACHT-CONTRACT.md has the handover on the quay.
+const LIMO_CHIP = { en: 'Limousine', he: 'לימוזינה', ro: 'Limuzină', ru: 'Лимузин', uk: 'Лімузин', fr: 'Limousine', it: 'Limousine', de: 'Limousine' };
+Object.assign(Walkthrough.prototype, {
+  _limoApi(on = true) {
+    if (typeof window === 'undefined') return;
+    const V = (window.VRC = window.VRC || {});
+    if (!on) {
+      if (V._limoWalk === this) { delete V.startLimo; delete V.limoBack; delete V.walker; delete V._limoWalk; }
+      if (this._limoEv) for (const n of ['vrc:yacht-boarded', 'vrc:yacht-left']) window.removeEventListener(n, this._limoEv);
+      if (this.limo) { try { this.limo.dispose(); } catch (e) { console.warn('[walk] limousine', e); } this.limo = null; }
+      return;
+    }
+    V._limoWalk = this; V.walker = this;
+    V.startLimo = bId => this._limoStart(bId);
+    V.limoBack = () => (this.limo ? this.limo.back() : Promise.resolve());
+    // aboard the yacht limo.update() rests: its quay buttons and banner are switched off / on with the hand-over
+    this._limoEv = () => { if (this.limo && !this.disposed) try { this.limo._hudSync(); } catch { /* optional */ } };
+    for (const n of ['vrc:yacht-boarded', 'vrc:yacht-left']) window.addEventListener(n, this._limoEv);
+  },
+  async _initLimo() {
+    if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
+    try {
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js'));
+      if (this.disposed || this.limo) return;
+      this.limo = new mod.LimoExperience(this);
+      (window.VRC = window.VRC || {}).PIER = mod.PIER;
+    } catch (e) { console.warn('[walk] limousine unavailable', e); this.limo = null; }
+  },
+  async _limoStart(bId) {
+    await this._ready; await (this._worldP || this._streamWorld());
+    if (!this.limo) await this._initLimo();
+    if (this.limo && !this.disposed) return this.limo.start(bId);
+  },
+  _limoHud(key) { if (key === 'start') return this._limoStart(); if (this.limo) return this.limo.hud(key); },
+  _limoChip(box) {
+    const b = document.createElement('button'); b.className = 'vw-chip tp'; b.dataset.limo = 'start';
+    b.textContent = LIMO_CHIP[String(this.lang).slice(0, 2)] || LIMO_CHIP.en; box.appendChild(b);
+  },
+  // a frame while seated in the limousine (limo.update has placed the camera): the world keeps running, the walker rests
+  _limoFrame(dt) {
+    this._placeKind = 'outdoor'; this._syncEnvMap();
+    this._autoDoors(dt); this._cullWorld();
+    if (this.fleet) this.fleet.update(this.camera);
+    const m = this.envMode, e = m === 'day' ? 0.86 : m === 'dusk' ? 1.05 : 1.2; this._expT = e;
+    this.renderer.toneMappingExposure += (e - this.renderer.toneMappingExposure) * damp(2.5, dt);
+    const now = performance.now();
+    if (now - this._lastMap > 110) { this._lastMap = now; this._drawMap(); }
+    this._updateDim(now);
+  },
+});

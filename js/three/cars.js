@@ -73,6 +73,16 @@ const SPECS = {
     zA: 0.62, zT1: -0.05, zT2: -0.55, zC: -1.55, bA: 0.86, bC: 1.0, roof: 1.16, nG: 4, gLean: 0.42, zB: -0.75,
     cp: 1.01, haunch: [0.006, 0.055], seat: -0.36, grille: 'intake', head: 'super', tail: 'bar', exh: 2, chrome: false, doors: 2, seats: 2, scoop: true,
   },
+  // stretch limousine (limo.js; not in CAR_KINDS, so never picked for the fleet): the formal saloon's nose and tail on a
+  // 6.5 m wheelbase. Its opening door is the REAR RIGHT one (rd0…rd1), the stretch windows are split by black pillars.
+  limo: {
+    L: 8.62, W: 2.0, wb: 6.5, R: 0.375, tw: 0.265, yE: 0.63, kF: 26, kR: 22, nU: 11, nL: 7, lean: 0.04,
+    top: [[-4.39, 0.8], [-4.34, 0.93], [-4.2, 1.0], [-3.95, 1.04], [-3.55, 1.06], [2.55, 1.02], [3.0, 0.965], [3.6, 0.885], [4.0, 0.825], [4.17, 0.785], [4.23, 0.73]],
+    sill: [[-4.39, 0.45], [-4.2, 0.28], [-3.8, 0.22], [3.65, 0.22], [4.1, 0.26], [4.23, 0.34]],
+    zA: 2.55, zT1: 1.72, zT2: -3.14, zC: -3.74, bA: 0.985, bC: 1.03, roof: 1.52, nG: 6.5, gLean: 0.27, zB: 1.25,
+    cp: 0.93, haunch: [0.01, 0.016], seat: 1.5, grille: 'tall', head: 'sedan', tail: 'sedan', exh: 2, chrome: true, doors: 4,
+    limo: true, rd0: -2.76, rd1: -1.6, pillars: [-1.6, -0.18],
+  },
 };
 for (const S of Object.values(SPECS)) {
   S.zR = S.top[0][0]; S.zF = S.top[S.top.length - 1][0];
@@ -625,7 +635,9 @@ function kindGeometry(kind, lod = false) {
   const M = bodyModel(kind), S = M.S;
   LODK = lod ? 2.5 : 1;
   const out = { paint: [], glass: [], trim: [], lights: [], interior: [] };
-  const inDoor = (x, y, z) => x > 0 && z > S.dz0 && z < S.dz1;
+  // the door that opens: the driver's (left, +x) — on the limousine the rear right one
+  const DS = S.limo ? -1 : 1, D0 = S.limo ? S.rd0 : S.dz0, D1 = S.limo ? S.rd1 : S.dz1;
+  const inDoor = (x, y, z) => x * DS > 0 && z > D0 && z < D1;
   const TR = (g, hex, m, r, door = null) => { const q = tint(g, hex, m, r); if (door && !lod) tagDoor(q, door); out.trim.push(q); };
   const CHROME = '#e4e5e7', BLACK = '#060607', DARKCH = '#2c2e31';
 
@@ -635,7 +647,7 @@ function kindGeometry(kind, lod = false) {
   const NI = lod ? 30 : 128, NJ = lod ? 18 : 60, grade = 0.8;
   const zs = [];
   for (let i = 0; i <= NI; i++) { const u = i / NI; zs.push(lerp(S.zR, S.zF, u - grade * Math.sin(2 * Math.PI * u) / (2 * Math.PI))); }
-  for (const zk of [...M.wheelsZ.flatMap(zw => [zw - S.Ra, zw + S.Ra]), ...(lod ? [] : [S.dz0, S.dz1]), S.zA, S.zC]) {
+  for (const zk of [...M.wheelsZ.flatMap(zw => [zw - S.Ra, zw + S.Ra]), ...(lod ? [] : [D0, D1]), S.zA, S.zC]) {
     let bi = 1; for (let i = 1; i < NI; i++) if (Math.abs(zs[i] - zk) < Math.abs(zs[bi] - zk)) bi = i;
     zs[bi] = zk;
   }
@@ -659,7 +671,7 @@ function kindGeometry(kind, lod = false) {
   // ---- greenhouse: glass / roof & pillars (paint) / B-pillar (piano black)
   const GI = lod ? 16 : 56, GJ = lod ? 12 : 40, gz0 = S.zC - 0.02, gz1 = S.zA + 0.02;
   const gzs = []; for (let i = 0; i <= GI; i++) gzs.push(lerp(gz0, gz1, i / GI));
-  for (const z of [S.zT1, S.zT2, S.zB - 0.045, S.zB + 0.045, ...(lod ? [] : [S.dz0, S.dz1])]) if (z > gz0 + 0.01 && z < gz1 - 0.01 && !gzs.some(q => Math.abs(q - z) < 0.004)) gzs.push(z);
+  for (const z of [S.zT1, S.zT2, S.zB - 0.045, S.zB + 0.045, ...(S.pillars || []).flatMap(q => [q - 0.05, q + 0.05]), ...(lod ? [] : [D0, D1])]) if (z > gz0 + 0.01 && z < gz1 - 0.01 && !gzs.some(q => Math.abs(q - z) < 0.004)) gzs.push(z);
   gzs.sort((a, b) => a - b);
   const gt = arcParams(t => M.gsec(zRef, t), GJ, false);
   // panels by the slope of the section (0° roof … 90° side): windscreen / A-pillar / side glass, roof / rail / side glass,
@@ -672,12 +684,13 @@ function kindGeometry(kind, lod = false) {
       const zr = z > S.zT1 ? lerp(S.zT1, S.zA, 0.35) : z < S.zT2 ? lerp(S.zT2, S.zC, 0.35) : (S.zT1 + S.zT2) / 2;
       const th = gAng(zr, tm) / gAng(zr, 0.02);   // 0 on the roof line, 1 on the side glass
       // the driver's door window (frameless: the pillars and the roof rail stay on the body)
-      const side = !lod && tm < 0.5 && z > S.dz0 && z < S.dz1 ? 'glassD' : 'glass';
+      const side = !lod && (DS > 0 ? tm < 0.5 : tm > 0.5) && z > D0 && z < D1 ? 'glassD' : 'glass';
       if (z > S.zT1) return th < GA.ws ? 'glass' : th < GA.a ? 'paint' : side;
       if (z < S.zT2) return th < GA.back ? 'glass' : (S.cp < 0.9 ? 'black' : 'paint');
       if (th < GA.roof) return 'roof';
       if (th < GA.rail) return 'paint';
       if (Math.abs(z - S.zB) < 0.045 && side === 'glass') return 'black';
+      if (S.pillars && S.pillars.some(q => Math.abs(z - q) < 0.05)) return 'black';
       return side;
     }, { uv: (i, j, p) => [p[2] * 3.1, (p[1] + Math.abs(p[0])) * 3.1] });
   if (gh.glass) out.glass.push(strip(gh.glass, ['position', 'normal']));
@@ -809,13 +822,13 @@ function kindGeometry(kind, lod = false) {
   // sides: belt chrome, sill strip, shut lines, handles, mirrors
   for (const s of [-1, 1]) {
     const beltPts = []; for (let z = S.zC + 0.08; z <= S.zA - 0.05; z += 0.05) beltPts.push([z, M.belt(z) - 0.008]);
-    const dd = s > 0 ? inDoor : null;
+    const dd = s === DS ? inDoor : null;
     TR(project(M, ribbon2(beltPts, 0.014), 'side', 0.004, s), S.chrome ? CHROME : BLACK, S.chrome ? 1 : 0, S.chrome ? 0.1 : 0.1, dd);
     if (lod) continue;
     const zf = M.wheelsZ[0] - S.Ra - 0.02, zr = M.wheelsZ[1] + S.Ra + 0.02, sy = M.sill(0) + 0.075;
     if (S.chrome) TR(project(M, ribbon2([[zr + 0.02, sy], [zf - 0.02, sy]], 0.012), 'side', 0.004, s), CHROME, 1, 0.12, dd);
     // shut lines: door edges (straight: the driver's door is cut along them), sill line under the doors
-    const lines = S.doors === 4 ? [S.dz1, S.dz0, S.zB - 0.06, zr + 0.06] : [S.dz1, S.dz0];
+    const lines = S.limo ? [S.dz1, S.dz0, S.rd1, S.rd0] : S.doors === 4 ? [S.dz1, S.dz0, S.zB - 0.06, zr + 0.06] : [S.dz1, S.dz0];
     for (const z of lines) {
       const g = []; for (let y = M.sill(z) + 0.06; y <= M.belt(z) - 0.02; y += 0.03) g.push([z, y]);
       TR(project(M, ribbon2(g, 0.0065), 'side', 0.0015, s), '#050505', 0, 0.9);
@@ -823,7 +836,7 @@ function kindGeometry(kind, lod = false) {
     TR(project(M, ribbon2([[lines[lines.length - 1], M.sill(0) + 0.13], [S.dz1, M.sill(0) + 0.13]], 0.005), 'side', 0.0015, s), '#050505', 0, 0.9);
     // flush handles at the rear edge of each door: body-colour-dark recess + bright grip
     const hy = M.belt(0) - 0.13;
-    for (const z of S.doors === 4 ? [S.dz0 + 0.19, zr + 0.26] : [S.dz0 + 0.19]) {
+    for (const z of S.limo ? [S.dz0 + 0.19, S.rd0 + 0.2] : S.doors === 4 ? [S.dz0 + 0.19, zr + 0.26] : [S.dz0 + 0.19]) {
       TR(project(M, fill2(inRR(z - 0.115, z + 0.115, hy - 0.022, hy + 0.022, 0.02), z - 0.115, z + 0.115, hy - 0.022, hy + 0.022, 0.012), 'side', 0.002, s), '#0a0a0b', 0.4, 0.3, dd);
       TR(project(M, ribbon2([[z - 0.095, hy + 0.004], [z + 0.095, hy + 0.004]], 0.017), 'side', 0.007, s), S.chrome ? CHROME : '#3a3c40', 1, 0.14, dd);
     }
@@ -836,7 +849,7 @@ function kindGeometry(kind, lod = false) {
     }
     // mirror: paint cap + black arm + glass
     const mz = S.zA - 0.17, my = M.belt(mz) + 0.1, mx = (M.bodyX(mz, M.belt(mz) - 0.02) > 0 ? M.bodyX(mz, M.belt(mz) - 0.02) : W2 - 0.1) + 0.13;
-    const onDoor = s > 0 && mz > S.dz0 && mz < S.dz1;   // the mirror rides on the door when the door reaches that far forward
+    const onDoor = s === DS && mz > D0 && mz < D1;   // the mirror rides on the door when the door reaches that far forward
     if (s > 0) out._wing = { mx, my, mz, onDoor };
     const cap0 = new RoundedBoxGeometry(0.2, 0.12, 0.13, 2, 0.045).rotateY(s * 0.12).translate(s * mx, my, mz), cap = strip(cap0.index ? cap0.toNonIndexed() : cap0, ['position', 'normal', 'uv']);
     out.paint.push(lod ? cap : tagDoor(cap, () => onDoor));
@@ -952,7 +965,7 @@ function kindGeometry(kind, lod = false) {
     let kit = null;
     res.doorKit = () => {
       if (kit) return kit;
-      kit = { hinge: [(M.bodyX(S.dz1 - 0.02, S.yE) > 0 ? M.bodyX(S.dz1 - 0.02, S.yE) : W2) - 0.03, 0, S.dz1 - 0.03] };
+      kit = { hinge: [DS * ((M.bodyX(D1 - 0.02, S.yE) > 0 ? M.bodyX(D1 - 0.02, S.yE) : W2) - 0.03), 0, D1 - 0.03] };
       for (const k of ['paint', 'glass', 'trim', 'lights']) { const [a, b] = splitGeo(res[k], flags[k]); kit[k] = a; kit[k + 'D'] = b; }
       return kit;
     };
@@ -1454,6 +1467,8 @@ export function carGeometryXForward(kind = 'sedan') {
   const g = mergeGeometries([p, r], false); p.dispose(); r.dispose();
   g.rotateY(Math.PI / 2); g.computeBoundingSphere(); return g;
 }
+// The pieces limo.js assembles its limousine from (same loft, decals, materials and wheels as the fleet's cars).
+export const carKit = { kindGeometry, tint, glow, strip, attr, flipWinding, gridSurface, project, fill2, ribbon2, mrMaterial, lightMaterial, paintMaterial, shared, shadowGeometry, shadowLocal, mergeGeometries, RoundedBoxGeometry };
 /** Deterministic luxury pick for a spot (seeded): {kind, colour}. */
 export function pickCar(r) {
   const kinds = ['sedan', 'sedan', 'suv', 'suv', 'gt', 'gt', 'ev', 'ev', 'coupe', 'super'];

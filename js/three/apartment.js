@@ -1404,14 +1404,14 @@ function furnishBath(ctx, L, g, r) {
       const vl = Math.min(1.4, w - (doorLeft ? 0.95 : 0.7) - 0.0);
       const vu = a1 - 0.05 - vl / 2 - (w > 2.2 ? 0.0 : 0);
       if (vl >= 0.6) {
-        put(g, F.vanity(m, { len: vl }), vu, b1, '-v');
-        mirrorAt(ctx, g, vu, b1, '-v', vl);
+        const van = put(g, F.vanity(m, { len: vl, cut: ctx.cut }), vu, b1, '-v');
+        mirrorAt(ctx, g, vu, b1, '-v', vl, van);
       }
       put(g, F.toilet(m), a1, b0 + 1.35, '-u');
     } else {
       const vl = Math.min(1.2, d - 1.0 - 0.1);
-      put(g, F.vanity(m, { len: Math.max(0.6, vl) }), a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u');
-      mirrorAt(ctx, g, a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u', Math.max(0.6, vl));
+      const van = put(g, F.vanity(m, { len: Math.max(0.6, vl), cut: ctx.cut }), a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u');
+      mirrorAt(ctx, g, a1, b0 + 0.9 + Math.max(0.6, vl) / 2 + 0.05, '-u', Math.max(0.6, vl), van);
       put(g, F.toilet(m), a0, b1 - 0.45, '+u');
     }
     shelfU = null;
@@ -1420,7 +1420,7 @@ function furnishBath(ctx, L, g, r) {
     const wet = w >= 3.3 ? 1.64 : 0.97;
     const vl = clamp(w - wet - 0.62 - 0.05, 0.55, 1.4);
     let u = a0 + 0.02;
-    put(g, F.vanity(m, { len: vl }), u + vl / 2, b0, '+v'); mirrorAt(ctx, g, u + vl / 2, b0, '+v', vl); u += vl + 0.04;
+    { const van = put(g, F.vanity(m, { len: vl, cut: ctx.cut }), u + vl / 2, b0, '+v'); mirrorAt(ctx, g, u + vl / 2, b0, '+v', vl, van); } u += vl + 0.04;
     put(g, F.toilet(m), u + 0.3, b0, '+v'); u += 0.62;
     const ww = a1 - u;
     if (w >= 3.3) put(g, F.bathtub(m, { len: Math.min(1.7, ww - 0.02), cut: ctx.cut }), u + ww / 2, b0, '+v');
@@ -1433,20 +1433,29 @@ function furnishBath(ctx, L, g, r) {
   if (w > 1.8 && d >= 2.0) FX.plantSmall(g, m, a0 + 0.2, 0, b1 - 0.2, 0.35, 0.4);
   ctx.lightSpots.push({ u: (a0 + a1) / 2, v: (b0 + b1) / 2, y: L.y, k: 0.55, pri: 2 });
 }
-function mirrorAt(ctx, g, u, v, face, vl) {
+// Mirror cabinets over a vanity: one per basin, centred on it and hung just above the top of its tap (the vanity
+// reports userData.tapTop / basins), so every tap stands free below its own mirror — never inside a cabinet, in a gap
+// between two, or in the way of a door. A double vanity gets a pair opening outwards with one sconce between them.
+function mirrorAt(ctx, g, u, v, face, vl, van) {
   const { m } = ctx;
   if (ctx.cut) return;
-  const mw = Math.min(0.9, vl - 0.1), mh = m.fam === 'nordic' ? mw : 0.95;
-  put(g, F.mirror(m, { w: mw, h: mh, cabinet: true }), u, v, face, m.fam === 'nordic' ? 1.05 : 1.08);
-  if (m.fam !== 'nordic') {
-    // pair of sconces left/right of the mirror
-    const off = mw / 2 + 0.12;
-    const s1 = new THREE.Group(); FX.sconce(s1, m, 0, 0, 0); put(g, s1, 0, 0, face); positionAlong(s1, u, v, face, -off, 1.6);
-    const s2 = new THREE.Group(); FX.sconce(s2, m, 0, 0, 0); put(g, s2, 0, 0, face); positionAlong(s2, u, v, face, off, 1.6);
-  } else {
-    // LED halo behind the round mirror
-    const h = new THREE.Group(); FX.torus(h, mw / 2 + 0.01, 0.006, m.led, 0, mh / 2, 0.01, [0, 0, 0], PI * 2, 40);
-    FX.fxQuad(h, m.glow, 'disc', [0, mh / 2, 0.014], [mw * 1.7, 0, 0], [0, mh * 1.7, 0]); put(g, h, u, v, face, 1.05);
+  const round = m.fam === 'nordic', bs = (van && van.userData.basins) || [0], pair = bs.length > 1;
+  const top = (van && van.userData.tapTop) || 1.2;
+  const mw = pair ? Math.min(0.62, bs[1] - bs[0] - 0.16) : Math.min(round ? 0.8 : 0.9, vl - 0.1), mh = round ? mw : pair ? 0.86 : 0.9;
+  const y0 = Math.max(round ? 1.05 : 1.08, +(top + (round ? 0.035 : m.fam === 'milano' ? 0.09 : 0.05)).toFixed(3));   // (the milano door hangs 2 cm below its carcass)
+  const along = (obj, off, y) => { put(g, obj, 0, 0, face); positionAlong(obj, u, v, face, off, y); return obj; };
+  bs.forEach((bx, i) => {
+    along(F.mirror(m, { w: mw, h: mh, cabinet: true, hinge: pair && i === 1 ? 1 : -1 }), bx, y0);
+    if (round) {
+      // LED halo behind the round mirror
+      const h = new THREE.Group(); FX.torus(h, mw / 2 + 0.01, 0.006, m.led, 0, mh / 2, 0.01, [0, 0, 0], PI * 2, 40);
+      FX.fxQuad(h, m.glow, 'disc', [0, mh / 2, 0.014], [mw * 1.7, 0, 0], [0, mh * 1.7, 0]); along(h, bx, y0);
+    }
+  });
+  if (!round) {
+    // sconces: left / right of a single mirror, one between a pair
+    const sy = y0 + mh * 0.58;
+    for (const off of pair ? [0] : [-(mw / 2 + 0.12), mw / 2 + 0.12]) { const sc = new THREE.Group(); FX.sconce(sc, m, 0, 0, 0); along(sc, off, sy); }
   }
 }
 function positionAlong(obj, u, v, face, off, y) {
