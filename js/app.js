@@ -664,8 +664,14 @@ function refreshPhotoBtn() {
   if (b && S.unit) b.outerHTML = photoBtnHTML(S.unit);
 }
 const roomRef = r => (r && typeof r === 'object' ? { kind: r.kind || 'living', index: r.index | 0 } : { kind: r || 'living', index: 0 });
-async function openPhoto({ unitId, styleId, room, onBack } = {}) {
+async function openPhoto({ unitId, styleId, room, onBack, live, onFail } = {}) {
   const W = $('#walk'); const overWalk = !!(walk && !W.hidden);
+  if (overWalk && live && live.pose) {
+    // v4: nothing rendered for the spot the visitor stands on → the tour is not opened at all (walk.js stays in live 3D
+    // and says so); it never opens somewhere else instead
+    try { const m = await panoMod(); await m.tourReady; if (!m.hasSpot(live.pose, unitId)) { onFail?.(); return; } }
+    catch (e) { console.warn('[photo] unavailable:', e); onFail?.(); return; }
+  }
   closePhoto(true);
   if (!overWalk) {
     walkArgs = { unitId, start: 'apartment', mode: 'walk' };
@@ -683,34 +689,48 @@ async function openPhoto({ unitId, styleId, room, onBack } = {}) {
   const toLive = st => {
     const r = roomRef(st && st.room ? st.room : room);
     closePhoto(true);
-    if (overWalk && walk) { if (onBack) onBack(r.kind, r.index); else walk.jumpToRoom?.(r.kind, r.index); return; }
+    // over a running walkthrough the whole pose goes back (v3: position, yaw, pitch, fov — see walk.js _returnFromPhoto)
+    if (overWalk && walk) { if (onBack) onBack(live ? (st || null) : r.kind, r.index); else walk.jumpToRoom?.(r.kind, r.index); return; }
     openWalk(unitId, r.kind === 'balcony' ? 'balcony' : ['lobby', 'corridor', 'parking'].includes(r.kind) ? r.kind : 'apartment', 'walk', r, st && st.unitId === unitId ? st : null);
   };
   try {
-    const mod = await import('./pano-tour.js');
+    const mod = await panoMod();
     if (photo !== P) return;
     P.handle = await mod.openPanoTour(layer, {
-      unitId, styleId: styleId || S.styleId, room: roomRef(room), i18n: i18nApi, lang, dir,
+      unitId, styleId: styleId || S.styleId, room: roomRef(room), i18n: i18nApi, lang, dir, live: overWalk ? live : null,
       onExit: () => { closePhoto(true); closeWalk(); },
       onReserve: id => { closePhoto(true); closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
       onSwitchTo3D: toLive,
     });
     if (photo !== P) { P.handle?.dispose?.(); return; }
+    // the realistic view of this very spot could not be produced: back to the live 3D exactly where it was, with a note
+    if (overWalk && live && P.handle && P.handle.ok === false) { closePhoto(true); if (onBack) onBack(null); onFail?.(); return; }
     hideVeil(); W.classList.add('is-ready');
   } catch (e) {
     console.warn('[photo] unavailable:', e);
+    if (overWalk && live) { closePhoto(true); if (onBack) onBack(null); onFail?.(); return; }   // stay where the visitor was, with the note
     toLive(null);
   }
 }
+let panoModP = null;
+const panoMod = () => (panoModP ||= import('./pano-tour.js').catch(e => { panoModP = null; throw e; }));
+let panoModV = null;
 function closePhoto(silent) {
   const P = photo; if (!P) return; photo = null;
   try { P.handle?.dispose?.(); } catch (e) { /* ignore */ }
   P.layer.remove();
 }
 window.VRC = window.VRC || {};
-// walk.js hook: ({unitId, styleId, room:{kind,index}, onBack(kind,index)}) → Promise
-window.VRC.openPhotoTour = (o = {}) => openPhoto({ unitId: o.unitId, styleId: o.styleId, room: o.room || o.roomKind, onBack: o.onBack });
+// walk.js hook: ({unitId, styleId, room:{kind,index}, live:{pose, capture}, onBack(state), onFail()}) → Promise
+window.VRC.openPhotoTour = (o = {}) => openPhoto({ unitId: o.unitId, styleId: o.styleId, room: o.room || o.roomKind, onBack: o.onBack, live: o.live, onFail: o.onFail });
 window.VRC.hasPhotoTour = unitId => hasPhoto(unitById(unitId));
+// walk.js: is there a photoreal view for this pose (walk.js _photoPose)? true / false, or undefined while the tour module
+// and its manifest are still loading (they are fetched in the background on the first question)
+window.VRC.hasPhotoAt = (pose, unitId) => {
+  if (!panoModV) { panoMod().then(m => m.tourReady.then(() => { panoModV = m; })).catch(() => {}); return undefined; }
+  try { return panoModV.hasSpot(pose, unitId); } catch { return undefined; }
+};
+if (/[?&]ptdebug\b/.test(location.search)) window.__VRC_DBG = { get walk() { return walk; }, get photo() { return photo; } };   // test hook (pano-work/v3/test_same_place.py)
 window.VRC.photoTourReady = tourReady;
 window.VRC.openBooking = id => { const u = unitById(id); if (u) reserve(u); else document.querySelector('.site-foot')?.scrollIntoView({ behavior: 'smooth' }); };
 

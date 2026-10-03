@@ -9,7 +9,7 @@ import {
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
 } from '../data.js';
 import { I18N } from '../i18n.js';
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP } from './cars.js';
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js';
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -47,6 +47,17 @@ const CAR_TXT = {
   it: { lights: 'Fari', sound: 'Suono del motore', edge: 'Confine del complesso — torna indietro', enter: 'Sali a bordo', exit: 'Scendi dall’auto', cockpit: 'Vista abitacolo', chase: 'Vista esterna', gas: 'Accelera', brake: 'Freno / retro', steer: 'Sterzo', outside: 'Esterno', driving: 'Alla guida', limit: 'Limite di velocità', hint: 'W / ↑ accelera · S / ↓ freno e retromarcia · A D / ← → sterzo · C visuale · L fari · M suono · F scendi', tapCar: 'Tocca un’auto per guidarla' },
   de: { lights: 'Scheinwerfer', sound: 'Motorsound', edge: 'Grenze des Areals — bitte wenden', enter: 'Einsteigen', exit: 'Aussteigen', cockpit: 'Cockpit-Ansicht', chase: 'Verfolger-Ansicht', gas: 'Gas geben', brake: 'Bremse / rückwärts', steer: 'Lenken', outside: 'Draußen', driving: 'Am Steuer', limit: 'Tempolimit', hint: 'W / ↑ Gas · S / ↓ Bremse & rückwärts · A D / ← → lenken · C Kamera · L Licht · M Ton · F aussteigen', tapCar: 'Tippen Sie auf ein Auto, um es zu fahren' },
 };
+const CAR_TXT2 = {
+  en: { start: 'Start', stop: 'Stop', engine: 'Engine start / stop', startHint: 'Press START to switch the engine on', keyStart: 'E engine' },
+  he: { start: 'התנעה', stop: 'כיבוי', engine: 'התנעה / כיבוי מנוע', startHint: 'לחצו על START כדי להתניע', keyStart: 'E מנוע' },
+  ru: { start: 'Старт', stop: 'Стоп', engine: 'Запуск / остановка двигателя', startHint: 'Нажмите START, чтобы завести двигатель', keyStart: 'E двигатель' },
+  uk: { start: 'Старт', stop: 'Стоп', engine: 'Запуск / зупинка двигуна', startHint: 'Натисніть START, щоб завести двигун', keyStart: 'E двигун' },
+  ro: { start: 'Pornire', stop: 'Oprire', engine: 'Pornire / oprire motor', startHint: 'Apasă START pentru a porni motorul', keyStart: 'E motor' },
+  fr: { start: 'Démarrer', stop: 'Arrêter', engine: 'Démarrage / arrêt du moteur', startHint: 'Appuyez sur START pour démarrer le moteur', keyStart: 'E moteur' },
+  it: { start: 'Avvia', stop: 'Spegni', engine: 'Avvio / arresto motore', startHint: 'Premi START per accendere il motore', keyStart: 'E motore' },
+  de: { start: 'Start', stop: 'Stopp', engine: 'Motor starten / stoppen', startHint: 'START drücken, um den Motor zu starten', keyStart: 'E Motor' },
+};
+for (const [lang, o] of Object.entries(CAR_TXT2)) Object.assign(CAR_TXT[lang], o);
 for (const [lang, o] of Object.entries(CAR_TXT)) for (const [k, v] of Object.entries(o)) {
   const key = k === 'outside' ? 'walk.outside' : 'walk.car.' + k;
   if (lang === 'en') EN[key] = v;
@@ -76,6 +87,18 @@ const BALCONY_DOOR_TXT = {
   de: 'Die Balkontüren öffnen sich, wenn Sie sich nähern — oder tippen Sie auf die Tür, um sie zu öffnen und zu schließen',
 };
 for (const [l, v] of Object.entries(BALCONY_DOOR_TXT)) (LOCAL[l] ||= {})['walk.balconyDoorHint'] = v;
+// Photoreal toggle: there is no photoreal panorama of the spot the visitor stands on (or it failed to load) — the
+// visitor stays in live 3D, exactly where he is; the tour never opens somewhere else instead.
+const PHOTO_TXT = {
+  en: 'No photoreal view for this spot yet — you are still in live 3D',
+  he: 'עדיין אין תצוגה מציאותית לנקודה הזו — נשארתם בתלת־ממד החי',
+  ru: 'Для этого места фотореалистичного вида пока нет — вы остаётесь в живом 3D',
+  uk: 'Для цього місця фотореалістичного вигляду поки немає — ви залишаєтесь у живому 3D',
+  ro: 'Încă nu există o vedere fotorealistă pentru acest loc — rămâi în 3D live',
+  fr: 'Pas encore de vue photoréaliste pour cet endroit — vous restez en 3D en direct',
+  it: 'Non c’è ancora una vista fotorealistica per questo punto — resti nel 3D dal vivo',
+  de: 'Für diesen Standort gibt es noch keine fotorealistische Ansicht — Sie bleiben im Live-3D',
+};
 // Doorbells, the apartment door-entry monitor and the entrance video intercom: all 8 site languages.
 const BELL_TXT = {
   en: { entrance: 'Entrance', 'bell.ring': 'Ringing apartment {n}…', 'bell.hint': 'Ring the bell beside the door', 'mon.open': 'Door opened',
@@ -611,6 +634,14 @@ const CSS = `
 .vw.phone .vw-spdo .num b{font-size:32px}
 .vw-dhint{position:absolute;left:calc(12px + var(--sl));bottom:calc(16px + var(--sb));padding:8px 12px;font-size:11px;letter-spacing:.03em;max-width:min(360px,34vw);line-height:1.45;color:#e9dfc8}
 .vw.phone .vw-dhint{display:none}
+.vw-start{position:absolute;left:50%;bottom:calc(150px + var(--sb));transform:translateX(-50%);width:66px;height:66px;border-radius:50%;padding:0;cursor:pointer;direction:ltr;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font:700 10px/1 "Manrope","Inter Tight",Arial,sans-serif;letter-spacing:.14em;color:#f0d596;
+  background:radial-gradient(circle at 50% 35%,#2a251b,#080808 72%);border:2px solid #c9a45c;box-shadow:0 0 0 4px rgba(10,10,10,.6),0 8px 24px rgba(0,0,0,.5);animation:vwstart 1.5s ease-in-out infinite}
+.vw-start small{font-size:7px;letter-spacing:.16em;opacity:.8;font-weight:600}
+.vw-start.on{animation:none;width:46px;height:46px;font-size:8px;color:#e9dfc8;border-color:rgba(201,164,92,.45);box-shadow:0 0 0 3px rgba(10,10,10,.5);opacity:.85}
+.vw-start.on small{display:none}
+.vw-start.nudge{animation:vwstart .35s ease-in-out 3}
+@keyframes vwstart{0%,100%{box-shadow:0 0 0 4px rgba(10,10,10,.6),0 0 0 0 rgba(240,213,150,.55)}50%{box-shadow:0 0 0 4px rgba(10,10,10,.6),0 0 0 12px rgba(240,213,150,0)}}
 .vw.pano .vw-hud>*:not(.vw-fade):not(.vw-modes){display:none!important}
 .vw.pano .vw-modes{opacity:1!important}
 .vw.pano canvas.vw-gl{visibility:hidden}
@@ -1624,22 +1655,220 @@ export class Walkthrough {
     const kind = this.riding || this._carOf(this.player.pos) ? 'lift' : this.floor === -1 ? 'parking' : this.floor === 0 ? 'lobby' : 'corridor';
     return { kind, index: 0, level: 0 };
   }
+  // v4 — "photoreal = the same place": the tour gets the walker's pose (where, which way, which building / floor / zone /
+  // lift / finish / design) and opens on the path-traced panorama of that very place nearest to him, looking the same
+  // way; it hands a pose back for _returnFromPhoto. Where no panorama of this place exists the walker stays in live 3D
+  // and a short note says so (the capture function lets the tour fill floor numbers / the view outside from this scene).
+  _photoNote() { this._toast(PHOTO_TXT[String(this.lang).slice(0, 2)] || PHOTO_TXT.en, 2600); }
+  // Is there a photoreal view of the spot the walker stands on? (asked at most twice a second; unknown yet → yes)
+  _photoHere() {
+    const now = performance.now();
+    if (this._phT && now - this._phT < 500) return this._phOK;
+    this._phT = now;
+    let ok = true;
+    try {
+      const f = typeof window !== 'undefined' && window.VRC && window.VRC.hasPhotoAt;
+      if (f && this.unit && !this._photoPaused) ok = !this.riding && !this.drive && f(this._photoPose(), this.unit.id) !== false;
+    } catch { ok = true; }
+    return (this._phOK = ok);
+  }
   _openPhotoTour() {
     const fn = this._photoTourFn();
-    if (!fn || !this.unit || this.riding) return;
+    if (!fn || !this.unit || this.drive || this._photoPaused) return;
+    if (this.riding) { this._photoNote(); return; }                  // between floors: nothing to show for a moving car
     const room = this._roomRef();
+    // settle the eased look first, so the pose is exactly what is on screen
+    const P = this.player; P.yaw = P.tYaw; P.pitch = P.tPitch; this._syncCamera();
+    const pose = this._photoPose();
+    try { const f = window.VRC && window.VRC.hasPhotoAt; if (f && f(pose, this.unit.id) === false) { this._phT = 0; this._renderModes(); this._photoNote(); return; } } catch { /* the tour decides */ }
     this._setPopover(false); this._hideUnitCard();
     this.keys.clear(); this.pad = { u: 0, d: 0, l: 0, r: 0 }; this.glide = null; this.player.vel.set(0, 0, 0);
+    const back = { pos: P.pos.clone(), yaw: P.yaw, pitch: P.pitch, floor: this.floor, bId: this.bId };
+    const fail = e => { if (e) console.warn('[walk] openPhotoTour failed', e); this._resumeLive(); this._photoNote(); };
     let res;
     try {
       res = fn({ unitId: this.unit.id, styleId: this.styleId, room, roomKind: room.kind, roomIndex: room.index,
-        onBack: (kind, index) => this.jumpToRoom(kind ?? room.kind, index ?? room.index) });
-    } catch (e) { console.warn('[walk] openPhotoTour failed', e); return; }
-    // The tour covers the page: pause the live renderer until we are shown again (jumpToRoom / any touch on the live view).
+        live: { pose, capture: req => this.capturePano(req) },
+        onBack: (state, index) => (state && typeof state === 'object' ? this._returnFromPhoto(state, back) : state == null ? this._returnFromPhoto(null, back) : this.jumpToRoom(state ?? room.kind, index ?? room.index)),
+        onFail: () => fail(null) });
+    } catch (e) { fail(e); return; }
+    // The tour covers the page: pause the live renderer until we are shown again (_returnFromPhoto / jumpToRoom).
     this._photoPaused = true;
-    if (res && typeof res.then === 'function') res.catch(e => { console.warn('[walk] openPhotoTour failed', e); this._resumeLive(); });
+    if (res && typeof res.then === 'function') res.catch(fail);
   }
-  _resumeLive() { if (!this._photoPaused) return; this._photoPaused = false; this.clock.getDelta(); }
+  _resumeLive() { if (!this._photoPaused) return; this._photoPaused = false; this._capDispose(); this.clock.getDelta(); }
+  // Where the walker is, for the photoreal tour: world position (feet), eye height, view direction (yaw = camera
+  // rotation.y in world terms, pitch, vertical fov) and what kind of place it is.
+  _photoPose() {
+    const P = this.player, pos = P.pos, u = this.unit;
+    const inf = this._carOf(pos);
+    const outside = !inf && this._isOutside(pos);
+    const room = !inf && !outside ? this._currentRoom() : null;
+    const uv = room ? this._unitUV(pos) : null;
+    const bId = inf ? inf.bId : outside ? this._nearestBuilding(pos.x, pos.z) : (this.bId || u.building);
+    const kind = inf ? 'lift' : outside ? 'outdoor' : room && uv ? 'apt' : this.floor === -1 ? 'parking' : this.floor === 0 ? 'lobby' : 'corridor';
+    const pose = { kind, world: [pos.x, pos.y, pos.z], eye: this.camera.position.y, yaw: wrapPi(P.yaw), pitch: P.pitch, fov: this.camera.fov,
+      building: bId, floor: outside ? 0 : this.floor, finish: this._finish(), style: this.styleId, time: this.envMode, unitId: u.id };
+    if (kind === 'apt') {
+      const same = (this.rooms || []).filter(x => x.kind === room.kind);
+      pose.room = { kind: room.kind, index: Math.max(0, same.indexOf(room)), level: room.level || 0 };
+      pose.unit = { u: uv.u, v: uv.v, level: uv.level };
+      pose.rooms = (this.rooms || []).map(r => ({ kind: r.kind, level: r.level || 0, poly: r.poly }));
+    }
+    if (inf) pose.lift = { building: inf.bId, stair: inf.stair, doorIndex: inf.doorIndex, door: inf.door.slice(), n: inf.n.slice(), open: !!(inf.lift && inf.lift.doorsOpen) };
+    return pose;
+  }
+  // Back from the photoreal tour: stand where its view was taken, looking the way it looked (yaw, pitch, zoom).
+  async _returnFromPhoto(s, back) {
+    this._resumeLive();
+    await this._ready;
+    if (this.disposed || !this.unit) return false;
+    const P = this.player, clampP = p => Math.max(-1.35, Math.min(1.35, p));
+    try {
+      if (!s || (!Array.isArray(s.world) && s.frame !== 'unit')) {          // nothing usable came back → exactly where we left
+        if (back.floor !== this.floor || back.bId !== this.bId) await this._setFloor(back.bId, back.floor);
+        this._place(back.pos, back.yaw, back.pitch);
+      } else if (s.live) {                                                   // the visitor's own spot: not a millimetre moved
+        if (back.floor !== this.floor || back.bId !== this.bId) await this._setFloor(back.bId, back.floor);
+        this._place(back.pos, isFinite(s.yawWorld) ? s.yawWorld : back.yaw, clampP(isFinite(s.pitch) ? s.pitch : back.pitch));
+      } else if (s.frame === 'unit') {                                       // an apartment panorama point (unit-local)
+        await this._placeFromPano(s);
+        if (isFinite(s.pitch)) { P.pitch = P.tPitch = clampP(s.pitch); this._syncCamera(); }
+      } else {                                                               // a common-area panorama point (world)
+        const bId = BUILDINGS[s.building] ? s.building : back.bId, fl = isFinite(s.floor) ? s.floor : back.floor;
+        if (this.floor !== fl || this.bId !== bId) await this._setFloor(bId, fl);
+        const pos = new THREE.Vector3(s.world[0], s.world[1], s.world[2]);
+        const fy = this._floorAt(pos.x, pos.y + 0.3, pos.z, this._near(this.floors, pos, 2));
+        if (fy !== null) pos.y = fy;
+        if (!this._isFree(pos.x, pos.y, pos.z)) { const [fx, fz] = this._freeSpot(pos.x, pos.y, pos.z, 1.0); pos.x = fx; pos.z = fz; }
+        this._place(pos, isFinite(s.yawWorld) ? s.yawWorld : back.yaw, clampP(isFinite(s.pitch) ? s.pitch : back.pitch));
+      }
+      if (s && isFinite(s.fov) && Math.abs(s.fov - this.camera.fov) > 0.2) {   // keep the zoom the visitor ended on
+        this._zoomS = Math.tan(s.fov / 2 * D2R) * (this.camera.aspect || 1) / this._baseTanH; this._applyFov();
+      }
+    } catch (e) { console.warn('[walk] photo hand-over', e); }
+    this.player.eye = this.mode === '360' ? EYE_360 : EYE;
+    this._lastPlace = null;
+    this._updateHud(true);
+    return true;
+  }
+  /** A still 360° of the live scene from `eye` (world), as a 3 × 2 cube atlas of sRGB bytes (layout / overscan of
+   *  js/pano-outside.js, faces turned by frameYaw so they sit in the tour's scene frame). Quality: every face is rendered
+   *  at `ss`× and box-filtered, `jitter` sub-pixel-shifted passes are accumulated; tone mapping / exposure as on screen.
+   *  → { data: Uint8Array (rows bottom-up), w, h, face }. window.VRC_CAPTURE = { face, ss, jitter, ao } overrides (tests). */
+  capturePano({ eye, frameYaw = 0, overscan = 1.03 } = {}) {
+    if (this.disposed || !Array.isArray(eye)) return null;
+    const r = this.renderer, caps = r.capabilities, ov = (typeof window !== 'undefined' && window.VRC_CAPTURE) || {};
+    const maxT = caps.maxTextureSize || 4096;
+    let face = ov.face || (this._isTouch || maxT < 8192 ? 1024 : 1536);
+    while (face * 3 > maxT) face >>= 1;
+    const ss = ov.ss || 2, jit = ov.jitter || (this._isTouch ? 2 : 4);
+    // Optional screen-space ambient occlusion from the depth of each face (faces then get a margin, PAD, so the occlusion
+    // agrees across cube edges). OFF by default: in tests it hatched curved car bodies and smudged ceilings next to
+    // columns, which reads less real than the scene's own soft-shadow decals. window.VRC_CAPTURE.ao = 0…1 turns it on.
+    const aoK = ov.ao !== undefined ? +ov.ao : 0, PAD = aoK > 0 ? 1.2 : 1;
+    const hasDepthTex = caps.isWebGL2 || r.extensions.has('WEBGL_depth_texture');
+    const ao = hasDepthTex ? aoK : 0;
+    let rig = this._capRig;
+    if (!rig || rig.face !== face || rig.ss !== ss || rig.pad !== PAD) {
+      this._capDispose();
+      const hdr = caps.isWebGL2 || r.extensions.has('EXT_color_buffer_half_float');
+      const W = Math.round(face * ss * PAD / 2) * 2;
+      const scratch = new THREE.WebGLRenderTarget(W, W, { type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
+      if (hasDepthTex) { scratch.depthTexture = new THREE.DepthTexture(W, W); scratch.depthTexture.minFilter = scratch.depthTexture.magFilter = THREE.NearestFilter; }
+      // Rendered exactly like the screen: three applies tone mapping and the sRGB encoding in the material shaders only
+      // for the canvas or an "XR" target, so the scratch is flagged as one. The capture then uses the very programs that
+      // are already compiled (no hitch) and its blended decals (soft shadows, glows) look as they do on screen.
+      scratch.isXRRenderTarget = true; scratch.texture.colorSpace = THREE.SRGBColorSpace;
+      const atlas = new THREE.WebGLRenderTarget(face * 3, face * 2, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
+      atlas.texture.colorSpace = THREE.NoColorSpace;
+      // box filter of the super-sampled face (+ occlusion); alpha = weight of this pass in the running mean of the jittered passes
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { t: { value: scratch.texture }, tD: { value: scratch.depthTexture || null }, alpha: { value: 1 }, px: { value: new THREE.Vector2(1 / W, 1 / W) }, taps: { value: ss },
+          pad: { value: PAD }, tanH: { value: 1 }, nf: { value: new THREE.Vector2(0.08, 6000) }, ao: { value: 0 }, seed: { value: 0 } },
+        depthTest: false, depthWrite: false, toneMapped: false, transparent: true,
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `
+          precision highp float; varying vec2 vUv; uniform sampler2D t; uniform sampler2D tD; uniform float alpha; uniform vec2 px; uniform float taps;
+          uniform float pad; uniform float tanH; uniform vec2 nf; uniform float ao; uniform float seed;
+          vec3 disp(vec2 uv){ return clamp(texture2D(t, uv).rgb, 0.0, 1.0); }
+          vec3 posAt(vec2 uv){
+            float d = texture2D(tD, uv).x;
+            float z = (2.0 * nf.x * nf.y) / (nf.y + nf.x - (2.0 * d - 1.0) * (nf.y - nf.x));
+            return vec3((uv * 2.0 - 1.0) * tanH * z, -z);
+          }
+          float occl(vec2 uv){
+            if (texture2D(tD, uv).x >= 0.99999) return 1.0;                     // sky
+            vec3 p = posAt(uv); float z = -p.z;
+            if (z > 40.0) return 1.0;
+            vec3 a1 = posAt(uv + vec2(px.x, 0.0)) - p, a0 = p - posAt(uv - vec2(px.x, 0.0));
+            vec3 b1 = posAt(uv + vec2(0.0, px.y)) - p, b0 = p - posAt(uv - vec2(0.0, px.y));
+            vec3 n = normalize(cross(abs(a1.z) < abs(a0.z) ? a1 : a0, abs(b1.z) < abs(b0.z) ? b1 : b0));
+            const float R = 0.55;                                                // metres
+            float ruv = min(R * 0.5 / (tanH * z), 0.5 * (1.0 - 1.0 / pad));      // never reaches past the margin
+            float rot = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy + seed * vec2(47.0, 17.0), vec2(0.06711056, 0.00583715))));
+            float s = 0.0;
+            for (int i = 0; i < 12; i++) {
+              float fi = (float(i) + 0.5) / 12.0, a = rot + fi * 15.0796;
+              vec3 v = posAt(uv + vec2(cos(a), sin(a)) * ruv * sqrt(fi)) - p;
+              float l = length(v);
+              s += max(0.0, dot(n, v) / max(l, 1e-4) - 0.2) * (1.0 - smoothstep(R * 0.45, R * 1.25, l));
+            }
+            // surfaces seen at a grazing angle (far floor, long walls) and far ones get none: their depth steps would band
+            float k = smoothstep(0.12, 0.4, abs(dot(n, normalize(p)))) * (1.0 - smoothstep(9.0, 16.0, z));
+            return clamp(1.0 - ao * k * s / 12.0 * 1.9, 0.0, 1.0);
+          }
+          void main(){
+            vec2 uv = 0.5 + (vUv - 0.5) / pad;
+            // one bilinear tap at the centre of each 2 × 2 block of the super-sampled face; 3× / 4× take a 2 × 2 of such taps
+            vec3 c = taps > 2.5 ? 0.25 * (disp(uv + px * vec2(-1.0, -1.0)) + disp(uv + px * vec2(1.0, -1.0)) + disp(uv + px * vec2(-1.0, 1.0)) + disp(uv + px * vec2(1.0, 1.0))) : disp(uv);
+            if (ao > 0.0) c *= occl(uv);
+            gl_FragColor = vec4(c, alpha);
+          }`,
+      });
+      const quadScene = new THREE.Scene(), quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false; quadScene.add(quad);
+      const cam = new THREE.PerspectiveCamera(90, 1, 0.08, 6000); cam.matrixAutoUpdate = false;
+      rig = this._capRig = { face, ss, pad: PAD, W, scratch, atlas, mat, quad, quadScene, quadCam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), cam };
+    }
+    const { scratch, atlas, mat, quadScene, quadCam, cam, W } = rig;
+    cam.fov = 2 * Math.atan(overscan * PAD) * R2D; cam.updateProjectionMatrix();
+    mat.uniforms.tanH.value = overscan * PAD; mat.uniforms.nf.value.set(cam.near, cam.far); mat.uniforms.ao.value = ao;
+    const FACES = [[[1, 0, 0], [0, 1, 0]], [[-1, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, -1]], [[0, -1, 0], [0, 0, 1]], [[0, 0, 1], [0, 1, 0]], [[0, 0, -1], [0, 1, 0]]];
+    const F = new THREE.Vector3(), Up = new THREE.Vector3(), R = new THREE.Vector3(), B = new THREE.Vector3(), M = new THREE.Matrix4(), Y = new THREE.Matrix4().makeRotationY(frameYaw), Pp = new THREE.Vector3(eye[0], eye[1], eye[2]);
+    const prev = { rt: r.getRenderTarget(), auto: r.autoClear }, vp = new THREE.Vector4(); r.getViewport(vp);
+    const HALTON = [[0, 0], [0.25, -0.1667], [-0.25, 0.1667], [0.375, 0.3889], [-0.375, -0.3889], [0.125, -0.4444], [-0.125, 0.4444], [0.4375, 0.0556]];
+    const sub = W / face;                                   // scratch pixels per atlas pixel
+    try {
+      for (let i = 0; i < 6; i++) {
+        F.fromArray(FACES[i][0]); Up.fromArray(FACES[i][1]); R.crossVectors(F, Up); B.copy(F).negate();
+        M.makeBasis(R, Up, B).premultiply(Y).setPosition(Pp);
+        cam.matrix.copy(M); cam.matrixWorld.copy(M); cam.matrixWorldInverse.copy(M).invert(); cam.position.copy(Pp);
+        for (let j = 0; j < jit; j++) {
+          const [jx, jy] = HALTON[j % HALTON.length];
+          if (jit > 1) cam.setViewOffset(W, W, jx * sub / PAD, jy * sub / PAD, W, W); else cam.clearViewOffset();
+          r.autoClear = true;
+          r.setRenderTarget(scratch); r.clear();
+          r.render(this.scene, cam);
+          atlas.viewport.set((i % 3) * face, Math.floor(i / 3) * face, face, face);
+          atlas.scissor.copy(atlas.viewport); atlas.scissorTest = true;
+          r.setRenderTarget(atlas);
+          r.autoClear = false;
+          mat.uniforms.alpha.value = 1 / (j + 1); mat.uniforms.seed.value = j;
+          r.render(quadScene, quadCam);
+        }
+      }
+    } finally {
+      cam.clearViewOffset();
+      r.setRenderTarget(prev.rt); r.setViewport(vp); r.autoClear = prev.auto;
+    }
+    const w = face * 3, h = face * 2, data = new Uint8Array(w * h * 4);
+    r.readRenderTargetPixels(atlas, 0, 0, w, h, data);
+    return { data, w, h, face };
+  }
+  _capDispose() {
+    const g = this._capRig; if (!g) return; this._capRig = null;
+    try { if (g.scratch.depthTexture) g.scratch.depthTexture.dispose(); g.scratch.dispose(); g.atlas.dispose(); g.mat.dispose(); g.quad.geometry.dispose(); } catch (e) { console.warn(e); }
+  }
 
   /** Jump into the live 3D at a room of the current apartment: kind ('living', 'bedroom', 'balcony'…, or 'corridor',
    *  'lobby', 'parking', 'apartment'), index = 0-based among rooms of that kind. Used by the photo-real tour to come back. */
@@ -1672,7 +1901,7 @@ export class Walkthrough {
     if (!this.el || !this.el.modes) return;
     const tour = !!this._photoTourFn(), real = !!this._pano;
     const show = tour || real || this._panoAvail();          // no photo tour anywhere → no toggle
-    const avail = tour ? this._tourHas() : show;             // shown but not rendered for this unit → "coming soon"
+    const avail = tour ? this._photoHere() : show;           // v4: dimmed where this spot has no photoreal view (a tap says so)
     const key = `${show}|${avail}|${real}|${tour}`;
     if (key === this._modesKey) return;
     this._modesKey = key;
@@ -1683,7 +1912,7 @@ export class Walkthrough {
     b3.setAttribute('aria-pressed', String(!real)); bR.setAttribute('aria-pressed', String(real));
     bR.classList.toggle('off', !avail && !real);
     bR.setAttribute('aria-disabled', String(!avail && !real));
-    bR.title = !avail && !real ? this.t('walk.soon') : '';
+    bR.title = !avail && !real ? (tour ? PHOTO_TXT[String(this.lang).slice(0, 2)] || PHOTO_TXT.en : this.t('walk.soon')) : '';
   }
   _soonTip() {
     const s = this.el.soon; s.classList.add('show');
@@ -3110,6 +3339,7 @@ export class Walkthrough {
       <div class="vw-drive">
         <div class="vw-dtop"><button class="vw-btn vw-ghost vw-ico" data-k="carlights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5C8 5.5 6 8.6 6 12s2 6.5 6.5 6.5c1.6 0 2.5-2.9 2.5-6.5s-.9-6.5-2.5-6.5z"/><path d="M17.5 8h4M17.5 12h4M17.5 16h4"/></svg></button><button class="vw-btn vw-ghost vw-ico" data-k="carsound"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18 7a7 7 0 0 1 0 10"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><button class="vw-btn vw-ghost" data-k="carview"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span class="lbl"></span></button><button class="vw-btn vw-gold" data-k="carexit"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 15.5v-3l2.2-4.6A2 2 0 0 1 7.5 6.8h9a2 2 0 0 1 1.8 1.1l2.2 4.6v3"/><path d="M2.8 15.5h18.4v2.4H2.8z"/><circle cx="7" cy="18.3" r="1.6"/><circle cx="17" cy="18.3" r="1.6"/><path d="M5.2 12.3h13.6"/></svg><span class="lbl"></span></button></div>
         <div class="vw-spdo"><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="vwgold" x1="0" x2="1"><stop offset="0" stop-color="#b88a3c"/><stop offset="1" stop-color="#f0d596"/></linearGradient></defs><circle class="bg" cx="50" cy="50" r="30"/><circle class="arc" cx="50" cy="50" r="30"/></svg><div class="num"><b class="spd">0</b><i>km/h</i></div><span class="gear">P</span><span class="lim" role="img"></span></div>
+        <button class="vw-start" data-k="carstart"><span class="lbl">START</span><small>ENGINE</small></button>
         <div class="vw-steer" data-pd="steer"><span class="l" aria-hidden="true">◀</span><span class="knob"></span><span class="r" aria-hidden="true">▶</span></div>
         <div class="vw-pedals"><button class="brake" data-pd="brake"><i></i><span></span></button><button class="gas" data-pd="gas"><i></i><span></span></button></div>
         <div class="vw-dhint vw-panel"></div>
@@ -3128,7 +3358,7 @@ export class Walkthrough {
       help: q('.vw-help'), loading: q('.vw-loading'),
       gear: q('[data-k=gear]'), zoom: q('.vw-zoom'), zv: q('.vw-zoom .zv'), mapBtn: q('.vw-mapbtn'), prow: q('.vw-prow span'),
       modes: q('.vw-modes'), soon: q('.vw-modes .soon'),
-      carChip: q('.vw-carchip'), drive: q('.vw-drive'), carView: q('[data-k=carview]'), carExit: q('[data-k=carexit]'), carLights: q('[data-k=carlights]'), carSound: q('[data-k=carsound]'),
+      carChip: q('.vw-carchip'), drive: q('.vw-drive'), carView: q('[data-k=carview]'), carExit: q('[data-k=carexit]'), carLights: q('[data-k=carlights]'), carSound: q('[data-k=carsound]'), carStart: q('[data-k=carstart]'),
       spdo: q('.vw-spdo'), spd: q('.vw-spdo .spd'), gear: q('.vw-spdo .gear'), lim: q('.vw-spdo .lim'), arc: q('.vw-spdo .arc'),
       steerPad: q('.vw-steer'), knob: q('.vw-steer .knob'), gas: q('.vw-pedals .gas'), brake: q('.vw-pedals .brake'), dhint: q('.vw-dhint'),
       floorsBtn: q('[data-k=floors]'), ucard: q('.vw-ucard'), u1: q('.vw-ucard .u1'), u2: q('.vw-ucard .u2'), ureserve: q('[data-k=ureserve]'),
@@ -3180,7 +3410,8 @@ export class Walkthrough {
     e.gas.setAttribute('aria-label', this.t('walk.car.gas')); e.gas.title = this.t('walk.car.gas'); e.gas.querySelector('span').textContent = '▲';
     e.brake.setAttribute('aria-label', this.t('walk.car.brake')); e.brake.title = this.t('walk.car.brake'); e.brake.querySelector('span').textContent = 'B · R';
     e.steerPad.setAttribute('aria-label', this.t('walk.car.steer')); e.lim.setAttribute('aria-label', this.t('walk.car.limit'));
-    e.dhint.textContent = this.t('walk.car.hint');
+    e.dhint.textContent = this.t('walk.car.hint') + ' · ' + this.t('walk.car.keyStart');
+    if (e.carStart) { e.carStart.setAttribute('aria-label', this.t('walk.car.engine')); e.carStart.title = this.t('walk.car.engine'); }
     e.help.querySelector('h3').textContent = this.t('walk.help.title');
     e.help.querySelector('[data-k=helpok]').textContent = this.t('walk.help.ok');
     const items = this._isTouch
@@ -3608,8 +3839,9 @@ export class Walkthrough {
     if (this.riding || this.drive) return;
     const a = this._pickAction(x, y);
     if (a) return this._doAction(a);
+    // tap a car → its door opens and you take the driver's seat (the "Enter car" chip also shows when standing close)
     const car = this.mode === 'walk' && this._pickCarAt(x, y);
-    if (car) this._showCarChip(car);
+    if (car) { this._taps = null; this._suppressTap = now; this._enterCar(car); }
   }
   // Tap → action under the finger; if the exact point misses, try a small ring around it (finger-sized targets on phones).
   _pickAction(x, y) {
@@ -3639,6 +3871,7 @@ export class Walkthrough {
       if (this.drive) { ev.preventDefault(); return this._exitCar(); }
       if (this._chipRec) { ev.preventDefault(); return this._enterCar(this._chipRec); }
     }
+    if (down && !ev.repeat && code === 'KeyE' && this.drive) return this._toggleEngine();
     if (down && !ev.repeat && code === 'KeyC' && this.drive) return this._toggleCarView();
     if (down && !ev.repeat && code === 'KeyL' && this.drive) return this._toggleHeadlights();
     if (down && !ev.repeat && code === 'KeyM' && this.drive) return this._toggleCarSound();
@@ -3653,25 +3886,38 @@ export class Walkthrough {
   // ======================= cars: fleet, outdoor world, driving =======================
   // Every car in the car park, the open-air lots and along the nearby kerbs is a record in one fleet (cars.js);
   // the nearest few are detailed models. Tap one → "Enter car" chip → drive it (first-person or chase camera).
+  // Safe to call more than once: the fleet is made on first need (an arrival at −1 may come before the surroundings have
+  // streamed in), the street cars join as soon as the environment exists.
   _initCars() {
     try {
-      this.fleet = createFleet({ maxDetailed: this._isTouch ? 4 : 6, detailRadius: 26 });
-      this.scene.add(this.fleet.group);
-      this.outdoor = buildOutdoorColliders();
-      this.scene.add(this.outdoor.group);
-      this._register(this.outdoor.group, 'outdoor');
-      // one headlight spot, present from the start so the light count never changes (no shader recompiles later)
-      this.headSpot = new THREE.SpotLight(0xfff1dc, 0, 42, 0.62, 0.6, 1.3); this.headSpot.name = 'walk-car-headlights';
-      this.scene.add(this.headSpot, this.headSpot.target);
+      if (!this.fleet) {
+        this.fleet = createFleet({ maxDetailed: this._isTouch ? 4 : 6, detailRadius: 26, maxMid: this._isTouch ? 24 : 36, renderer: this.renderer });
+        this.scene.add(this.fleet.group);
+        this.outdoor = buildOutdoorColliders();
+        this.scene.add(this.outdoor.group);
+        this._register(this.outdoor.group, 'outdoor');
+        // one headlight spot, present from the start so the light count never changes (no shader recompiles later)
+        this.headSpot = new THREE.SpotLight(0xfff1dc, 0, 42, 0.62, 0.6, 1.3); this.headSpot.name = 'walk-car-headlights';
+        this.scene.add(this.headSpot, this.headSpot.target);
+      }
       this._patchRampTop();
-      Promise.resolve(this.env && this.env.ready).then(() => { if (!this.disposed) { this._adoptOutdoorCars(); this._patchRampTop(); } }).catch(e => console.warn('[walk] cars', e));
-    } catch (e) { console.warn('[walk] cars unavailable', e); this.fleet = null; }
+      if (this.env && !this._carsEnvHooked) {
+        this._carsEnvHooked = true;
+        Promise.resolve(this.env.ready).then(() => { if (!this.disposed && this.fleet) { this._adoptOutdoorCars(); this._patchRampTop(); } }).catch(e => console.warn('[walk] cars', e));
+      }
+    } catch (e) { console.warn('[walk] cars unavailable', e); if (!this.fleet || !this.headSpot) this.fleet = null; }
   }
   _registerCars() { this._unregister('cars'); if (this.fleet) this._register(this.fleet.colliders, 'cars'); }
   _adoptParking(c) {
-    if (!this.fleet || !c || !Array.isArray(c.parkedCars)) return;
-    if (c.carInstances && c.carInstances.group) c.carInstances.group.visible = false;
+    // Only the −1 commons carries cars. (Every other floor has an empty list: adopting that used to mark the fleet's
+    // 'parking' source as taken, so the real cars were refused later and their instances hidden — an empty car park.)
+    if (!c || !Array.isArray(c.parkedCars) || !c.parkedCars.length) return;
+    if (!this.fleet && !this._carsTried) { this._carsTried = true; this._initCars(); }   // in the car park before the world finished streaming
+    if (!this.fleet) return;
     if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
+    // the commons' own instances stay on screen unless the fleet really holds the car-park cars
+    const have = this.fleet.records.some(r => r.src === 'parking');
+    if (c.carInstances && c.carInstances.group) c.carInstances.group.visible = !have;
   }
   _adoptOutdoorCars() {
     if (!this.fleet || !this.env) return;
@@ -3705,7 +3951,9 @@ export class Walkthrough {
         // the four streets framing the site are kept clear (their kerb parking would leave too narrow a lane to drive)
         if (nearPlot(p.x, p.z, 16)) { o.setMatrixAt(i, zero); continue; }
         const e = m.elements, yawX = Math.atan2(-e[2], e[0]);
-        kerb.push({ x: p.x, y: 0, z: p.z, yaw: yawX + Math.PI / 2, ...pickCar(rc) }); o.setMatrixAt(i, zero);
+        // on a narrow street the car stands half on the pavement, leaving a lane to drive past (cars.js kerbSpot)
+        const A = this._driveArea(), sh = A && A.kerbSpot ? A.kerbSpot(p.x, p.z) : null;
+        kerb.push({ x: sh ? sh[0] : p.x, y: 0, z: sh ? sh[1] : p.z, yaw: yawX + Math.PI / 2, ...pickCar(rc) }); o.setMatrixAt(i, zero);
       }
       o.instanceMatrix.needsUpdate = true; o.geometry = lux;
     }
@@ -3816,50 +4064,89 @@ export class Walkthrough {
     if (!rec || !this.fleet || this.drive || this.riding || this.busy) return;
     this.busy = true; this._hideCarChip();
     try {
-      await this._fade(true);
       this.fleet.setFocus(rec); this.fleet.update(this.camera, true);
       const car = this.fleet.carOf(rec);
-      if (!car) return;
-      const ctl = new CarController(rec);
+      if (!car) { this.fleet.setFocus(null); return; }
+      // the car being entered gets its full cockpit (interior detail, live displays, a driver's door that opens)
+      try { car.setCockpit(true); } catch (e) { console.warn('[walk] cockpit', e); }
+      const ctl = new CarController(rec), P = this.player.pos;
+      const door = this._carDoorSpot(car, rec);
+      // tapped from across the hall: cut to the driver's door, then get in from there
+      if (Math.hypot(P.x - door.side.x, P.z - door.side.z) > 4.5 || Math.abs(P.y - rec.y) > 1) {
+        await this._fade(true);
+        this._place(new THREE.Vector3(door.side.x, rec.y, door.side.z), rec.yaw + Math.PI / 2, -0.12);
+        this.player.eye = EYE; this._syncCamera(); this._fade(false);
+      }
       this._fovWalk = this.camera.fov;
-      this.drive = { rec, car, ctl, view: lsGet('vrc.walk.carView') === 'chase' ? 'chase' : 'fp', look: { yaw: 0, pitch: 0 }, pad: { gas: 0, brake: 0, steer: 0 }, cam: null, lights: null };
+      const view = lsGet('vrc.walk.carView') === 'chase' ? 'chase' : 'fp';
+      const anim = car.hasCockpit ? { kind: 'in', t: 0, dur: 1.5, pos: this.camera.position.clone(), quat: this.camera.quaternion.clone(), mid: door.mid, maxAngle: door.maxAngle, view } : null;
+      this.drive = { rec, car, ctl, view: anim ? 'fp' : view, look: { yaw: 0, pitch: 0 }, pad: { gas: 0, brake: 0, steer: 0 }, cam: null, lights: null, anim, engine: false };
       this.glide = null; this.player.vel.set(0, 0, 0); this.keys.clear();
-      car.setInside(this.drive.view === 'fp');
+      car.setInside(!anim && view === 'fp');
       this.root.classList.add('driving');
       this._renderDriveHud(true);
-      if (lsGet('vrc.walk.carSound') === 'on') this._engineStart(rec.kind);   // engine sound is opt-in (muted by default)
       this._driveUpdate(0);
-    } finally { this.busy = false; await this._fade(false); }
+    } finally { this.busy = false; }
+  }
+  // Where one stands to get into / out of a car: beside the driver's door (left). A neighbour or a wall close by
+  // limits the door's swing.
+  _carDoorSpot(car, rec) {
+    const S = car.spec, wide = car.doorSide(0.85);
+    const near = this.fleet.records.some(r => r !== rec && Math.abs(r.y - rec.y) < 1.2 && this.fleet.distTo(r, wide) < 0.45);
+    const tight = near || !this._isFree(wide.x, rec.y, wide.z);
+    const side = tight ? car.doorSide(0.42) : wide;
+    return { side, tight, maxAngle: tight ? 0.46 : 1.05, mid: new THREE.Vector3(side.x, rec.y + S.eye + 0.28, side.z) };
   }
   async _exitCar() {
-    const D = this.drive; if (!D || this.busy) return;
+    const D = this.drive; if (!D || this.busy || D.anim) return;
+    const { rec, car, ctl } = D, S = ctl.S;
+    ctl.v = 0; D.pad.gas = D.pad.brake = D.pad.steer = 0;
+    // stand next to the driver's door (left, +x), else the other side, else behind / in front
+    const c = Math.cos(ctl.yaw), s = Math.sin(ctl.yaw), toW = (lx, lz) => [ctl.x + lx * c + lz * s, ctl.z - lx * s + lz * c];
+    const spots = [[S.W / 2 + 0.55, S.seat], [-(S.W / 2 + 0.55), S.seat], [0, S.zR - 0.8], [0, S.zF + 0.8], [S.W / 2 + 1.2, S.seat]];
+    let pos = null, k = -1;
+    for (const [lx, lz] of spots) {
+      const [x, z] = toW(lx, lz); k++;
+      const fy = this._floorAt(x, ctl.y + 0.3, z, this._near(this.floors, new THREE.Vector3(x, ctl.y, z), 2));
+      if (fy == null) continue;
+      if (this._isFree(x, fy, z)) { pos = new THREE.Vector3(x, fy, z); break; }
+    }
+    if (!pos) { const [x, z] = toW(S.W / 2 + 0.55, S.seat); const [fx, fz] = this._freeSpot(x, ctl.y, z, 3); pos = new THREE.Vector3(fx, ctl.y, fz); k = -1; }
+    const yaw = ctl.yaw + Math.PI - 0.5;
+    // out through the driver's door when there is room beside it: the door swings open, the camera steps out
+    const stepOut = car.hasCockpit && (k === 0 || k === 4) && Math.abs(ctl.pitch) < 0.05;
+    let maxAngle = 1.05;
+    if (stepOut) {
+      const door = this._carDoorSpot(car, rec); maxAngle = door.maxAngle;
+      if (D.view !== 'fp') { D.view = 'fp'; D.cam = null; }
+      D.look.yaw = D.look.pitch = 0;
+      await new Promise(resolve => {
+        D.anim = { kind: 'out', t: 0, dur: 1.15, pos: new THREE.Vector3(pos.x, pos.y + EYE, pos.z), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, yaw, 0, 'YXZ')), mid: door.mid, maxAngle, resolve };
+        setTimeout(resolve, 2500);   // never hang on a paused frame loop
+      });
+      if (this.disposed || this.drive !== D) return;
+    }
     this.busy = true;
     try {
-      await this._fade(true);
-      const { rec, car, ctl } = D, S = ctl.S;
+      if (!stepOut) await this._fade(true);
+      D.anim = null;
       Object.assign(rec, { x: ctl.x, y: ctl.y, z: ctl.z, yaw: ctl.yaw, pitch: ctl.pitch, roll: 0 });
       this._engineStop();
-      car.setInside(false); car.setLights(false); this.headSpot.intensity = 0;
+      car.setInside(false); car.setLights(false); car.setIndicators(false, false); this.headSpot.intensity = 0;
       this.fleet.setFocus(null); this.fleet.moved(rec);
       for (const e of this.solids) if (e.o === rec.collider) e.box = null;
       this.drive = null;
       this.root.classList.remove('driving');
       this._applyFov();
-      // stand next to the driver's door (left, +x), else the other side, else behind / in front
-      const c = Math.cos(ctl.yaw), s = Math.sin(ctl.yaw), toW = (lx, lz) => [ctl.x + lx * c + lz * s, ctl.z - lx * s + lz * c];
-      const spots = [[S.W / 2 + 0.55, S.seat], [-(S.W / 2 + 0.55), S.seat], [0, S.zR - 0.8], [0, S.zF + 0.8], [S.W / 2 + 1.2, S.seat]];
-      let pos = null;
-      for (const [lx, lz] of spots) {
-        const [x, z] = toW(lx, lz);
-        const fy = this._floorAt(x, ctl.y + 0.3, z, this._near(this.floors, new THREE.Vector3(x, ctl.y, z), 2));
-        if (fy == null) continue;
-        if (this._isFree(x, fy, z)) { pos = new THREE.Vector3(x, fy, z); break; }
-      }
-      if (!pos) { const [x, z] = toW(S.W / 2 + 0.55, S.seat); const [fx, fz] = this._freeSpot(x, ctl.y, z, 3); pos = new THREE.Vector3(fx, ctl.y, fz); }
-      this._place(pos, ctl.yaw + Math.PI - 0.5);
+      this._place(pos, yaw, stepOut ? -0.1 : 0);
       this.player.eye = EYE;
       this._lastPlace = null; this._updateHud(true);
-    } finally { this.busy = false; await this._fade(false); }
+      if (stepOut) {   // the door swings shut behind you
+        const t0 = performance.now();
+        const tick = () => { const q = Math.min(1, (performance.now() - t0) / 450), e = q * q * (3 - 2 * q); car.setDoor(1 - e, maxAngle); if (q < 1 && !this.disposed) requestAnimationFrame(tick); else this._thud(0.3); };
+        tick();
+      } else car.setDoor(0);
+    } finally { this.busy = false; if (!stepOut) await this._fade(false); }
   }
   // headlights: automatic (dusk / night / underground) until toggled; the sound button starts / stops the engine synth
   _toggleHeadlights() {
@@ -3867,16 +4154,27 @@ export class Walkthrough {
     D.lights = !this._lightsOn(D);
     this._renderDriveHud(true);
   }
-  _lightsOn(D = this.drive) { return D ? (D.lights != null ? D.lights : this.envMode !== 'day' || D.ctl.y < -0.8) : false; }
+  // (automatic lights come on with the ignition)
+  _lightsOn(D = this.drive) { return D ? (D.lights != null ? D.lights : D.engine && (this.envMode !== 'day' || D.ctl.y < -0.8)) : false; }
+  _soundOn() { return this._sndPref != null ? this._sndPref : lsGet('vrc.walk.carSound') === 'on'; }   // opt-in, remembered
   _toggleCarSound() {
     const D = this.drive; if (!D) return;
-    const on = !this._eng;
-    lsSet('vrc.walk.carSound', on ? 'on' : 'off');
-    if (on) this._engineStart(D.rec.kind); else this._engineStop();
+    const on = !this._soundOn();
+    lsSet('vrc.walk.carSound', on ? 'on' : 'off'); this._sndPref = on;
+    if (on && D.engine) this._engineStart(D.rec.kind); else this._engineStop();
+    this._renderDriveHud(true);
+  }
+  // START / STOP: the ignition. Off: displays dark, pedals dead. On: cluster and map come alive, the lights switch on
+  // underground or after dark, and the engine is heard if the sound preference is on (it is muted by default).
+  _toggleEngine(v) {
+    const D = this.drive; if (!D || D.anim) return;
+    D.engine = v == null ? !D.engine : !!v;
+    if (D.engine) { if (this._soundOn()) this._engineStart(D.rec.kind); }
+    else { this._engineStop(); D.pad.gas = 0; }
     this._renderDriveHud(true);
   }
   _toggleCarView() {
-    const D = this.drive; if (!D) return;
+    const D = this.drive; if (!D || D.anim) return;
     D.view = D.view === 'fp' ? 'chase' : 'fp'; D.cam = null; D.look.yaw = D.look.pitch = 0;
     D.car.setInside(D.view === 'fp'); lsSet('vrc.walk.carView', D.view);
     this._renderDriveHud(true);
@@ -3893,6 +4191,10 @@ export class Walkthrough {
     const S = ctl.S, hw = S.W / 2 + 0.02, zf = S.zF + 0.04, zr = S.zR - 0.04, zc = (zf + zr) / 2;
     const c = Math.cos(yaw), s = Math.sin(yaw), W = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
     const [cx, cz] = W(0, zc);
+    // above ground a car never enters a building (the lobby doorways are gaps in the shell, sized for people)
+    if (y > -1.2 && !(cx > RAMP.x0 - 1 && cx < RAMP.x1 + 1 && cz > RAMP.z0 - 3 && cz < RAMP.z1 + 3)) {
+      for (const [lx, lz] of [[-hw, zf], [0, zf], [hw, zf], [-hw, zr], [0, zr], [hw, zr]]) { const [px, pz] = W(lx, lz); if (this._inFootprint(px, pz)) return true; }
+    }
     const center = this._v1.set(cx, y + 0.6, cz);
     const own = ctl.rec.collider;
     const solids = this._near(this.solids, center, S.L / 2 + 1.2).filter(o => o !== own && !o.userData.floor);
@@ -3942,7 +4244,13 @@ export class Walkthrough {
     const brake = Math.max(k.has('KeyS') || k.has('ArrowDown') || k.has('Space') ? 1 : 0, pad.brake);
     let steer = (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) - (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0);
     if (Math.abs(pad.steer) > Math.abs(steer)) steer = pad.steer;
-    const inp = { gas, brake, steer }, world = this._driveWorld();
+    const A = D.anim;   // getting in / stepping out: the car stands still
+    const live = !!D.engine;
+    if (!live && !A && (gas > 0 || brake > 0) && performance.now() - (this._startHintT || 0) > 3500) {   // pedals before the ignition: point at START
+      this._startHintT = performance.now(); this._toast(this.t('walk.car.startHint'), 2200);
+      const b = this.el && this.el.carStart; if (b) { b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); }
+    }
+    const inp = A ? { gas: 0, brake: 0, steer: 0 } : { gas: live ? gas : 0, brake: live ? brake : 0, steer }, world = this._driveWorld();
     const n = Math.min(6, Math.max(1, Math.ceil(dt / (1 / 60))));
     const hit0 = ctl.hit; ctl.hit = 0;
     for (let i = 0; i < n; i++) ctl.step(dt / n, inp, world);
@@ -3958,21 +4266,47 @@ export class Walkthrough {
     // lights: on at dusk/night and underground; brake lights while braking or holding the brake at a standstill
     const under = ctl.y < -0.8, on = this._lightsOn(D);
     car.setLights(on, ctl.braking || (brake > 0 && Math.abs(ctl.v) < 0.3 && !ctl.reversing), ctl.reversing);
+    // indicators: the side being steered to while manoeuvring; both flash as the car unlocks. Displays: live cluster + map
+    const blink = (performance.now() % 760) < 400, turn = Math.abs(ctl.steer) > 0.17 && Math.abs(ctl.v) > 0.4 && Math.abs(ctl.v) < 9 ? Math.sign(ctl.steer) : 0;
+    const hazard = !!A && A.kind === 'in' && A.t < 0.55;
+    const iL = blink && (turn > 0 || hazard), iR = blink && (turn < 0 || hazard);
+    car.setIndicators(iL, iR);
+    car.updateDisplays({ kmh: Math.abs(ctl.v) * 3.6, off: !live, gear: ctl.v < -0.1 || ctl.reversing ? 'R' : Math.abs(ctl.v) > 0.15 || gas ? 'D' : 'P', power: Math.min(1, gas * (0.25 + Math.abs(ctl.v) / 14)), lights: on, indL: iL, indR: iR, x: ctl.x, z: ctl.z, yaw: ctl.yaw, under, limit: under ? 20 : 50 });
     const fx = Math.sin(ctl.yaw), fz = Math.cos(ctl.yaw);
     const S = ctl.S;
-    this.headSpot.intensity = on ? (under ? 55 : 90) : 0;
+    this.headSpot.intensity = on ? (under ? 130 : 260) : 0;
     this.headSpot.position.set(ctl.x + fx * (S.zF - 0.3), ctl.y + 0.72, ctl.z + fz * (S.zF - 0.3));
     this.headSpot.target.position.set(ctl.x + fx * (S.zF + 14), ctl.y - 0.6, ctl.z + fz * (S.zF + 14));
     this.headSpot.target.updateMatrixWorld(true);
     // camera
     const cam = this.camera, L = D.look;
     if (!this._dragging) { L.yaw *= 1 - damp(2.2, dt); L.pitch *= 1 - damp(2.2, dt); }
-    const vf = D.view === 'fp' ? Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 92 : 70) : Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 100 : 72);
+    let vf = D.view === 'fp' ? Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 92 : 70) : Math.min(this._fovWalk || cam.fov, cam.aspect < 1 ? 100 : 72);
+    // seat-ness s: 0 = standing by the door, 1 = in the driver's seat
+    let s = 1;
+    if (A) {
+      A.t = Math.min(1, A.t + dt / A.dur);
+      const ss = u => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
+      s = A.kind === 'in' ? ss((A.t - 0.2) / 0.52) : 1 - ss((A.t - 0.22) / 0.62);
+      car.setDoor(A.kind === 'in' ? Math.min(ss(A.t / 0.28), 1 - ss((A.t - 0.76) / 0.22)) : ss(A.t / 0.3), A.maxAngle);
+      car.setInside(s > 0.45);
+      vf = lerpN(this._fovWalk || vf, vf, s);
+    }
     if (Math.abs(cam.fov - vf) > 0.01) { cam.fov = vf; cam.updateProjectionMatrix(); }
     if (D.view === 'fp') {
       const e = car.group.localToWorld(car.eye.clone());
       cam.position.copy(e);
       cam.rotation.set(ctl.pitch * 0.9 - 0.05 + L.pitch, ctl.yaw + Math.PI + L.yaw, -ctl.roll * 0.6, 'YXZ');
+      if (A) {   // swing in over the sill along a curve through the open doorway
+        const a = (1 - s) * (1 - s), b = 2 * s * (1 - s), c2 = s * s;
+        cam.position.set(a * A.pos.x + b * A.mid.x + c2 * e.x, a * A.pos.y + b * A.mid.y + c2 * e.y, a * A.pos.z + b * A.mid.z + c2 * e.z);
+        cam.quaternion.copy(A.quat.clone().slerp(cam.quaternion, s));
+        if (A.t >= 1) {
+          D.anim = null;
+          if (A.kind === 'in') { car.setDoor(0); car.setInside(A.view === 'fp'); this._thud(0.3); if (A.view === 'chase') { D.view = 'chase'; D.cam = null; this._renderDriveHud(true); } }
+          else if (A.resolve) { D.anim = A; A.resolve(); A.resolve = null; }   // _exitCar finishes (the pose holds until it does)
+        }
+      }
     } else {
       const dist = under ? 5.4 : 6.6, h = under ? 1.75 : 2.5;
       const a = ctl.yaw + L.yaw;
@@ -3986,8 +4320,10 @@ export class Walkthrough {
       cam.position.copy(D.cam);
       cam.lookAt(ctl.x + fx * 1.6, ctl.y + 1.0 + L.pitch * 3, ctl.z + fz * 1.6);
     }
+    // the three mirrors: one small view of what is behind per turn, drawn before the frame itself
+    if (D.view === 'fp' && !A && car.renderMirrors && (D.mf = (D.mf | 0) + 1) % (this._isTouch ? 3 : 2) === 0) car.renderMirrors(this.renderer, this.scene);
     this._syncEnvMap();
-    this._engineUpdate(ctl, gas, dt);
+    this._engineUpdate(ctl, live ? gas : 0, dt);
     if (this.fleet) this.fleet.update(cam);
     this._renderDriveHud(false);
   }
@@ -3998,7 +4334,8 @@ export class Walkthrough {
     if (force || lim !== this._lastLim) { this._lastLim = lim; e.lim.textContent = String(lim); }
     e.spdo.classList.toggle('over', kmh > lim + 1);
     if (force) {
-      e.carLights.classList.toggle('on', this._lightsOn(D)); e.carSound.classList.toggle('on', !!this._eng);
+      e.carLights.classList.toggle('on', this._lightsOn(D)); e.carSound.classList.toggle('on', this._soundOn());
+      if (e.carStart) { e.carStart.classList.toggle('on', !!D.engine); e.carStart.querySelector('.lbl').textContent = D.engine ? 'STOP' : 'START'; e.carStart.setAttribute('aria-pressed', String(!!D.engine)); }
       e.carView.querySelector('.lbl').textContent = this.t(D.view === 'fp' ? 'walk.car.chase' : 'walk.car.cockpit');
       e.carExit.querySelector('.lbl').textContent = this.t('walk.car.exit');
     }
@@ -4063,17 +4400,21 @@ export class Walkthrough {
   // Underground (away from the ramp) nothing above grade is visible: skip drawing the exterior and the city.
   _cullWorld() {
     const now = performance.now(); if (now - (this._cwT || 0) < 250) return; this._cwT = now;
-    const c = this.camera.position, R = RAMP;
-    const nearRamp = c.x > R.x0 - 22 && c.x < R.x1 + 22 && c.z > R.z0 - 20 && c.z < R.z1 + 26;
-    const under = c.y < -0.6 && !nearRamp;
-    if (under === !!this._culled) return;
-    this._culled = under;
+    const c = this.camera.position;
+    // (the street shows only up the ramp: on it, or from the cone of the hall that looks up through its trench)
+    const under = c.y < -0.6 && !seesOutside(c);
+    // the apartments overhead are behind the car-park slab too (they may finish loading while we are down here)
+    if (under) { for (const o of this.scene.children) if (o.visible && o.name && o.name.startsWith('apartment-')) { o.visible = false; (this._cullApts ||= []).push(o); } }
+    else if (this._cullApts) { for (const o of this._cullApts) o.visible = true; this._cullApts = null; }
+    if (under === !!this._culled && !under) return;
     if (under) {
-      this._cullList = [];
+      // (re-checked while down here: the surroundings may still be streaming in after an arrival at −1)
+      if (!this._culled) { this._cullList = []; this._cullMode = this.envMode; }
       const skip = o => { let l = false; o.traverse(q => { if (q.isLight) l = true; }); return l; };
       for (const root of [this.env && this.env.group, this.complex && this.complex.group]) if (root) for (const o of root.children) if (o.visible && !o.isLight && !skip(o)) { o.visible = false; this._cullList.push(o); }
-      this._cullMode = this.envMode;
+      this._culled = true;
     } else {
+      this._culled = false;
       for (const o of this._cullList || []) o.visible = true;
       this._cullList = [];
       if (this._cullMode && this._cullMode !== this.envMode && this.env) try { this.env.setMode(this.envMode); } catch { /* */ }
@@ -4099,6 +4440,7 @@ export class Walkthrough {
     if (k === 'carview') return this._toggleCarView();
     if (k === 'carlights') return this._toggleHeadlights();
     if (k === 'carsound') return this._toggleCarSound();
+    if (k === 'carstart') return this._toggleEngine();
     if (k === 'exit') { if (this.drive) this._engineStop(); return this.opts.onExit && this.opts.onExit(); }
     if (k === 'help') { this._setPopover(false); return this._showHelp(true); }
     if (k === 'photo') return this.takePhoto();
@@ -4106,7 +4448,7 @@ export class Walkthrough {
     if (k === 'dlabel') return this.el.tools.classList.toggle('col');
     if (b.dataset.vm) {
       if (b.dataset.vm !== 'real') return this._closePano();
-      if (this._photoTourFn()) return this._tourHas() ? this._openPhotoTour() : this._soonTip();
+      if (this._photoTourFn()) return this._openPhotoTour();   // v4: the panorama of this very place, or a note and no jump
       return this._openPano();
     }
     if (b.dataset.m) return this.setMode(b.dataset.m);

@@ -2190,7 +2190,7 @@ function finish(ctx, spawn) {
     group, lifts, spawn, doors, bId: ctx.bId, floor: ctx.floor, autoDoors: ctx.autoDoors || [],
     // doorbells of this floor ({mesh, units, press(unitId)}), the corridor leaf of a unit, the entrance intercoms
     // ([{stair, x, z (building-local), face, setOpen(on)}], ground floor only)
-    bells, leafOf: unitId => ctx.leaves.find(l => l.userData.unitId === unitId) || null, intercoms: ctx.intercoms || [], concierges: ctx.concierges || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null,
+    bells, leafOf: unitId => ctx.leaves.find(l => l.userData.unitId === unitId) || null, intercoms: ctx.intercoms || [], concierges: ctx.concierges || [], parkedCars: ctx.parkedCars || [], carInstances: ctx.carInstances || null, parkingBays: ctx.parkingBays || [],
     dispose() {
       if (disposed) return; disposed = true;
       if (bells) bells.dispose();
@@ -2659,7 +2659,8 @@ function buildParking(bId) {
       const x0 = xc + 0.3 + j * 2.5, x1 = x0 + 2.5;
       if (x1 > X1 - 0.3) continue;
       if (hit(x0, x1, b0, b1)) continue;
-      if (x0 < X0 + 9.4 || (x1 > RAMP[0] - 2.7 && x0 < RAMP[1] + 3.5 && b1 > RAMP[3] - 1.5)) continue;   // drive lanes (along the SSW wall; from the ramp foot)
+      // drive lanes: along the SSW wall, along the NNE wall (it also opens the aisle stub behind the ramp), from the ramp foot
+      if (x0 < X0 + 9.4 || x1 > X1 - 6.5 || (x1 > RAMP[0] - 2.7 && x0 < RAMP[1] + 3.5 && b1 > RAMP[3] - 1.5)) continue;
       bays.push({ x0, x1, z0: b0, z1: b1, dir, no: no++, ac });
     }
   }
@@ -2690,23 +2691,24 @@ function buildParking(bId) {
       evM.push(mat4((b.x0 + b.x1) / 2, 0, zb, b.dir < 0 ? 0 : Math.PI)); evLight.push(mat4((b.x0 + b.x1) / 2, 1.18, zb + (b.dir < 0 ? 0.09 : -0.09), b.dir < 0 ? 0 : Math.PI));
       C.box(b.x0 + 1.0, b.x1 - 1.0, 0, 1.4, zb - 0.15, zb + 0.15);
     }
-    if (rc() < 0.72) {   // luxury car, rear (or nose, when reversed in) 12 cm off the back line; EV bays leave room for the charger
-      const pick = pickCar(rc), S = carSpec(pick.kind), nose = rc() < 0.55;   // nose → facing the aisle
+    if (rc() < 0.9) {   // nine bays in ten taken: luxury car, rear (or nose, when reversed in) 12 cm off the back line; EV bays leave room for the charger
+      const pick = pickCar(rc), S = carSpec(pick.kind), nose = rc() < 0.88;   // nose → facing the aisle: most are backed in, valet-style, so they drive straight out
       const yaw = (b.dir < 0 ? 0 : Math.PI) + (nose ? 0 : Math.PI) + (rc() - 0.5) * 0.03;
       const facePlus = Math.cos(yaw) > 0, back = ev ? 0.55 : 0.12;
       const cz = b.dir < 0 ? b.z0 + back - (facePlus ? S.zR : -S.zF) : b.z1 - back - (facePlus ? S.zF : -S.zR);
-      carList.push({ x: (b.x0 + b.x1) / 2 + (rc() - 0.5) * 0.12, y: 0, z: cz, yaw, ...pick });
+      carList.push({ x: (b.x0 + b.x1) / 2 + (rc() - 0.5) * 0.12, y: 0, z: cz, yaw, bay: b.no, ...pick });
     }
   }
   nb.flush(W);
   // parked luxury cars (instanced far models); walk.js adopts them into its drivable fleet (world coords)
   ctx.carInstances = createCarInstances(carList); ctx.carInstances.group.name = 'vrc-parked-cars'; W.add(ctx.carInstances.group);
   ctx.parkedCars = carList.map(c => ({ ...c, y: floorY(-1) }));
+  ctx.parkingBays = bays.map(b => ({ no: b.no, x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2, dir: b.dir, aisle: b.ac }));   // world
   // EV chargers
   instanced(W, ctx.geo('ev', () => mergeGeometries([clean(boxGeo(-0.14, 0.14, 0, 1.45, -0.09, 0.09)), clean(boxGeo(-0.18, 0.18, 1.45, 1.5, -0.12, 0.12))], false)), 'white', evM);
   instanced(W, ctx.geo('evL', () => new THREE.TorusGeometry(0.07, 0.012, 8, 24)), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 2.2, 0.9) }), evLight);
   // drive lanes linking the aisles: dashed centre lines
-  { const lx = X0 + 5.5; for (let z = Z0 + 2; z < Z1 - 2; z += 3) if (!hit(lx - 0.7, lx + 0.7, z, z + 1.6)) B.box('paintYellow', lx - 0.06, lx + 0.06, 0.001, 0.004, z, z + 1.6); }
+  for (const lx of [X0 + 5.5, X1 - 3.4]) for (let z = Z0 + 2; z < Z1 - 2; z += 3) if (!hit(lx - 0.7, lx + 0.7, z, z + 1.6)) B.box('paintYellow', lx - 0.06, lx + 0.06, 0.001, 0.004, z, z + 1.6);
   { const lx = (RAMP[0] + RAMP[1]) / 2 - 1.1; for (let z = RAMP[3] + 1; z < Z1 - 2; z += 3) if (!hit(lx - 0.6, lx + 0.8, z, z + 1.6)) B.box('paintYellow', lx - 0.06, lx + 0.06, 0.001, 0.004, z, z + 1.6); }
   // aisle markings: dashed centre line + arrows + zebra crossings at lobbies
   for (const ac of aisles) for (let x = X0 + 2; x < X1 - 3; x += 3) if (!hit(x, x + 1.6, ac - 0.1, ac + 0.1)) B.box('paintYellow', x, x + 1.6, 0.001, 0.004, ac - 0.06, ac + 0.06);
@@ -2786,8 +2788,9 @@ function buildParking(bId) {
   spots.push([ax, 1.9, az, 4, 0xf2f4ff, 18]);
   claimRig(root, spots, 0.3);
   const lob2 = my.find(L => L.c.stair === 2) || my[0];
-  const [spx, spz] = toLocal((lob2.x0 + lob2.x1) / 2 - 7.5, lob2.front + lob2.dir * 3.0);
-  const res = finish(ctx, { x: spx, z: spz, yaw: lob2.dir > 0 ? Math.PI / 2 + 0.25 : Math.PI / 2 - 0.25 });
+  // arrive on the zebra walkway in front of the lift lobby, looking across the aisle at the rows of cars
+  const [spx, spz] = toLocal((lob2.x0 + lob2.x1) / 2, lob2.front + lob2.dir * 2.4);
+  const res = finish(ctx, { x: spx, z: spz, yaw: lob2.dir > 0 ? Math.PI - 0.5 : 0.5 });
   const d0 = res.dispose;
   res.dispose = () => { d0(); for (const m of ctx.ownMat) m.dispose(); };
   return res;
