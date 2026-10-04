@@ -87,7 +87,7 @@ function exportPayments() {
   saveFile(`vrc-payments-${stamp()}.csv`, toCSV(rows, [{ key: 'date' }, { key: 'unitId' }, { key: 'client' }, { key: 'amount' }, { key: 'kind' }, { key: 'method' }, { key: 'ref' }, { key: 'receiptNo' }, { key: 'note' }]));
 }
 export function exportUnits(rows) {
-  saveFile(`vrc-units-${stamp()}.csv`, toCSV(rows, [{ key: 'id' }, { key: 'building' }, { key: 'floor' }, { key: 'apNo' }, { key: 'rooms' }, { key: 'type' }, { key: 'm2', get: u => TYPES[u.type].total }, { key: 'price' }, { key: 'facing' }, { key: 'status', get: u => unitState(u.id).status }, { key: 'client', get: u => { const s = unitState(u.id); return s.clientId ? clientName(get('clients', s.clientId)) : ''; } }, { key: 'label', get: u => unitLabelL(u) }]));
+  saveFile(`vrc-units-${stamp()}.csv`, toCSV(rows, [{ key: 'id' }, { key: 'building' }, { key: 'floor' }, { key: 'apNo' }, { key: 'rooms' }, { key: 'type' }, { key: 'm2', get: u => TYPES[u.type].total }, { key: 'price' }, { key: 'eurPerM2', get: u => u.rate }, { key: 'lakeView', get: u => u.view }, { key: 'side', get: u => u.side }, { key: 'facing' }, { key: 'status', get: u => unitState(u.id).status }, { key: 'client', get: u => { const s = unitState(u.id); return s.clientId ? clientName(get('clients', s.clientId)) : ''; } }, { key: 'label', get: u => unitLabelL(u) }]));
 }
 function exportDocuments() {
   saveFile(`vrc-documents-${stamp()}.csv`, toCSV(entries('documents'), [{ key: 'number' }, { key: 'type' }, { key: 'entityId' }, { key: 'date' }, { key: 'client', get: d => d.client?.name || '' }, { key: 'unit', get: d => d.unit?.id || '' }, { key: 'subtotal' }, { key: 'vatRate' }, { key: 'vat' }, { key: 'total' }, { key: 'status' }]));

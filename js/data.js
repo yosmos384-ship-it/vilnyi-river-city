@@ -1,6 +1,6 @@
 // VILNYI RIVER CITY — single source of truth for project, apartment types, floor geometry and units.
 // Units: metres. Building-local frame: x along the main bar, z across it, y up. Compass: see COMPASS (world −z ≈ WNW, +x ≈ NNE).
-// All other modules read from here; nothing else invents geometry or prices.
+// All other modules read from here; nothing else invents geometry or prices (prices: see PRICING / priceOf below).
 
 export const PROJECT = {
   name: 'VILNYI RIVER CITY',
@@ -303,9 +303,120 @@ function frameOf(seg, s) { return { o: seg.o(s), U: seg.U, V: seg.V }; }
 
 function programFor(floor) { return floor === 0 ? PROGRAM.ground : floor === TOP_FLOOR ? PROGRAM.top : PROGRAM.typical; }
 
-const FLOOR_FACTOR = f => 1;   // flat price per m² as instructed; add floor premiums here if wanted
-const FACING_FACTOR = { N: 1, S: 1, E: 1, W: 1 };
-export const PRICE_PER_M2 = 2500; // € per m² of total useful area (suprafață utilă totală, incl. balcony/loggia/terrace)
+// =====================================================================================================================
+// PRICING — the ONE table the owner edits. Every price on the site and in the CRM comes from priceOf() below.
+//
+//   rate  (€/m²) = base × (1 + floor % + view % + orientation %)          e.g. 2,250 × (1 + 6% + 10% + 0%) = 2,610
+//   price (€)    = total useful area (incl. balcony / loggia / terrace) × rate, ROUNDED TO THE NEAREST €50 (roundTo)
+//
+// All adjustments are whole or decimal PERCENT of the base and are simply added together (not compounded).
+// =====================================================================================================================
+export const PRICING = {
+  base: 2250,                 // € per m² of total useful area (suprafață utilă totală)
+  roundTo: 50,                // unit price is rounded to the nearest multiple of this (€)
+  // Floor adjustment, % of base. 0 = ground floor (Parter). 10 = floor 10 incl. the duplexes (both levels at this rate).
+  floor: { 0: -5, 1: 0, 2: 0, 3: 0, 4: 2, 5: 4, 6: 6, 7: 8, 8: 10, 9: 14, 10: 18 },
+  // Lake-view adjustment, % of base. The class of each unit is decided by lakeViewOf() from the real geometry (below).
+  view: { direct: 10, partial: 5, none: 0 },
+  // Orientation adjustment, % of base: the quiet inner courtyard vs. the street / car-park side.
+  orientation: { courtyard: 2, street: 0 },
+  // Facade segments that look onto the inner courtyard between C3 and C4 (S1 = the bars' inner long side, S4 = the
+  // wing arms' SSW face at the head of the courtyard). Everything else (S2 outer side, S5 north street, S6 wing stub
+  // by the entrance forecourt) counts as street / parking.
+  courtyardSegs: ['S1', 'S4'],
+  // Lake-view classification (see lakeViewOf): share of the outlook that is open water of Lacul Morii.
+  lake: {
+    direct: 0.02,             // ≥ 2 % of the view AND water across ≥ directSpan degrees → "direct / open lake view"
+    directSpan: 45,           // minimum horizontal width of visible water (degrees) for a direct view
+    partial: 0.005,           // ≥ 0.5 % of the view → "partial lake view"; below that → none
+    screenH: 12,              // m — roofs and tree crowns of the house neighbourhood + the park belt along the shore
+    screenSetback: 40,        // m — that belt ends this far before the water's edge
+    eye: 1.6,                 // m above the floor, standing on the balcony
+  },
+};
+
+// ---------- Lake view from real geometry ----------
+// Lacul Morii lies SSW of the plot (shore bearings ≈ 167°–249°, nearest shore ≈ 270 m). For a unit we stand on its
+// balcony (mid width) and — for the corner units at the SSW end of each bar — also at their gable window / wrap-around
+// balcony, and sweep the horizon ±60° around that facade's normal in 1° steps. Along each bearing the water between the
+// shore lines (LAKE.shore, minus the island) is visible only beyond the sight line that clears every obstacle in between:
+//   · the massing of Faza I and Faza III and the P deck (CONTEXT_BLOCKS), the other block and our own wing (footprints),
+//   · the houses and trees between Intrarea Guliver and the shore, as a screen of height lake.screenH at the shore belt.
+// The visible water is summed as a solid angle and expressed as a share of a 70° × 44° outlook, weighting bearings the
+// way a person turns on the balcony (straight ahead ×1, up to 35° aside ×⅔, up to 60° aside ×⅓) — the same measure as
+// the 3D check in dev/shape-check.html (lakeViews), which this model was calibrated against (127 candidate units rendered
+// in the 3D scene, v3.4: r.m.s. difference 0.15 % of the view; screenH / screenSetback are the two fitted numbers).
+// Low floors behind the houses and trees therefore get no premium even when they face the lake.
+function _hits(poly, ex, ez, dx, dz) {          // sorted distances at which a ray crosses a polygon's edges
+  const ts = [];
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i], [bx, bz] = poly[(i + 1) % poly.length], sx = bx - ax, sz = bz - az, den = dx * sz - dz * sx;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((ax - ex) * sz - (az - ez) * sx) / den, s = ((ax - ex) * dz - (az - ez) * dx) / den;
+    if (t > 1e-6 && s >= 0 && s < 1) ts.push(t);
+  }
+  return ts.sort((a, b) => a - b);
+}
+let _obst = null;
+function _obstacles() {
+  return _obst || (_obst = [
+    ...CONTEXT_BLOCKS.map(b => ({ poly: [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]], h: LEVELS.groundH + (b.floors - 1) * LEVELS.typicalH })),
+    ...Object.keys(BUILDINGS).map(id => ({ poly: footprintOf(id).map(([x, z]) => localToWorld(id, x, z)), h: ROOF_Y })),
+  ]);
+}
+const VIEW_DEG2 = 70 * 43.75;                   // the reference outlook (70° wide, 16:10), in square degrees
+function _lakeFrom(ex, ez, h, normal) {         // → { share, span } seen from one eye point looking along `normal` (bearing)
+  const L = PRICING.lake; let solid = 0, span = 0;
+  if (h <= L.screenH) return { share: 0, span: 0 };
+  const [cx, cz] = LAKE.island.center, ir = LAKE.island.r, D = 180 / Math.PI;
+  for (let d = -60; d <= 60; d++) {
+    const [dx, dz] = dirOfBearing(normal + d);
+    const w = _hits(LAKE.shore, ex, ez, dx, dz); if (w.length < 2) continue;
+    let dmin = (w[0] - L.screenSetback) * h / (h - L.screenH);                     // sight line over the shore belt
+    for (const o of _obstacles()) {
+      const t = _hits(o.poly, ex, ez, dx, dz); if (!t.length || t[0] > w[0]) continue;
+      dmin = Math.max(dmin, h > o.h ? t[t.length - 1] * h / (h - o.h) : Infinity);  // sight line over a building
+    }
+    const px = cx - ex, pz = cz - ez, tc = px * dx + pz * dz, q = ir * ir - (px * px + pz * pz - tc * tc);
+    let v = 0;
+    for (let i = 0; i + 1 < w.length; i += 2) {
+      const a = Math.max(w[i], dmin), b = w[i + 1]; if (b <= a) continue;
+      const segs = q > 0 ? [[a, Math.min(b, tc - Math.sqrt(q))], [Math.max(a, tc + Math.sqrt(q)), b]] : [[a, b]];
+      for (const [p, r] of segs) if (r > p) v += (Math.atan(h / p) - Math.atan(h / r)) * D;   // vertical angle of water
+    }
+    if (v > 0.1) span++;
+    solid += v * (Math.abs(d) <= 10 ? 1 : Math.abs(d) <= 35 ? 2 / 3 : 1 / 3);
+  }
+  return { share: solid / VIEW_DEG2, span };
+}
+// → { view: 'direct' | 'partial' | 'none', share, span } for a unit
+export function lakeViewOf(u) {
+  const L = PRICING.lake, h = floorY(u.floor) + L.eye;
+  let best = _lakeFrom(...unitToWorld(u, u.width / 2, u.depth + GEOM.balconyDepth * 0.55), h, u.azimuth);
+  // corner unit at the SSW end of a bar: its gable (building-local −x, world bearing of that axis) looks at the lake
+  const f = u.frame, x0 = Math.min(f.o[0], f.o[0] + f.U[0] * u.width);
+  if ((u.seg === 'S1' || u.seg === 'S2') && x0 < 0.5) {
+    const g = _lakeFrom(...localToWorld(u.building, -0.9, f.o[1] + f.V[1] * u.depth / 2), h, bearingOf(...worldDir(u.building, [-1, 0])));
+    if (g.share > best.share) best = g;
+  }
+  const view = best.share >= L.direct && best.span >= L.directSpan ? 'direct' : best.share >= L.partial ? 'partial' : 'none';
+  return { view, share: +best.share.toFixed(4), span: best.span };
+}
+
+// ---------- The single price function ----------
+// → { base, floorPct, viewPct, sidePct, pct, view, side, rate (€/m², exact), area (m²), price (€, rounded to roundTo) }
+// Reads u.view / u.side when already set (build() stores them on every unit), otherwise works them out.
+export function priceOf(u) {
+  const P = PRICING;
+  const view = u.view || lakeViewOf(u).view;
+  const side = u.side || (P.courtyardSegs.includes(u.seg) ? 'courtyard' : 'street');
+  const floorPct = P.floor[u.floor] ?? 0, viewPct = P.view[view] ?? 0, sidePct = P.orientation[side] ?? 0;
+  const pct = floorPct + viewPct + sidePct;
+  const rate = Math.round(P.base * (100 + pct)) / 100;        // exact to the cent (percentages are added, then applied once)
+  const area = TYPES[u.type].total;
+  const price = Math.round(area * rate / P.roundTo) * P.roundTo;   // rounded to the nearest €50
+  return { base: P.base, floorPct, viewPct, sidePct, pct, view, side, rate, area, price };
+}
 
 export const UNITS = [];
 export const BLOCKS = [];      // non-residential blocks (ground-floor amenity / parking / storage / lobby, the corner stair cell)
@@ -318,8 +429,10 @@ export const BLOCKS = [];      // non-residential blocks (ground-floor amenity /
       out.units.forEach((u, i) => {
         u.index = i + 1; u.apNo = apNo++;
         u.id = `${bId}-${floor === 0 ? 'P' : floor}-${String(u.index).padStart(2, '0')}`;
-        const T = TYPES[u.type];
-        u.price = Math.round(T.total * PRICE_PER_M2 * FLOOR_FACTOR(floor) * FACING_FACTOR[u.facing]);
+        const lv = lakeViewOf(u);
+        u.view = lv.view; u.lakeShare = lv.share;                                   // 'direct' | 'partial' | 'none'
+        u.side = PRICING.courtyardSegs.includes(u.seg) ? 'courtyard' : 'street';
+        const pr = priceOf(u); u.rate = pr.rate; u.price = pr.price;                // the only place a price is set
         u.status = 'available';
         UNITS.push(u);
       });
@@ -338,3 +451,10 @@ export function unitToWorld(unit, uu, vv) { const [x, z] = unitToLocal(unit, uu,
 // Yaw (radians, three.js rotation.y) that maps unit-local axes (x=u, z=v) onto building-local axes
 export function unitYaw(unit) { const [vx, vz] = unit.frame.V; return Math.atan2(vx, vz); }
 export function money(n) { return '€' + Math.round(n).toLocaleString('en-US'); }
+// €/m² rates can end in .50 (2,250 × 1.07 = 2,407.50) — shown exactly, without decimals when whole
+export function moneyRate(n) { return '€' + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); }
+// Price list summary for "from …" figures and filter bounds
+export const PRICE_STATS = (() => {
+  const ps = UNITS.map(u => u.price), rs = UNITS.map(u => u.rate);
+  return { min: Math.min(...ps), max: Math.max(...ps), rateMin: Math.min(...rs), rateMax: Math.max(...rs) };
+})();

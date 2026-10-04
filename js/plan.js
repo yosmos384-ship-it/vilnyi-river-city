@@ -2,7 +2,7 @@
 // same orientation as the permit CAD plans: bar horizontal, wing at the right — C3's wing up, C4's (mirror image) down.
 // The north arrow points to true north.
 import { UNITS, TYPES, GEOM, BUILDINGS, LAKE, TOP_FLOOR, COMPASS,
-  unitsOn, blocksOn, unitToLocal, localToWorld, money, PRICE_PER_M2, footprintOf, corridorsOf, coresOf, isMirrored } from './data.js';
+  unitsOn, blocksOn, unitToLocal, localToWorld, money, moneyRate, footprintOf, corridorsOf, coresOf, isMirrored } from './data.js';
 import { t } from './i18n.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -213,7 +213,7 @@ export function createPlan(host, opts = {}) {
 
   function ariaFor(u, st) {
     const T = TYPES[u.type];
-    return `${u.building} ${u.id.split('-').slice(1).join('-')} · ${u.rooms === 1 ? t('rooms.1') : t('rooms.n', { n: u.rooms })} · ${fmtArea(T.total)} m² · ${money(u.price)} · ${t('face.' + u.facing)} · ${t('status.' + st)}`;
+    return `${u.building} ${u.id.split('-').slice(1).join('-')} · ${u.rooms === 1 ? t('rooms.1') : t('rooms.n', { n: u.rooms })} · ${fmtArea(T.total)} m² · ${money(u.price)} · ${t('face.' + u.facing)}${u.view !== 'none' ? ' · ' + t('lake.' + u.view) : ''} · ${t('status.' + st)}`;
   }
 
   function applyMatches() {
@@ -229,7 +229,7 @@ export function createPlan(host, opts = {}) {
     card.innerHTML = `<div class="pc-top"><span class="pc-id">${u.building} · ${u.floor === 0 ? t('unit.ground') : t('unit.floor', { n: u.floor })} · #${String(u.index).padStart(2, '0')}</span><span class="pc-st ${statusClass(st)}">${t('status.' + st)}</span></div>
       <div class="pc-rooms"><i class="dot r${u.rooms}"></i>${u.rooms === 1 ? t('rooms.1') : t('rooms.n', { n: u.rooms })}${T.duplex ? ' · ' + t('rooms.duplex') : ''}</div>
       <div class="pc-price" dir="ltr">${money(u.price)}</div>
-      <div class="pc-meta"><span dir="ltr">${fmtArea(T.total)} m²</span><span dir="ltr">${money(PRICE_PER_M2)}/m²</span><span>${t('face.' + u.facing)}</span></div>`;
+      <div class="pc-meta"><span dir="ltr">${fmtArea(T.total)} m²</span><span dir="ltr">${moneyRate(u.rate)}/m²</span><span>${t('face.' + u.facing)}</span>${u.view !== 'none' ? `<span class="pc-lk">${t('lake.' + u.view)}</span>` : ''}</div>`;
     card.hidden = false;
     const hr = host.getBoundingClientRect(); const cw = card.offsetWidth, ch = card.offsetHeight;
     let x = clientX - hr.left + 16, y = clientY - hr.top + 16;

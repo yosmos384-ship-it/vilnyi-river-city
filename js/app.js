@@ -1,6 +1,6 @@
 // VILNYI RIVER CITY — app shell: wires i18n, sections, finder (plan/list/filters), unit panel, booking,
 // hero 3D (lazy) and the walkthrough overlay (lazy import of ./three/walk.js).
-import { PROJECT, TYPES, UNITS, LEVELS, TOP_FLOOR, ROOF_Y, BUILDINGS, CONTEXT_BLOCKS, LAKE, FOOTPRINT, PRICE_PER_M2,
+import { PROJECT, TYPES, UNITS, LEVELS, TOP_FLOOR, ROOF_Y, BUILDINGS, CONTEXT_BLOCKS, LAKE, FOOTPRINT, PRICING, PRICE_STATS, priceOf, moneyRate,
   floorY, unitsOn, unitById, localToWorld, money, footprintOf } from './data.js';
 import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, applyDom, i18nApi, LANGS, langInfo, unitLabelL } from './i18n.js';
 import { createPlan, keyPlanSVG, statusClass } from './plan.js';
@@ -21,7 +21,7 @@ const area = n => n.toFixed(2).replace(/\.00$/, '');
 const reserved = new Set();
 const S = {
   b: 'C3', f: 5, view: 'plan', sort: 'price', limit: 30,
-  flt: { rooms: '', facing: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR },
+  flt: { rooms: '', facing: '', view: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR },
   styleId: lsGet('vrc.style', 'milano'),
   unit: null, calcPlan: 'standard', timeMode: 'dusk',
 };
@@ -38,11 +38,25 @@ const ICON = {
   kinder: '<path d="M4 20V10l8-6 8 6v10zM9.5 20v-5h5v5M12 8.3v.2"/><circle cx="12" cy="11" r="1.2"/>',
   lake: '<path d="M3 17c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M3 20.5c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M12 14V4M12 4c-1 1.5-1.2 3-.6 4.5M12 4c1 1.5 1.2 3 .6 4.5"/>',
 };
+// Figures quoted in the pricing texts — all read from data.js PRICING / the generated price list, nothing typed in here.
+const ltr = x => '\u2066' + x + '\u2069';   // keep "+6%" / "€2,250" left-to-right inside Hebrew text
+const pct = n => ltr((n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n) + '%');
+function priceVars() {
+  const fl = Object.values(PRICING.floor);
+  return { v: ltr(money(PRICING.base)), f0: pct(Math.min(...fl)), f1: pct(Math.max(...fl)), lp: pct(PRICING.view.partial), ld: pct(PRICING.view.direct),
+    c: pct(PRICING.orientation.courtyard), min: ltr(money(PRICE_STATS.min)), max: ltr(money(PRICE_STATS.max)) };
+}
+// "Base €2,250 · Floor +6% · Direct lake view +10% · Courtyard side +2%" for one unit
+function breakdownText(u) {
+  const b = priceOf(u);
+  return [`${t('pr.base')} ${ltr(money(b.base))}`, `${t('pr.floor')} ${pct(b.floorPct)}`, `${t('lake.' + b.view)} ${pct(b.viewPct)}`, `${t('side.' + b.side)} ${pct(b.sidePct)}`].join(' · ');
+}
+const lakeBadge = u => (u.view === 'none' ? '' : `<span class="lk lk-${u.view}" title="${esc(t('lake.' + u.view))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 14c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M3 18.5c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M12 10V4M9.5 6.5L12 4l2.5 2.5"/></svg>${esc(t('lake.' + u.view))}</span>`);
 function renderStatic() {
   const P = PROJECT.permit;
   $('#heroStats').innerHTML = [
     [P.totalApartments, 'hero.stat.units'], [P.parkingPlaces, 'hero.stat.parking'],
-    [PROJECT.deliveryMonths, 'hero.stat.delivery'], [money(PRICE_PER_M2), 'hero.stat.price'],
+    [PROJECT.deliveryMonths, 'hero.stat.delivery'], [money(PRICING.base), 'hero.stat.price'],
   ].map(([v, k]) => `<div class="stat"><b dir="ltr">${v}</b><span>${esc(t(k))}</span></div>`).join('');
 
   $('#amenities').innerHTML = [
@@ -51,7 +65,7 @@ function renderStatic() {
 
   const T = PROJECT.terms;
   $('#termsGrid').innerHTML = [
-    ['terms.price', t('terms.priceD', { v: money(PRICE_PER_M2) }), money(PRICE_PER_M2) + '<small>/m²</small>'],
+    ['terms.price', t('terms.priceD', priceVars()), money(PRICING.base) + '<small>/m²</small>'],
     ['terms.depositT', t('terms.depositD', { v: money(T.reservationDeposit) }), money(T.reservationDeposit)],
     ['terms.guarantee', t('terms.guaranteeD', { p: T.rentGuarantee.minYield, y: T.rentGuarantee.years }), `${T.rentGuarantee.minYield}%<small>× ${T.rentGuarantee.years}</small>`],
     ['terms.delivery', t('terms.deliveryD', { n: PROJECT.deliveryMonths }), `${PROJECT.deliveryMonths}<small>${esc(t('terms.mo'))}</small>`],
@@ -160,12 +174,14 @@ function matches(u, withFloors = false) {
   const F = S.flt;
   if (F.rooms && (F.rooms === '4' ? u.rooms < 4 : u.rooms !== +F.rooms)) return false;
   if (F.facing && u.facing !== F.facing) return false;
+  if (F.view === 'lake' && u.view === 'none') return false;
+  if (F.view === 'courtyard' && u.side !== 'courtyard') return false;
   if (F.pmin && u.price < F.pmin) return false;
   if (F.pmax && u.price > F.pmax) return false;
   if (withFloors && (u.floor < F.fmin || u.floor > F.fmax)) return false;
   return true;
 }
-function activeFilters() { const F = S.flt; return [F.rooms, F.facing, F.pmin, F.pmax, F.fmin > 0 || F.fmax < TOP_FLOOR].filter(Boolean).length; }
+function activeFilters() { const F = S.flt; return [F.rooms, F.facing, F.view, F.pmin, F.pmax, F.fmin > 0 || F.fmax < TOP_FLOOR].filter(Boolean).length; }
 
 function renderFilters() {
   const F = S.flt; const steps = priceSteps();
@@ -175,6 +191,7 @@ function renderFilters() {
   $('#filters').innerHTML = `
     <fieldset class="fg"><legend>${esc(t('finder.rooms'))}</legend><div class="chips">${chip('rooms', '', t('finder.any'), F.rooms)}${['1', '2', '3', '4'].map(r => chip('rooms', r, r === '4' ? '4' : r, F.rooms)).join('')}</div></fieldset>
     <fieldset class="fg"><legend>${esc(t('finder.facing'))}</legend><div class="chips">${chip('facing', '', t('finder.any'), F.facing)}${['N', 'E', 'S', 'W'].map(c => chip('facing', c, t('face.' + c), F.facing)).join('')}</div></fieldset>
+    <fieldset class="fg"><legend>${esc(t('finder.view'))}</legend><div class="chips">${chip('view', '', t('finder.any'), F.view)}${chip('view', 'lake', t('finder.view.lake'), F.view)}${chip('view', 'courtyard', t('side.courtyard'), F.view)}</div></fieldset>
     <fieldset class="fg"><legend>${esc(t('finder.price'))}</legend><div class="sel2">
       <select name="pmin" aria-label="${esc(t('finder.minPrice'))}">${opt(0, t('finder.minPrice'), F.pmin)}${steps.slice(0, -1).map(v => opt(v, money(v), F.pmin)).join('')}</select>
       <span aria-hidden="true">–</span>
@@ -192,7 +209,7 @@ function bindFilters() {
   form.addEventListener('submit', e => e.preventDefault());
   form.addEventListener('change', e => {
     const el = e.target; const F = S.flt;
-    if (el.name === 'rooms') F.rooms = el.value; else if (el.name === 'facing') F.facing = el.value;
+    if (el.name === 'rooms') F.rooms = el.value; else if (el.name === 'facing') F.facing = el.value; else if (el.name === 'view') F.view = el.value;
     else if (el.name in F) F[el.name] = +el.value;
     if (F.fmin > F.fmax) [F.fmin, F.fmax] = [F.fmax, F.fmin];
     if (F.pmin && F.pmax && F.pmin > F.pmax) [F.pmin, F.pmax] = [F.pmax, F.pmin];
@@ -201,7 +218,7 @@ function bindFilters() {
   });
   form.addEventListener('click', e => {
     if (e.target.id !== 'fltReset') return;
-    S.flt = { rooms: '', facing: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR }; renderFilters(); afterFilter();
+    S.flt = { rooms: '', facing: '', view: '', pmin: 0, pmax: 0, fmin: 0, fmax: TOP_FLOOR }; renderFilters(); afterFilter();
   });
   $('#filtBtn').addEventListener('click', () => {
     const open = !form.classList.contains('open'); form.classList.toggle('open', open); $('#filtBtn').setAttribute('aria-expanded', open);
@@ -313,8 +330,8 @@ function renderList() {
       <span class="ls-id"><i class="dot r${u.rooms}"></i><b dir="ltr">${u.building}-${u.floor === 0 ? 'P' : u.floor}-${String(u.index).padStart(2, '0')}</b><small>${esc(floorText(u.floor))}</small></span>
       <span class="ls-r">${esc(roomsText(u.rooms))}${T.duplex ? ' · ' + esc(t('rooms.duplex')) : ''}</span>
       <span class="ls-a" dir="ltr">${area(T.total)} m²</span>
-      <span class="ls-f">${esc(t('face.' + u.facing))}</span>
-      <span class="ls-p" dir="ltr">${money(u.price)}</span>
+      <span class="ls-f">${esc(t('face.' + u.facing))}${lakeBadge(u)}</span>
+      <span class="ls-p" dir="ltr">${money(u.price)}<small>${moneyRate(u.rate)}/m²</small></span>
       <span class="ls-s">${esc(t('status.' + st))}</span></button></li>`; }).join('')}</ul>` +
       (rows.length > S.limit ? `<button type="button" class="btn ghost wide" id="lsMore">${esc(t('finder.more'))} (${rows.length - S.limit})</button>` : '')
       : `<p class="empty">${esc(t('finder.noResults'))}</p>`);
@@ -352,6 +369,8 @@ function roomName(r) {
 }
 function viewText(u) {
   const parts = [t('view.' + u.facing)];
+  if (u.view !== 'none') parts.push(t('view.lake.' + u.view));
+  parts.push(t('view.side.' + u.side));
   if (u.floor === TOP_FLOOR) parts.push(t('view.top')); else if (u.floor >= 6) parts.push(t('view.high')); else if (u.floor <= 2) parts.push(t('view.low'));
   return parts.join(' ');
 }
@@ -393,7 +412,7 @@ function renderUnit() {
     </header>
     <div class="sh-body">
       <div class="sh-price">
-        <div><p class="k">${esc(t('unit.price'))}</p><p class="price" dir="ltr">${money(u.price)}</p><p class="ppm"><b dir="ltr">${money(PRICE_PER_M2)}</b> ${esc(t('unit.perM2'))}</p><p class="ppm-note">${esc(t('unit.perM2Note', { p: money(PRICE_PER_M2) }))}</p></div>
+        <div><p class="k">${esc(t('unit.price'))}</p><p class="price" dir="ltr">${money(u.price)}</p><p class="ppm"><b dir="ltr">${moneyRate(u.rate)}</b> ${esc(t('unit.perM2'))}</p><p class="ppm-bd" id="ud-bd">${esc(breakdownText(u))}</p><p class="ppm-note">${esc(t('unit.perM2Note'))}</p>${lakeBadge(u)}</div>
         <span class="pill ${statusClass(st)}">${esc(t('status.' + st))}</span>
       </div>
       <div class="sh-key">${keyPlanSVG(u)}

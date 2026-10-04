@@ -1,7 +1,7 @@
 // Reserve flow (modal): 1 details → 2 payment plan → 3 deposit instructions → 4 confirmation.
 // Persistence order: artifact runtime db → PROJECT.leadsEndpoint (POST) → localStorage + copyable summary.
 // Never invents bank data: if PROJECT.bank is empty, a clear "details come from your advisor" notice is shown.
-import { PROJECT, TYPES, PRICE_PER_M2, money } from './data.js';
+import { PROJECT, TYPES, money, moneyRate } from './data.js';
 import { t, pick, planText, lang, onLangChange, LANG_CODES, unitLabelL } from './i18n.js';
 
 // ---------- small utils shared with app.js ----------
@@ -201,7 +201,7 @@ function summaryText() {
     `${t('bk.resNo')}: ${S.result?.resNo || ''}`,
     `${t('bk.unit')}: ${unitLabelL(u)} (${u.id})`,
     `${u.rooms === 1 ? t('rooms.1') : t('rooms.n', { n: u.rooms })} · ${T.total.toFixed(2)} m² · ${t('face.' + u.facing)}`,
-    `${t('bk.price')}: ${money(u.price)} (${money(PRICE_PER_M2)}/m²)`,
+    `${t('bk.price')}: ${money(u.price)} (${moneyRate(u.rate)}/m²)`,
     `${t('bk.planChosen')}: ${plan ? planText(plan) : ''}`,
     `${t('calc.deposit')}: ${money(PROJECT.terms.reservationDeposit)} · ${t('bk.reference')}: ${payRef()}`,
     `${t('bk.name')}: ${f.name}`,
