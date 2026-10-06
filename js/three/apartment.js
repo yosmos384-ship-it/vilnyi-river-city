@@ -4,10 +4,10 @@
 // Everything static is baked (merged by material) → roughly one draw call per material. Collisions use invisible boxes.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TYPES, GEOM, LEVELS } from '../data.js';
-import { getMaterials, tickTv } from './materials.js';
-import { F, FX } from './furniture.js';
-import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js';
+import { TYPES, GEOM, LEVELS } from '../data.js?v=3.5.1';
+import { getMaterials, tickTv } from './materials.js?v=3.5.1';
+import { F, FX } from './furniture.js?v=3.5.1';
+import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js?v=3.5.1';
 
 const CH = LEVELS.ceiling;            // clear ceiling height 2.7
 const LH = LEVELS.typicalH;           // storey height 3.0 (duplex upper floor at y = 3.0)
@@ -2189,4 +2189,4 @@ function cameraViews(ctx, P) {
 
 export function buildApartment(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, opts); }
 export function buildApartmentCutaway(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, { ...opts, cutaway: true }); }
-export { STYLES } from './materials.js';
+export { STYLES } from './materials.js?v=3.5.1';

@@ -1,6 +1,6 @@
 // VILNYI Lifestyle casino — baccarat (punto banco) engine: 8 decks, the full third-card tableau, Player 1:1,
 // Banker 0.95:1 (5 % commission), Tie 8:1; a tie pushes the Player and Banker bets. Pure logic, money in integer cents.
-import { Shoe, rankOf } from './rng.js';
+import { Shoe, rankOf } from './rng.js?v=3.5.1';
 
 export const RULES = Object.freeze({ decks: 8, minBet: 500, maxBet: 100000, betStep: 100, tiePays: 8, commission: 0.05, cutFromEnd: 16 });
 export const pointOf = (c) => { const r = rankOf(c); return r >= 9 ? 0 : r + 1; };       // A = 1, 2…9, 10/J/Q/K = 0

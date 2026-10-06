@@ -7,9 +7,9 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
-} from '../data.js';
-import { I18N } from '../i18n.js';
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js';
+} from '../data.js?v=3.5.1';
+import { I18N } from '../i18n.js?v=3.5.1';
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.5.1';
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -247,8 +247,8 @@ async function loadModules(injected = {}) {
     try { out[key] = await import(path); } catch (e) { console.warn(`[walk] ${path} unavailable — continuing without it`, e); out[key] = null; }
   };
   await Promise.all([
-    tryImport('environment', './environment.js'), tryImport('exterior', './exterior.js'),
-    tryImport('apartment', './apartment.js'), tryImport('commons', './commons.js'), tryImport('materials', './materials.js'),
+    tryImport('environment', './environment.js?v=3.5.1'), tryImport('exterior', './exterior.js?v=3.5.1'),
+    tryImport('apartment', './apartment.js?v=3.5.1'), tryImport('commons', './commons.js?v=3.5.1'), tryImport('materials', './materials.js?v=3.5.1'),
   ]);
   return out;
 }
@@ -1964,7 +1964,7 @@ export class Walkthrough {
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
-        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js');
+        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.5.1');
         const reg = window.VRC_PANO;
         if (reg && reg.ready && typeof reg.ready.then === 'function') await reg.ready;
       } catch (e) { console.info('[walk] photoreal tour not deployed yet', e && e.message); this._panoFailed = true; }
@@ -1975,7 +1975,7 @@ export class Walkthrough {
   // The pano manifest (same file pano-tour.js reads) — fetched only once a type/style is known to exist.
   async _panoManifest() {
     if (!this._panoMan) {
-      const url = new URL('../../assets/pano/index.json', import.meta.url);
+      const url = new URL('../../assets/pano/index.json?v=3.5.1', import.meta.url);
       this._panoMan = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return this._panoMan;
@@ -2010,7 +2010,7 @@ export class Walkthrough {
     this._panoBusy = true;
     let mod = this.mods.panoTour;
     try {
-      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js');
+      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.5.1');
     } catch (e) {
       console.warn('[walk] pano-tour.js unavailable', e);
       this._panoFailed = true; this._panoBusy = false; this._renderModes(); this._soonTip(); return;
@@ -4707,7 +4707,7 @@ Object.assign(Walkthrough.prototype, {
       if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
       this._yachtP = (async () => {
         await this._ready; await (this._worldP || this._streamWorld());
-        const mod = await import('./yacht.js');
+        const mod = await import('./yacht.js?v=3.5.1');
         if (this.disposed) return null;
         return (this.yacht = mod.createYacht(this));
       })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
@@ -4756,7 +4756,7 @@ Object.assign(Walkthrough.prototype, {
   async _initLimo() {
     if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
     try {
-      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js'));
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.5.1'));
       if (this.disposed || this.limo) return;
       this.limo = new mod.LimoExperience(this);
       (window.VRC = window.VRC || {}).PIER = mod.PIER;

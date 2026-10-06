@@ -1,7 +1,7 @@
 // Live 3D complex for the hero and the finder "live view". One renderer/scene is shared: the canvas moves into
 // whichever host (hero or finder) is on screen, so a phone only ever holds one WebGL context for this.
 // If three.js or Agent B's modules are missing/fail, it reports failure and the page keeps its static imagery.
-import { BUILDINGS, TOP_FLOOR, floorY, localToWorld, footprintOf } from './data.js';
+import { BUILDINGS, TOP_FLOOR, floorY, localToWorld, footprintOf } from './data.js?v=3.5.1';
 
 const TAU = Math.PI * 2;
 
@@ -64,7 +64,7 @@ export function createHero3D({ heroHost, finderHost, onFloor = () => {}, onState
     try {
       if (!window.WebGLRenderingContext) throw new Error('no webgl');
       THREE = await import('three');
-      const [envMod, extMod] = await Promise.all([import('./three/environment.js'), import('./three/exterior.js')]);
+      const [envMod, extMod] = await Promise.all([import('./three/environment.js?v=3.5.1'), import('./three/exterior.js?v=3.5.1')]);
       exteriorMod = extMod;
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: false });
       if (!renderer.getContext()) throw new Error('webgl context');

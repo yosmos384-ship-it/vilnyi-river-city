@@ -1,6 +1,6 @@
 // VILNYI Lifestyle casino — cards and chips as two dynamic batches (one draw call each, whatever is on the felt).
 import * as THREE from 'three';
-import { cardUV, CHIP_VALUES } from './art.js';
+import { cardUV, CHIP_VALUES } from './art.js?v=3.5.1';
 
 export const CARD_W = 0.084, CARD_H = 0.117;       // slightly oversize "jumbo index" cards: readable on a phone
 export const CHIP_R = 0.0205, CHIP_T = 0.0044;

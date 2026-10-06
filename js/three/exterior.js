@@ -6,8 +6,8 @@ import * as THREE from 'three';
 import {
   BUILDINGS, UNITS, BLOCKS, TYPES, GEOM, LEVELS, TOP_FLOOR, ROOF_Y,
   floorY, localToWorld, unitsOn, blocksOn, footprintOf, coresOf, corridorsOf, isMirrored,
-} from '../data.js';
-import { SHARED, registerMaterial } from './environment.js';
+} from '../data.js?v=3.5.1';
+import { SHARED, registerMaterial } from './environment.js?v=3.5.1';
 
 const B_IDS = Object.keys(BUILDINGS);
 const ROOF_BAND = 12;                                  // roof / crown: never hidden

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASINO_I18N, CT, LANGS } from '../i18n.js';
+import { CASINO_I18N, CT, LANGS } from '../i18n.js?v=3.5.1';
 
 test('all 8 languages carry every key, non-empty; the play-money notice is in each', () => {
   assert.deepEqual([...LANGS].sort(), ['de', 'en', 'fr', 'he', 'it', 'ro', 'ru', 'uk']);

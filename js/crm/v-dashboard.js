@@ -1,10 +1,10 @@
 // Dashboard: KPIs, inventory, lead flow, cash-flow, funnel, upcoming tasks & instalments, recent activity.
-import { UNITS, PROJECT } from '../data.js';
-import { tc } from './i18n-crm.js';
-import { entries, unitState, dealFinance, activeDeals, STAGES, clientName, get, all } from './store.js';
-import { esc, eur, nf, fmtDate, relDays, today, icon, addDays } from './util.js';
-import { pageHead, kpi, empty } from './ui.js';
-import { columns, stackRows, hbars, legend, bindTips, STATUS_COLORS, SERIES } from './charts.js';
+import { UNITS, PROJECT } from '../data.js?v=3.5.1';
+import { tc } from './i18n-crm.js?v=3.5.1';
+import { entries, unitState, dealFinance, activeDeals, STAGES, clientName, get, all } from './store.js?v=3.5.1';
+import { esc, eur, nf, fmtDate, relDays, today, icon, addDays } from './util.js?v=3.5.1';
+import { pageHead, kpi, empty } from './ui.js?v=3.5.1';
+import { columns, stackRows, hbars, legend, bindTips, STATUS_COLORS, SERIES } from './charts.js?v=3.5.1';
 
 export function render(root) {
   const counts = { C3: { available: 0, reserved: 0, sold: 0, blocked: 0 }, C4: { available: 0, reserved: 0, sold: 0, blocked: 0 } };

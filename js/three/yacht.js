@@ -4,19 +4,19 @@
 // yacht is under way; the pier is the same frame frozen at the docked pose ("dock frame"). Collisions and floors are
 // analytic (yacht-kit.js World); taps are ray-picks against the visible zones' targets.
 import * as THREE from 'three';
-import { PIER, DOCK, Y, WATER_Y } from './yacht-pier.js';
-import { World, shellMaterials, buildMovers, bake } from './yacht-kit.js';
-import { buildShell, buildStatics, LOBBY, DECKS } from './yacht-hull.js';
-import { ZONES, makeCtx, addDeckZones, ROOM_U, makeDrink } from './yacht-rooms.js';
-import { NAV_SHORE, LOOP, clearance } from './yacht-nav.js';
+import { PIER, DOCK, Y, WATER_Y } from './yacht-pier.js?v=3.5.1';
+import { World, shellMaterials, buildMovers, bake } from './yacht-kit.js?v=3.5.1';
+import { buildShell, buildStatics, LOBBY, DECKS } from './yacht-hull.js?v=3.5.1';
+import { ZONES, makeCtx, addDeckZones, ROOM_U, makeDrink } from './yacht-rooms.js?v=3.5.1';
+import { NAV_SHORE, LOOP, clearance } from './yacht-nav.js?v=3.5.1';
 addDeckZones();
-import { YT, SPEECH_LANG } from './yacht-i18n.js';
-import { getMaterials } from './materials.js';
-import { createHelm } from './yacht-helm.js';
-import { createPeople } from './yacht-people.js';
-import { createAudio } from './yacht-audio.js';
-import { discoTick } from './yacht-disco.js';
-import { createHeli } from './yacht-heli.js';
+import { YT, SPEECH_LANG } from './yacht-i18n.js?v=3.5.1';
+import { getMaterials } from './materials.js?v=3.5.1';
+import { createHelm } from './yacht-helm.js?v=3.5.1';
+import { createPeople } from './yacht-people.js?v=3.5.1';
+import { createAudio } from './yacht-audio.js?v=3.5.1';
+import { discoTick } from './yacht-disco.js?v=3.5.1';
+import { createHeli } from './yacht-heli.js?v=3.5.1';
 
 const EYE = 1.62, R = 0.28, SPEED = 1.4, RUN = 2.6, HALF = Math.PI / 2;
 const damp = (k, dt) => 1 - Math.exp(-k * dt);

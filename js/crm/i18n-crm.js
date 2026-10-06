@@ -1,6 +1,6 @@
 // CRM strings in the 8 site languages. tc(key, vars) = current UI language; tcL(lang, key, vars) = a given language
 // (documents and emails use the CLIENT's language, not the operator's). Fallback: language → site i18n alias → English.
-import { lang, I18N, LANGS } from '../i18n.js';
+import { lang, I18N, LANGS } from '../i18n.js?v=3.5.1';
 
 export const CRM = {};
 
