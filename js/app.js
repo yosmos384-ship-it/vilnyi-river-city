@@ -39,24 +39,29 @@ const ICON = {
   lake: '<path d="M3 17c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M3 20.5c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M12 14V4M12 4c-1 1.5-1.2 3-.6 4.5M12 4c1 1.5 1.2 3 .6 4.5"/>',
 };
 // Figures quoted in the pricing texts — all read from data.js PRICING / the generated price list, nothing typed in here.
-const ltr = x => '\u2066' + x + '\u2069';   // keep "+6%" / "€2,250" left-to-right inside Hebrew text
+const ltr = x => '\u2066' + x + '\u2069';   // keep "+6%" / "€2,700" left-to-right inside Hebrew text
 const pct = n => ltr((n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n) + '%');
 function priceVars() {
-  const fl = Object.values(PRICING.floor);
-  return { v: ltr(money(PRICING.base)), f0: pct(Math.min(...fl)), f1: pct(Math.max(...fl)), lp: pct(PRICING.view.partial), ld: pct(PRICING.view.direct),
-    c: pct(PRICING.orientation.courtyard), min: ltr(money(PRICE_STATS.min)), max: ltr(money(PRICE_STATS.max)) };
+  const R = PRICING.rooms;
+  return { r1: ltr(money(R[1])), r2: ltr(money(R[2])), r3: ltr(money(R[PRICING.roomsUp])), min: ltr(money(PRICE_STATS.min)), max: ltr(money(PRICE_STATS.max)) };
 }
-// "Base €2,250 · Floor +6% · Direct lake view +10% · Courtyard side +2%" for one unit
+const rateFrom = () => Math.min(...Object.values(PRICING.rooms));
+// "2 rooms · €2,700/m² × 57.79 m²" for one unit; a floor / view / side adjustment is appended only when it is not zero
+// (all three are switched off in data.js PRICING since v3.5).
 function breakdownText(u) {
   const b = priceOf(u);
-  return [`${t('pr.base')} ${ltr(money(b.base))}`, `${t('pr.floor')} ${pct(b.floorPct)}`, `${t('lake.' + b.view)} ${pct(b.viewPct)}`, `${t('side.' + b.side)} ${pct(b.sidePct)}`].join(' · ');
+  const parts = [roomsText(b.rooms), ltr(`${money(b.base)}/m² × ${area(b.area)} m²`)];
+  if (b.floorPct) parts.push(`${t('pr.floor')} ${pct(b.floorPct)}`);
+  if (b.viewPct) parts.push(`${t('lake.' + b.view)} ${pct(b.viewPct)}`);
+  if (b.sidePct) parts.push(`${t('side.' + b.side)} ${pct(b.sidePct)}`);
+  return parts.join(' · ');
 }
 const lakeBadge = u => (u.view === 'none' ? '' : `<span class="lk lk-${u.view}" title="${esc(t('lake.' + u.view))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 14c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M3 18.5c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0M12 10V4M9.5 6.5L12 4l2.5 2.5"/></svg>${esc(t('lake.' + u.view))}</span>`);
 function renderStatic() {
   const P = PROJECT.permit;
   $('#heroStats').innerHTML = [
     [P.totalApartments, 'hero.stat.units'], [P.parkingPlaces, 'hero.stat.parking'],
-    [PROJECT.deliveryMonths, 'hero.stat.delivery'], [money(PRICING.base), 'hero.stat.price'],
+    [PROJECT.deliveryMonths, 'hero.stat.delivery'], [money(rateFrom()), 'hero.stat.price'],
   ].map(([v, k]) => `<div class="stat"><b dir="ltr">${v}</b><span>${esc(t(k))}</span></div>`).join('');
 
   $('#amenities').innerHTML = [
@@ -65,11 +70,11 @@ function renderStatic() {
 
   const T = PROJECT.terms;
   $('#termsGrid').innerHTML = [
-    ['terms.price', t('terms.priceD', priceVars()), money(PRICING.base) + '<small>/m²</small>'],
+    ['terms.price', t('terms.priceD', priceVars()), `<small class="tile-from">${esc(t('pr.from'))}</small><bdi dir="ltr">${money(rateFrom())}<small>/m²</small></bdi>`, 'nat'],
     ['terms.depositT', t('terms.depositD', { v: money(T.reservationDeposit) }), money(T.reservationDeposit)],
     ['terms.guarantee', t('terms.guaranteeD', { p: T.rentGuarantee.minYield, y: T.rentGuarantee.years }), `${T.rentGuarantee.minYield}%<small>× ${T.rentGuarantee.years}</small>`],
     ['terms.delivery', t('terms.deliveryD', { n: PROJECT.deliveryMonths }), `${PROJECT.deliveryMonths}<small>${esc(t('terms.mo'))}</small>`],
-  ].map(([k, d, v]) => `<div class="tile"><p class="tile-k">${esc(t(k))}</p><p class="tile-v" dir="ltr">${v}</p><p class="tile-d">${esc(d)}</p></div>`).join('');
+  ].map(([k, d, v, nat]) => `<div class="tile"><p class="tile-k">${esc(t(k))}</p><p class="tile-v${nat ? ' nat' : ''}" dir="${nat ? dir : 'ltr'}">${v}</p><p class="tile-d">${esc(d)}</p></div>`).join('');
   $('#plansRow').innerHTML = T.plans.map((p, i) => `<article class="plan-card"><span class="pc-idx">0${i + 1}</span><h3 class="h4">${esc(planText(p))}</h3>
       <div class="split" dir="ltr" aria-hidden="true">${p.split[0] ? `<i style="flex:${p.split[0]}"><span>${p.split[0]}%</span></i>` : ''}<i class="b" style="flex:${p.split[1]}"><span>${p.split[1]}%</span></i></div>
       <p>${esc(planText(p, 'desc'))}</p></article>`).join('') +
@@ -937,7 +942,7 @@ function rerenderAll() {
 
 // ---------------------------------------------------------------- boot
 function boot() {
-  setLang(initialLang());
+  setLang(initialLang(), false);   // resolved language (URL → saved choice → visitor's country); not stored as a choice
   plan = createPlan($('#plan'), {
     statusOf, matches: u => matches(u),
     onSelect: u => openUnit(u),

@@ -505,6 +505,10 @@ select:focus, input:focus { outline: none; border-color: var(--gold); background
 .tile-v { margin: 0; font-size: 44px; line-height: 1; color: var(--ivory); text-align: start; }
 [dir="rtl"] .tile-v { text-align: end; }
 .tile-v small { font-size: 17px; color: var(--muted); margin-inline-start: 6px; font-family: var(--f-body); }
+.tile-v.nat, [dir="rtl"] .tile-v.nat { text-align: start; }   /* "from €2,500/m²": label in the page direction, figure LTR */
+.tile-v.nat { white-space: nowrap; }
+.tile-v .tile-from { margin-inline: 0 9px; }
+:lang(he) .tile-v .tile-from { margin-inline-end: 3px; }
 .tile-d { margin: 14px 0 0; font-size: 14px; color: var(--muted); line-height: 1.6; }
 @media (min-width: 700px) { .terms-grid { grid-template-columns: repeat(2, 1fr); } .tile { border-inline-end: 1px solid var(--line); } .tile:nth-child(2n) { border-inline-end: 0; } .tile:nth-last-child(-n+2) { border-bottom: 0; } }
 @media (min-width: 1100px) { .terms-grid { grid-template-columns: repeat(4, 1fr); } .tile { padding: 34px 30px 38px; border-bottom: 0; border-inline-end: 1px solid var(--line); } .tile:nth-child(2n) { border-inline-end: 1px solid var(--line); } .tile:last-child { border-inline-end: 0; } .tile-v { font-size: 54px; } }

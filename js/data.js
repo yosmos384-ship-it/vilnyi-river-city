@@ -306,20 +306,35 @@ function programFor(floor) { return floor === 0 ? PROGRAM.ground : floor === TOP
 // =====================================================================================================================
 // PRICING — the ONE table the owner edits. Every price on the site and in the CRM comes from priceOf() below.
 //
-//   rate  (€/m²) = base × (1 + floor % + view % + orientation %)          e.g. 2,250 × (1 + 6% + 10% + 0%) = 2,610
+//   rate  (€/m²) = rooms[number of rooms] × (1 + floor % + view % + orientation %)
 //   price (€)    = total useful area (incl. balcony / loggia / terrace) × rate, ROUNDED TO THE NEAREST €50 (roundTo)
 //
-// All adjustments are whole or decimal PERCENT of the base and are simply added together (not compounded).
+// v3.5 — OWNER DECISION, 6 Oct 2026: the price per m² depends ONLY on the number of rooms
+//   1 room €3,000 · 2 rooms €2,700 · 3 rooms and more (incl. the 3- and 4-room duplexes) €2,500.
+//   The floor, lake-view and courtyard adjustments are SWITCHED OFF (all 0 below) — the mechanism is kept.
+//   To restore them put the percentages back (v3.4 values, on a single base of €2,250/m²):
+//     floor:       { 0: -5, 1: 0, 2: 0, 3: 0, 4: 2, 5: 4, 6: 6, 7: 8, 8: 10, 9: 14, 10: 18 }
+//     view:        { direct: 10, partial: 5, none: 0 }
+//     orientation: { courtyard: 2, street: 0 }
+// All adjustments are whole or decimal PERCENT of the room-count rate and are simply added together (not compounded).
 // =====================================================================================================================
 export const PRICING = {
-  base: 2250,                 // € per m² of total useful area (suprafață utilă totală)
+  // € per m² of total useful area (suprafață utilă totală) by the type's number of rooms (TYPES[type].rooms: the living
+  // room counts as a room — 1 = studio type 1A, 2 = types 2A–2F and the 2-room duplex D2, 3 = 3A / D3, 4 = D4).
+  // `roomsUp` and above all use the `roomsUp` rate.
+  rooms: { 1: 3000, 2: 2700, 3: 2500 },
+  roomsUp: 3,
   roundTo: 50,                // unit price is rounded to the nearest multiple of this (€)
-  // Floor adjustment, % of base. 0 = ground floor (Parter). 10 = floor 10 incl. the duplexes (both levels at this rate).
-  floor: { 0: -5, 1: 0, 2: 0, 3: 0, 4: 2, 5: 4, 6: 6, 7: 8, 8: 10, 9: 14, 10: 18 },
-  // Lake-view adjustment, % of base. The class of each unit is decided by lakeViewOf() from the real geometry (below).
-  view: { direct: 10, partial: 5, none: 0 },
-  // Orientation adjustment, % of base: the quiet inner courtyard vs. the street / car-park side.
-  orientation: { courtyard: 2, street: 0 },
+  // Floor adjustment, % of the rate. 0 = ground floor (Parter). 10 = floor 10 incl. the duplexes.
+  // SWITCHED OFF by owner decision 6 Oct 2026 (v3.4 was { 0: -5, 1: 0, 2: 0, 3: 0, 4: 2, 5: 4, 6: 6, 7: 8, 8: 10, 9: 14, 10: 18 }).
+  floor: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 },
+  // Lake-view adjustment, % of the rate. The class of each unit is still decided by lakeViewOf() from the real geometry
+  // (below) and shown as a badge / filter — it is information only now.
+  // SWITCHED OFF by owner decision 6 Oct 2026 (v3.4 was { direct: 10, partial: 5, none: 0 }).
+  view: { direct: 0, partial: 0, none: 0 },
+  // Orientation adjustment, % of the rate: the quiet inner courtyard vs. the street / car-park side.
+  // SWITCHED OFF by owner decision 6 Oct 2026 (v3.4 was { courtyard: 2, street: 0 }).
+  orientation: { courtyard: 0, street: 0 },
   // Facade segments that look onto the inner courtyard between C3 and C4 (S1 = the bars' inner long side, S4 = the
   // wing arms' SSW face at the head of the courtyard). Everything else (S2 outer side, S5 north street, S6 wing stub
   // by the entrance forecourt) counts as street / parking.
@@ -346,7 +361,7 @@ export const PRICING = {
 // way a person turns on the balcony (straight ahead ×1, up to 35° aside ×⅔, up to 60° aside ×⅓) — the same measure as
 // the 3D check in dev/shape-check.html (lakeViews), which this model was calibrated against (127 candidate units rendered
 // in the 3D scene, v3.4: r.m.s. difference 0.15 % of the view; screenH / screenSetback are the two fitted numbers).
-// Low floors behind the houses and trees therefore get no premium even when they face the lake.
+// Low floors behind the houses and trees therefore get no lake-view class even when they face the lake.
 function _hits(poly, ex, ez, dx, dz) {          // sorted distances at which a ray crosses a polygon's edges
   const ts = [];
   for (let i = 0; i < poly.length; i++) {
@@ -404,18 +419,21 @@ export function lakeViewOf(u) {
 }
 
 // ---------- The single price function ----------
-// → { base, floorPct, viewPct, sidePct, pct, view, side, rate (€/m², exact), area (m²), price (€, rounded to roundTo) }
+// → { base (€/m² for the unit's room count), rooms, floorPct, viewPct, sidePct, pct, view, side, rate (€/m², exact),
+//     area (m²), price (€, rounded to roundTo) }
 // Reads u.view / u.side when already set (build() stores them on every unit), otherwise works them out.
+export function baseRateOf(rooms) { const P = PRICING; return P.rooms[Math.min(Math.max(rooms, 1), P.roomsUp)]; }
 export function priceOf(u) {
   const P = PRICING;
   const view = u.view || lakeViewOf(u).view;
   const side = u.side || (P.courtyardSegs.includes(u.seg) ? 'courtyard' : 'street');
   const floorPct = P.floor[u.floor] ?? 0, viewPct = P.view[view] ?? 0, sidePct = P.orientation[side] ?? 0;
   const pct = floorPct + viewPct + sidePct;
-  const rate = Math.round(P.base * (100 + pct)) / 100;        // exact to the cent (percentages are added, then applied once)
+  const rooms = TYPES[u.type].rooms, base = baseRateOf(rooms);
+  const rate = Math.round(base * (100 + pct)) / 100;          // exact to the cent (percentages are added, then applied once)
   const area = TYPES[u.type].total;
   const price = Math.round(area * rate / P.roundTo) * P.roundTo;   // rounded to the nearest €50
-  return { base: P.base, floorPct, viewPct, sidePct, pct, view, side, rate, area, price };
+  return { base, rooms, floorPct, viewPct, sidePct, pct, view, side, rate, area, price };
 }
 
 export const UNITS = [];
@@ -451,7 +469,7 @@ export function unitToWorld(unit, uu, vv) { const [x, z] = unitToLocal(unit, uu,
 // Yaw (radians, three.js rotation.y) that maps unit-local axes (x=u, z=v) onto building-local axes
 export function unitYaw(unit) { const [vx, vz] = unit.frame.V; return Math.atan2(vx, vz); }
 export function money(n) { return '€' + Math.round(n).toLocaleString('en-US'); }
-// €/m² rates can end in .50 (2,250 × 1.07 = 2,407.50) — shown exactly, without decimals when whole
+// €/m² rates can have cents when percentage adjustments are on (e.g. 2,700 × 1.07 = 2,889.00, 2,250 × 1.07 = 2,407.50) — shown exactly, without decimals when whole
 export function moneyRate(n) { return '€' + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); }
 // Price list summary for "from …" figures and filter bounds
 export const PRICE_STATS = (() => {

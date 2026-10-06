@@ -38,7 +38,7 @@ const COMMON = Object.fromEntries(LANGS.map(l => ['lang.' + l.code, l.name]));
 export const I18N = {
   he: {
     'meta.title': 'VILNYI RIVER CITY — דירות יוקרה ליד אגם לקול מוריי, בוקרשט',
-    'meta.desc': 'דירות 1–4 חדרים ופנטהאוזים דופלקס בבניינים C3 ו‑C4, ליד פארק לקול מוריי בבוקרשט. מחיר לכל דירה לפי קומה ונוף, תכניות תשלום גמישות וערבות שכירות.',
+    'meta.desc': 'דירות 1–4 חדרים ופנטהאוזים דופלקס בבניינים C3 ו‑C4, ליד פארק לקול מוריי בבוקרשט. מחיר למ״ר לפי מספר החדרים, תכניות תשלום גמישות וערבות שכירות.',
     'nav.project': 'הפרויקט',
     'nav.finder': 'בחירת דירה',
     'nav.terms': 'תנאי רכישה',
@@ -59,7 +59,7 @@ export const I18N = {
     'hero.stat.units': 'דירות בפרויקט',
     'hero.stat.parking': 'מקומות חניה',
     'hero.stat.delivery': 'חודשים למסירה',
-    'hero.stat.price': 'למ״ר, מחיר בסיס',
+    'hero.stat.price': 'מחיר התחלתי למ״ר',
     'hero.mode': 'תאורה',
     'hero.day': 'יום',
     'hero.dusk': 'דמדומים',
@@ -203,7 +203,7 @@ export const I18N = {
     'terms.depositT': 'מקדמת שריון',
     'terms.depositD': '{v} — מקוזזת מהתשלום הראשון.',
     'terms.price': 'מחיר למ״ר',
-    'terms.priceD': 'מחיר בסיס {v} למ״ר משטח שימושי כולל, כולל מרפסת או לוגיה. כל דירה מתומחרת לפי קומה ({f0} בקומת הקרקע עד {f1} בקומה 10), נוף לאגם ({lp} חלקי, {ld} ישיר) וחזית לחצר הפנימית ({c}): מ‑{min} עד {max}.',
+    'terms.priceD': 'מחיר למ״ר משטח שימושי כולל, כולל מרפסת או לוגיה, לפי מספר החדרים: דירת חדר אחד {r1}, דירת שני חדרים {r2}, שלושה חדרים ומעלה {r3}. אותו מחיר למ״ר בכל קומה ובכל כיוון: דירות מ‑{min} עד {max}.',
 
     'loc.eyebrow': 'מיקום',
     'loc.title': 'השכונה הירוקה של מערב בוקרשט',
@@ -436,7 +436,7 @@ export const I18N = {
 
   en: {
     'meta.title': 'VILNYI RIVER CITY — Luxury residences by Lacul Morii, Bucharest',
-    'meta.desc': '1–4 room apartments and duplex penthouses in buildings C3 & C4 next to Lacul Morii park, Bucharest. Each apartment priced by floor and view, flexible payment plans and a rent guarantee.',
+    'meta.desc': '1–4 room apartments and duplex penthouses in buildings C3 & C4 next to Lacul Morii park, Bucharest. Price per m² by number of rooms, flexible payment plans and a rent guarantee.',
     'nav.project': 'Project',
     'nav.finder': 'Apartments',
     'nav.terms': 'Terms',
@@ -457,7 +457,7 @@ export const I18N = {
     'hero.stat.units': 'residences',
     'hero.stat.parking': 'parking places',
     'hero.stat.delivery': 'months to delivery',
-    'hero.stat.price': 'per m², base price',
+    'hero.stat.price': 'starting price per m²',
     'hero.mode': 'Light',
     'hero.day': 'Day',
     'hero.dusk': 'Dusk',
@@ -601,7 +601,7 @@ export const I18N = {
     'terms.depositT': 'Reservation deposit',
     'terms.depositD': '{v} — credited to the first instalment.',
     'terms.price': 'Price per m²',
-    'terms.priceD': 'Base price {v} per m² of total useful area, balcony or loggia included. Each apartment is priced by floor ({f0} on the ground floor to {f1} on floor 10), lake view ({lp} partial, {ld} direct) and courtyard side ({c}): from {min} to {max}.',
+    'terms.priceD': 'Price per m² of total useful area, balcony or loggia included, set by the number of rooms: 1 room {r1}, 2 rooms {r2}, 3 rooms and more {r3}. The same rate on every floor and for every outlook: apartments from {min} to {max}.',
 
     'loc.eyebrow': 'Location',
     'loc.title': 'West Bucharest’s green quarter',
@@ -834,7 +834,7 @@ export const I18N = {
 
   ro: {
     'meta.title': 'VILNYI RIVER CITY — Rezidențe de lux lângă Lacul Morii, București',
-    'meta.desc': 'Apartamente cu 1–4 camere și penthouse-uri duplex în blocurile C3 și C4, lângă parcul Lacul Morii, București. Preț pe apartament în funcție de etaj și priveliște, planuri de plată flexibile și chirie garantată.',
+    'meta.desc': 'Apartamente cu 1–4 camere și penthouse-uri duplex în blocurile C3 și C4, lângă parcul Lacul Morii, București. Preț pe m² în funcție de numărul de camere, planuri de plată flexibile și chirie garantată.',
     'nav.project': 'Proiectul',
     'nav.finder': 'Apartamente',
     'nav.terms': 'Condiții',
@@ -855,7 +855,7 @@ export const I18N = {
     'hero.stat.units': 'apartamente',
     'hero.stat.parking': 'locuri de parcare',
     'hero.stat.delivery': 'luni până la predare',
-    'hero.stat.price': 'pe m², preț de bază',
+    'hero.stat.price': 'preț de pornire pe m²',
     'hero.mode': 'Lumină',
     'hero.day': 'Zi',
     'hero.dusk': 'Amurg',
@@ -999,7 +999,7 @@ export const I18N = {
     'terms.depositT': 'Avans de rezervare',
     'terms.depositD': '{v} — se scade din prima tranșă.',
     'terms.price': 'Preț pe m²',
-    'terms.priceD': 'Preț de bază {v} pe m² de suprafață utilă totală, cu balcon sau logie inclus. Fiecare apartament are prețul stabilit după etaj ({f0} la parter până la {f1} la etajul 10), vederea spre lac ({lp} parțială, {ld} directă) și orientarea spre curtea interioară ({c}): de la {min} la {max}.',
+    'terms.priceD': 'Preț pe m² de suprafață utilă totală, cu balcon sau logie inclus, stabilit după numărul de camere: 1 cameră {r1}, 2 camere {r2}, 3 camere și mai multe {r3}. Același preț pe m² la orice etaj și pentru orice orientare: apartamente de la {min} la {max}.',
 
     'loc.eyebrow': 'Locație',
     'loc.title': 'Cartierul verde al vestului Bucureștiului',
@@ -1231,7 +1231,7 @@ export const I18N = {
 
   ru: {
     'meta.title': 'VILNYI RIVER CITY — премиальные квартиры у озера Лакул Морий, Бухарест',
-    'meta.desc': 'Квартиры 1–4 комнаты и пентхаусы-дуплексы в корпусах C3 и C4 рядом с парком Лакул Морий, Бухарест. Цена каждой квартиры зависит от этажа и вида, гибкие планы оплаты и гарантия аренды.',
+    'meta.desc': 'Квартиры 1–4 комнаты и пентхаусы-дуплексы в корпусах C3 и C4 рядом с парком Лакул Морий, Бухарест. Цена за м² зависит от количества комнат, гибкие планы оплаты и гарантия аренды.',
     'nav.project': 'Проект',
     'nav.finder': 'Квартиры',
     'nav.terms': 'Условия',
@@ -1252,7 +1252,7 @@ export const I18N = {
     'hero.stat.units': 'квартир',
     'hero.stat.parking': 'машино-мест',
     'hero.stat.delivery': 'месяцев до сдачи',
-    'hero.stat.price': 'за м², базовая цена',
+    'hero.stat.price': 'стартовая цена за м²',
     'hero.mode': 'Свет',
     'hero.day': 'День',
     'hero.dusk': 'Сумерки',
@@ -1396,7 +1396,7 @@ export const I18N = {
     'terms.depositT': 'Задаток за бронь',
     'terms.depositD': '{v} — засчитывается в первый платёж.',
     'terms.price': 'Цена за м²',
-    'terms.priceD': 'Базовая цена {v} за м² общей полезной площади, включая балкон или лоджию. Цена каждой квартиры зависит от этажа (от {f0} на первом этаже (партер) до {f1} на 10-м), вида на озеро ({lp} частичный, {ld} прямой) и выхода во внутренний двор ({c}): от {min} до {max}.',
+    'terms.priceD': 'Цена за м² общей полезной площади, включая балкон или лоджию, зависит от количества комнат: 1 комната — {r1}, 2 комнаты — {r2}, 3 комнаты и больше — {r3}. Одна и та же цена за м² на любом этаже и при любом виде из окон: квартиры от {min} до {max}.',
 
     'loc.eyebrow': 'Локация',
     'loc.title': 'Зелёный квартал запада Бухареста',
@@ -1629,7 +1629,7 @@ export const I18N = {
 
   uk: {
     'meta.title': 'VILNYI RIVER CITY — преміальні квартири біля озера Лакул Морій, Бухарест',
-    'meta.desc': 'Квартири з 1–4 кімнатами та дворівневі пентхауси в будинках C3 і C4 поруч із парком Лакул Морій у Бухаресті. Ціна кожної квартири залежить від поверху та краєвиду, гнучкі плани оплати та гарантія орендного доходу.',
+    'meta.desc': 'Квартири з 1–4 кімнатами та дворівневі пентхауси в будинках C3 і C4 поруч із парком Лакул Морій у Бухаресті. Ціна за м² залежить від кількості кімнат, гнучкі плани оплати та гарантія орендного доходу.',
     'nav.project': 'Проєкт',
     'nav.finder': 'Квартири',
     'nav.terms': 'Умови',
@@ -1650,7 +1650,7 @@ export const I18N = {
     'hero.stat.units': 'квартир у проєкті',
     'hero.stat.parking': 'паркомісць',
     'hero.stat.delivery': 'місяців до здачі',
-    'hero.stat.price': 'за м², базова ціна',
+    'hero.stat.price': 'стартова ціна за м²',
     'hero.mode': 'Освітлення',
     'hero.day': 'День',
     'hero.dusk': 'Сутінки',
@@ -1794,7 +1794,7 @@ export const I18N = {
     'terms.depositT': 'Завдаток за бронювання',
     'terms.depositD': '{v} — зараховується в перший платіж.',
     'terms.price': 'Ціна за м²',
-    'terms.priceD': 'Базова ціна {v} за м² загальної корисної площі, включно з балконом чи лоджією. Ціна кожної квартири залежить від поверху (від {f0} на першому поверсі (партер) до {f1} на 10-му), краєвиду на озеро ({lp} частковий, {ld} прямий) та виходу у внутрішній двір ({c}): від {min} до {max}.',
+    'terms.priceD': 'Ціна за м² загальної корисної площі, включно з балконом чи лоджією, залежить від кількості кімнат: 1 кімната — {r1}, 2 кімнати — {r2}, 3 кімнати й більше — {r3}. Однакова ціна за м² на будь-якому поверсі та з будь-яким краєвидом: квартири від {min} до {max}.',
 
     'loc.eyebrow': 'Розташування',
     'loc.title': 'Зелений квартал заходу Бухареста',
@@ -2026,7 +2026,7 @@ export const I18N = {
 
   fr: {
     'meta.title': 'VILNYI RIVER CITY — Résidences de prestige au bord du Lacul Morii, Bucarest',
-    'meta.desc': 'Appartements de 1 à 4 pièces et penthouses en duplex dans les bâtiments C3 et C4, à côté du parc Lacul Morii à Bucarest. Un prix par appartement selon l’étage et la vue, des plans de paiement flexibles et une garantie locative.',
+    'meta.desc': 'Appartements de 1 à 4 pièces et penthouses en duplex dans les bâtiments C3 et C4, à côté du parc Lacul Morii à Bucarest. Un prix au m² selon le nombre de pièces, des plans de paiement flexibles et une garantie locative.',
     'nav.project': 'Le projet',
     'nav.finder': 'Appartements',
     'nav.terms': 'Conditions',
@@ -2047,7 +2047,7 @@ export const I18N = {
     'hero.stat.units': 'logements',
     'hero.stat.parking': 'places de parking',
     'hero.stat.delivery': 'mois jusqu’à la livraison',
-    'hero.stat.price': 'le m², prix de base',
+    'hero.stat.price': 'prix de départ au m²',
     'hero.mode': 'Lumière',
     'hero.day': 'Jour',
     'hero.dusk': 'Crépuscule',
@@ -2191,7 +2191,7 @@ export const I18N = {
     'terms.depositT': 'Acompte de réservation',
     'terms.depositD': '{v} — déduit du premier versement.',
     'terms.price': 'Prix au m²',
-    'terms.priceD': 'Prix de base {v} le m² de surface utile totale, balcon ou loggia inclus. Chaque appartement est tarifé selon l’étage ({f0} au rez-de-chaussée à {f1} au 10e), la vue sur le lac ({lp} partielle, {ld} directe) et l’orientation sur la cour intérieure ({c}) : de {min} à {max}.',
+    'terms.priceD': 'Prix au m² de surface utile totale, balcon ou loggia inclus, fixé selon le nombre de pièces : 1 pièce {r1}, 2 pièces {r2}, 3 pièces et plus {r3}. Le même prix au m² à tous les étages et quelle que soit la vue : appartements de {min} à {max}.',
 
     'loc.eyebrow': 'Situation',
     'loc.title': 'Le quartier vert de l’ouest de Bucarest',
@@ -2423,7 +2423,7 @@ export const I18N = {
 
   it: {
     'meta.title': 'VILNYI RIVER CITY — Residenze di pregio sul Lacul Morii, Bucarest',
-    'meta.desc': 'Appartamenti da 1 a 4 locali e attici duplex negli edifici C3 e C4, accanto al parco Lacul Morii a Bucarest. Prezzo per appartamento in base a piano e vista, piani di pagamento flessibili e affitto garantito.',
+    'meta.desc': 'Appartamenti da 1 a 4 locali e attici duplex negli edifici C3 e C4, accanto al parco Lacul Morii a Bucarest. Prezzo al m² in base al numero di locali, piani di pagamento flessibili e affitto garantito.',
     'nav.project': 'Il progetto',
     'nav.finder': 'Appartamenti',
     'nav.terms': 'Condizioni',
@@ -2444,7 +2444,7 @@ export const I18N = {
     'hero.stat.units': 'residenze',
     'hero.stat.parking': 'posti auto',
     'hero.stat.delivery': 'mesi alla consegna',
-    'hero.stat.price': 'al m², prezzo base',
+    'hero.stat.price': 'prezzo di partenza al m²',
     'hero.mode': 'Luce',
     'hero.day': 'Giorno',
     'hero.dusk': 'Tramonto',
@@ -2588,7 +2588,7 @@ export const I18N = {
     'terms.depositT': 'Caparra di prenotazione',
     'terms.depositD': '{v} — scalata dalla prima rata.',
     'terms.price': 'Prezzo al m²',
-    'terms.priceD': 'Prezzo base {v} al m² di superficie utile totale, balcone o loggia inclusi. Ogni appartamento ha il suo prezzo in base al piano (da {f0} al piano terra a {f1} al 10º), alla vista lago ({lp} parziale, {ld} diretta) e all’affaccio sulla corte interna ({c}): da {min} a {max}.',
+    'terms.priceD': 'Prezzo al m² di superficie utile totale, balcone o loggia inclusi, stabilito in base al numero di locali: monolocale {r1}, 2 locali {r2}, 3 locali e oltre {r3}. Lo stesso prezzo al m² a ogni piano e per ogni affaccio: appartamenti da {min} a {max}.',
 
     'loc.eyebrow': 'Posizione',
     'loc.title': 'Il quartiere verde di Bucarest ovest',
@@ -2820,7 +2820,7 @@ export const I18N = {
 
   de: {
     'meta.title': 'VILNYI RIVER CITY — Exklusive Residenzen am Lacul Morii, Bukarest',
-    'meta.desc': '1- bis 4-Zimmer-Wohnungen und Duplex-Penthäuser in den Gebäuden C3 und C4 am Park Lacul Morii in Bukarest. Preis je Wohnung nach Geschoss und Aussicht, flexible Zahlungspläne und eine Mietgarantie.',
+    'meta.desc': '1- bis 4-Zimmer-Wohnungen und Duplex-Penthäuser in den Gebäuden C3 und C4 am Park Lacul Morii in Bukarest. Preis pro m² nach Zimmerzahl, flexible Zahlungspläne und eine Mietgarantie.',
     'nav.project': 'Projekt',
     'nav.finder': 'Wohnungen',
     'nav.terms': 'Konditionen',
@@ -2841,7 +2841,7 @@ export const I18N = {
     'hero.stat.units': 'Wohnungen',
     'hero.stat.parking': 'Stellplätze',
     'hero.stat.delivery': 'Monate bis zur Übergabe',
-    'hero.stat.price': 'pro m², Basispreis',
+    'hero.stat.price': 'Einstiegspreis pro m²',
     'hero.mode': 'Licht',
     'hero.day': 'Tag',
     'hero.dusk': 'Abend',
@@ -2985,7 +2985,7 @@ export const I18N = {
     'terms.depositT': 'Reservierungsanzahlung',
     'terms.depositD': '{v} — wird auf die erste Rate angerechnet.',
     'terms.price': 'Preis pro m²',
-    'terms.priceD': 'Basispreis {v} pro m² Gesamtnutzfläche, Balkon oder Loggia inklusive. Jede Wohnung wird nach Geschoss ({f0} im Erdgeschoss bis {f1} im 10. OG), Seeblick ({lp} teilweise, {ld} direkt) und Lage zum Innenhof ({c}) bepreist: von {min} bis {max}.',
+    'terms.priceD': 'Preis pro m² Gesamtnutzfläche, Balkon oder Loggia inklusive, nach Zimmerzahl: 1 Zimmer {r1}, 2 Zimmer {r2}, 3 Zimmer und mehr {r3}. Derselbe Quadratmeterpreis in jedem Geschoss und für jede Aussicht: Wohnungen von {min} bis {max}.',
 
     'loc.eyebrow': 'Lage',
     'loc.title': 'Das grüne Viertel im Westen Bukarests',
@@ -3238,16 +3238,18 @@ const EXTRA = {
 };
 for (const l in EXTRA) Object.assign(I18N[l], EXTRA[l]);
 
-// Per-unit pricing (v3.4): breakdown labels, lake-view badge / filter, view sentences. Numbers come from data.js PRICING.
+// Pricing: breakdown labels, lake-view badge / filter, view sentences. Numbers come from data.js PRICING.
+// (v3.5: price per m² by room count; 'pr.floor' and the lake / side labels appear in the breakdown only if those
+// adjustments are switched back on in PRICING.)
 const PRICE_I18N = {
-  he: { 'pr.base': 'בסיס', 'pr.floor': 'קומה', 'lake.direct': 'נוף ישיר לאגם', 'lake.partial': 'נוף חלקי לאגם', 'lake.none': 'ללא נוף לאגם', 'side.courtyard': 'חזית לחצר הפנימית', 'side.street': 'חזית לרחוב', 'finder.view': 'נוף', 'finder.view.lake': 'נוף לאגם', 'view.lake.direct': 'נוף פתוח לאגם לקול מוריי מהדירה.', 'view.lake.partial': 'נוף חלקי לאגם לקול מוריי.', 'view.side.courtyard': 'פונה לחצר הפנימית השקטה.', 'view.side.street': 'פונה לצד הרחוב והחניה.' },
-  en: { 'pr.base': 'Base', 'pr.floor': 'Floor', 'lake.direct': 'Direct lake view', 'lake.partial': 'Partial lake view', 'lake.none': 'No lake view', 'side.courtyard': 'Courtyard side', 'side.street': 'Street side', 'finder.view': 'View', 'finder.view.lake': 'Lake view', 'view.lake.direct': 'Open view of Lacul Morii from the apartment.', 'view.lake.partial': 'Partial view of Lacul Morii.', 'view.side.courtyard': 'Faces the quiet inner courtyard.', 'view.side.street': 'Faces the street and parking side.' },
-  ro: { 'pr.base': 'Bază', 'pr.floor': 'Etaj', 'lake.direct': 'Vedere directă spre lac', 'lake.partial': 'Vedere parțială spre lac', 'lake.none': 'Fără vedere spre lac', 'side.courtyard': 'Spre curtea interioară', 'side.street': 'Spre stradă', 'finder.view': 'Priveliște', 'finder.view.lake': 'Vedere spre lac', 'view.lake.direct': 'Vedere deschisă spre Lacul Morii din apartament.', 'view.lake.partial': 'Vedere parțială spre Lacul Morii.', 'view.side.courtyard': 'Orientat spre curtea interioară liniștită.', 'view.side.street': 'Orientat spre stradă și parcare.' },
-  ru: { 'pr.base': 'База', 'pr.floor': 'Этаж', 'lake.direct': 'Прямой вид на озеро', 'lake.partial': 'Частичный вид на озеро', 'lake.none': 'Без вида на озеро', 'side.courtyard': 'Во внутренний двор', 'side.street': 'На улицу', 'finder.view': 'Вид', 'finder.view.lake': 'Вид на озеро', 'view.lake.direct': 'Открытый вид на озеро Лакул Морий из квартиры.', 'view.lake.partial': 'Частичный вид на озеро Лакул Морий.', 'view.side.courtyard': 'Окна выходят в тихий внутренний двор.', 'view.side.street': 'Окна выходят на улицу и парковку.' },
-  uk: { 'pr.base': 'База', 'pr.floor': 'Поверх', 'lake.direct': 'Прямий краєвид на озеро', 'lake.partial': 'Частковий краєвид на озеро', 'lake.none': 'Без краєвиду на озеро', 'side.courtyard': 'У внутрішній двір', 'side.street': 'На вулицю', 'finder.view': 'Краєвид', 'finder.view.lake': 'Краєвид на озеро', 'view.lake.direct': 'Відкритий краєвид на озеро Лакул Морій із квартири.', 'view.lake.partial': 'Частковий краєвид на озеро Лакул Морій.', 'view.side.courtyard': 'Вікна виходять у тихий внутрішній двір.', 'view.side.street': 'Вікна виходять на вулицю та паркінг.' },
-  fr: { 'pr.base': 'Base', 'pr.floor': 'Étage', 'lake.direct': 'Vue directe sur le lac', 'lake.partial': 'Vue partielle sur le lac', 'lake.none': 'Sans vue sur le lac', 'side.courtyard': 'Côté cour intérieure', 'side.street': 'Côté rue', 'finder.view': 'Vue', 'finder.view.lake': 'Vue sur le lac', 'view.lake.direct': 'Vue dégagée sur le Lacul Morii depuis l’appartement.', 'view.lake.partial': 'Vue partielle sur le Lacul Morii.', 'view.side.courtyard': 'Donne sur la cour intérieure, au calme.', 'view.side.street': 'Donne sur la rue et le parking.' },
-  it: { 'pr.base': 'Base', 'pr.floor': 'Piano', 'lake.direct': 'Vista lago diretta', 'lake.partial': 'Vista lago parziale', 'lake.none': 'Senza vista lago', 'side.courtyard': 'Lato corte interna', 'side.street': 'Lato strada', 'finder.view': 'Vista', 'finder.view.lake': 'Vista lago', 'view.lake.direct': 'Vista aperta sul Lacul Morii dall’appartamento.', 'view.lake.partial': 'Vista parziale sul Lacul Morii.', 'view.side.courtyard': 'Affaccio sulla tranquilla corte interna.', 'view.side.street': 'Affaccio su strada e parcheggio.' },
-  de: { 'pr.base': 'Basis', 'pr.floor': 'Geschoss', 'lake.direct': 'Direkter Seeblick', 'lake.partial': 'Teilweiser Seeblick', 'lake.none': 'Kein Seeblick', 'side.courtyard': 'Innenhofseite', 'side.street': 'Straßenseite', 'finder.view': 'Aussicht', 'finder.view.lake': 'Seeblick', 'view.lake.direct': 'Freier Blick auf den Lacul Morii aus der Wohnung.', 'view.lake.partial': 'Teilblick auf den Lacul Morii.', 'view.side.courtyard': 'Zum ruhigen Innenhof gelegen.', 'view.side.street': 'Zur Straßen- und Parkplatzseite gelegen.' },
+  he: { 'pr.from': 'מ‑', 'pr.base': 'בסיס', 'pr.floor': 'קומה', 'lake.direct': 'נוף ישיר לאגם', 'lake.partial': 'נוף חלקי לאגם', 'lake.none': 'ללא נוף לאגם', 'side.courtyard': 'חזית לחצר הפנימית', 'side.street': 'חזית לרחוב', 'finder.view': 'נוף', 'finder.view.lake': 'נוף לאגם', 'view.lake.direct': 'נוף פתוח לאגם לקול מוריי מהדירה.', 'view.lake.partial': 'נוף חלקי לאגם לקול מוריי.', 'view.side.courtyard': 'פונה לחצר הפנימית השקטה.', 'view.side.street': 'פונה לצד הרחוב והחניה.' },
+  en: { 'pr.from': 'from', 'pr.base': 'Base', 'pr.floor': 'Floor', 'lake.direct': 'Direct lake view', 'lake.partial': 'Partial lake view', 'lake.none': 'No lake view', 'side.courtyard': 'Courtyard side', 'side.street': 'Street side', 'finder.view': 'View', 'finder.view.lake': 'Lake view', 'view.lake.direct': 'Open view of Lacul Morii from the apartment.', 'view.lake.partial': 'Partial view of Lacul Morii.', 'view.side.courtyard': 'Faces the quiet inner courtyard.', 'view.side.street': 'Faces the street and parking side.' },
+  ro: { 'pr.from': 'de la', 'pr.base': 'Bază', 'pr.floor': 'Etaj', 'lake.direct': 'Vedere directă spre lac', 'lake.partial': 'Vedere parțială spre lac', 'lake.none': 'Fără vedere spre lac', 'side.courtyard': 'Spre curtea interioară', 'side.street': 'Spre stradă', 'finder.view': 'Priveliște', 'finder.view.lake': 'Vedere spre lac', 'view.lake.direct': 'Vedere deschisă spre Lacul Morii din apartament.', 'view.lake.partial': 'Vedere parțială spre Lacul Morii.', 'view.side.courtyard': 'Orientat spre curtea interioară liniștită.', 'view.side.street': 'Orientat spre stradă și parcare.' },
+  ru: { 'pr.from': 'от', 'pr.base': 'База', 'pr.floor': 'Этаж', 'lake.direct': 'Прямой вид на озеро', 'lake.partial': 'Частичный вид на озеро', 'lake.none': 'Без вида на озеро', 'side.courtyard': 'Во внутренний двор', 'side.street': 'На улицу', 'finder.view': 'Вид', 'finder.view.lake': 'Вид на озеро', 'view.lake.direct': 'Открытый вид на озеро Лакул Морий из квартиры.', 'view.lake.partial': 'Частичный вид на озеро Лакул Морий.', 'view.side.courtyard': 'Окна выходят в тихий внутренний двор.', 'view.side.street': 'Окна выходят на улицу и парковку.' },
+  uk: { 'pr.from': 'від', 'pr.base': 'База', 'pr.floor': 'Поверх', 'lake.direct': 'Прямий краєвид на озеро', 'lake.partial': 'Частковий краєвид на озеро', 'lake.none': 'Без краєвиду на озеро', 'side.courtyard': 'У внутрішній двір', 'side.street': 'На вулицю', 'finder.view': 'Краєвид', 'finder.view.lake': 'Краєвид на озеро', 'view.lake.direct': 'Відкритий краєвид на озеро Лакул Морій із квартири.', 'view.lake.partial': 'Частковий краєвид на озеро Лакул Морій.', 'view.side.courtyard': 'Вікна виходять у тихий внутрішній двір.', 'view.side.street': 'Вікна виходять на вулицю та паркінг.' },
+  fr: { 'pr.from': 'dès', 'pr.base': 'Base', 'pr.floor': 'Étage', 'lake.direct': 'Vue directe sur le lac', 'lake.partial': 'Vue partielle sur le lac', 'lake.none': 'Sans vue sur le lac', 'side.courtyard': 'Côté cour intérieure', 'side.street': 'Côté rue', 'finder.view': 'Vue', 'finder.view.lake': 'Vue sur le lac', 'view.lake.direct': 'Vue dégagée sur le Lacul Morii depuis l’appartement.', 'view.lake.partial': 'Vue partielle sur le Lacul Morii.', 'view.side.courtyard': 'Donne sur la cour intérieure, au calme.', 'view.side.street': 'Donne sur la rue et le parking.' },
+  it: { 'pr.from': 'da', 'pr.base': 'Base', 'pr.floor': 'Piano', 'lake.direct': 'Vista lago diretta', 'lake.partial': 'Vista lago parziale', 'lake.none': 'Senza vista lago', 'side.courtyard': 'Lato corte interna', 'side.street': 'Lato strada', 'finder.view': 'Vista', 'finder.view.lake': 'Vista lago', 'view.lake.direct': 'Vista aperta sul Lacul Morii dall’appartamento.', 'view.lake.partial': 'Vista parziale sul Lacul Morii.', 'view.side.courtyard': 'Affaccio sulla tranquilla corte interna.', 'view.side.street': 'Affaccio su strada e parcheggio.' },
+  de: { 'pr.from': 'ab', 'pr.base': 'Basis', 'pr.floor': 'Geschoss', 'lake.direct': 'Direkter Seeblick', 'lake.partial': 'Teilweiser Seeblick', 'lake.none': 'Kein Seeblick', 'side.courtyard': 'Innenhofseite', 'side.street': 'Straßenseite', 'finder.view': 'Aussicht', 'finder.view.lake': 'Seeblick', 'view.lake.direct': 'Freier Blick auf den Lacul Morii aus der Wohnung.', 'view.lake.partial': 'Teilblick auf den Lacul Morii.', 'view.side.courtyard': 'Zum ruhigen Innenhof gelegen.', 'view.side.street': 'Zur Straßen- und Parkplatzseite gelegen.' },
 };
 for (const l in PRICE_I18N) Object.assign(I18N[l], PRICE_I18N[l]);
 
@@ -3305,14 +3307,20 @@ export function num(n) { try { return Number(n).toLocaleString(lang === 'he' ? '
 const listeners = new Set();
 export function onLangChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-export function setLang(l) {
+// `chosen` = the visitor picked this language in a menu → it is remembered and beats the country default from now on.
+// The boot call (setLang(initialLang(), false)) only applies the resolved language and stores nothing.
+export function setLang(l, chosen = true) {
   if (!LANG_CODES.includes(l)) l = DEFAULT_LANG;
   lang = l; dir = langInfo(l).dir;
   const html = document.documentElement;
   html.lang = l; html.dir = dir;
-  try { localStorage.setItem('vrc.lang', l); } catch (e) { /* storage blocked */ }
+  if (chosen) {
+    if (globalThis.VRC_LANG?.choose) globalThis.VRC_LANG.choose(l);
+    else try { localStorage.setItem('vrc.lang', l); localStorage.setItem('vrc.lang.set', '1'); } catch (e) { /* storage blocked */ }
+  }
   applyDom(document);
   listeners.forEach(fn => { try { fn(l); } catch (e) { console.error(e); } });
+  globalThis.VRC_LANG?.ready?.();        // texts are in place → reveal the page (js/lang-boot.js keeps it blank until now)
 }
 
 // Fill [data-i18n] (textContent), [data-i18n-attr="attr:key;attr2:key2"].
@@ -3327,7 +3335,11 @@ export function applyDom(root) {
   }
 }
 
+// Language for this visit: ?lang= → the visitor's own saved choice → the language of the visitor's country → English.
+// Decided before the first paint by js/lang-boot.js (window.VRC_LANG); the fallback below only runs if that script is missing.
 export function initialLang() {
+  const b = globalThis.VRC_LANG?.lang;
+  if (LANG_CODES.includes(b)) return b;
   let l = null;
   try { l = new URLSearchParams(location.search).get('lang'); } catch (e) { /* ignore */ }
   if (!LANG_CODES.includes(l)) { try { l = localStorage.getItem('vrc.lang'); } catch (e) { l = null; } }

@@ -142,7 +142,7 @@ function loading() {
 }
 
 async function main() {
-  setLang(initialLang());
+  setLang(initialLang(), false);
   document.title = tc('app.title');
   loading();
   const mode = await boot();
