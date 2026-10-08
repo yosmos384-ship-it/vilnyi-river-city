@@ -4,8 +4,8 @@
 // They walk the pavements, wait and cross at junctions, sit at café tables and on benches, go in and out of shops,
 // jump aside and shout when a car comes at them. Knock-downs are arcade-level: a tumble, no gore, bodies fade out.
 import * as THREE from 'three';
-import { genBlock } from './gen.js?v=3.6';
-import { bodyBox } from './vehicle.js?v=3.6';
+import { genBlock } from './gen.js?v=3.7';
+import { bodyBox } from './vehicle.js?v=3.7';
 
 const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#d9a066'];
 const HAIR = ['#1b1512', '#3b2a1e', '#6b4a2e', '#a8793e', '#8a8a8a', '#d9d2c4', '#2a2a2e'];
@@ -89,7 +89,7 @@ export function createPeds(G) {
   const swLat = e => e.hw + 1.75;
   const swPos = (e, side, s, out = [0, 0]) => { const a = map.nodes[e.a]; out[0] = a.x + e.ux * s - e.uz * side * swLat(e); out[1] = a.z + e.uz * s + e.ux * side * swLat(e); return out; };
   const sEnd = (e, dir) => (dir > 0 ? e.len - e.tb - 1.8 : e.ta + 1.8);
-  function attach(p, e, side, s, dir) { p.e = e; p.side = side; p.s = s; p.dir = dir; p.state = 'walk'; p.wp = null; p.onRoad = false; p.amp = 1; p.pose = 0; }
+  function attach(p, e, side, s, dir) { if (e.ow) side = 1; p.e = e; p.side = side; p.s = s; p.dir = dir; p.state = 'walk'; p.wp = null; p.onRoad = false; p.amp = 1; p.pose = 0; }
   function doorsOf(e, side) {
     if (!e.swDoors) e.swDoors = {}; if (e.swDoors[side]) return e.swDoors[side];
     if (!edgeBlocks) { edgeBlocks = new Map(); for (const b of map.blocks) for (const ei of b.edges) if (ei >= 0) (edgeBlocks.get(ei) || edgeBlocks.set(ei, []).get(ei)).push(b); }
@@ -104,7 +104,7 @@ export function createPeds(G) {
     if (r < 0.42) {   // round the corner onto the next street
       let best = null;
       for (const ei of n.edges) { const e2 = map.edges[ei]; if (e2 === e || e2.dead || e2.drive) continue; const out = e2.a === n.id ? 1 : -1, s2 = sEnd(e2, -out);
-        for (const sd of [-1, 1]) { const q = swPos(e2, sd, s2), d = Math.hypot(q[0] - here[0], q[1] - here[1]); if (!best || d < best.d) best = { d, e2, sd, s2, out, q: [q[0], q[1]] }; } }
+        for (const sd of e2.ow ? [1] : [-1, 1]) { const q = swPos(e2, sd, s2), d = Math.hypot(q[0] - here[0], q[1] - here[1]); if (!best || d < best.d) best = { d, e2, sd, s2, out, q: [q[0], q[1]] }; } }
       if (best && best.d < e.hw + best.e2.hw + 9) { p.wp = [[best.q[0], best.q[1], 0]]; p.after = [best.e2, best.sd, best.s2, best.out]; p.state = 'link'; return; }
     }
     if (r < 0.8 && e.len - e.ta - e.tb > 20) {   // cross this street on the zebra
@@ -114,7 +114,7 @@ export function createPeds(G) {
   }
   function canCross(p) {
     const e = p.e, n = p.node;
-    if (n.signal) return world.signal(n, e.axis) === 2 && world.signal(n, e.axis === 0 ? 1 : 0) === 0;
+    if (n.signal) { const ax = map.axisAt(n, e); return world.signal(n, ax) === 2 && world.signal(n, ax === 0 ? 1 : 0) === 0; }
     const a = map.nodes[e.a];
     for (const c of G.traffic.cars) { if (c.mode !== 'ai' && c.mode !== 'police') continue; const s = (c.x - a.x) * e.ux + (c.z - a.z) * e.uz, l = Math.abs((c.x - a.x) * -e.uz + (c.z - a.z) * e.ux); if (l < e.hw + 1 && Math.abs(s - p.s) < 26 && c.v > 2) return false; }
     const P = G.body; if (P && !P.onFoot) { const s = (P.x - a.x) * e.ux + (P.z - a.z) * e.uz, l = Math.abs((P.x - a.x) * -e.uz + (P.z - a.z) * e.ux); if (l < e.hw + 1 && Math.abs(s - p.s) < 40 && Math.hypot(P.vx, P.vz) > 3) return false; }
@@ -127,7 +127,7 @@ export function createPeds(G) {
       const a = Math.random() * 6.283, d = first ? 20 + Math.random() * 150 : 85 + Math.random() * 100, ne = map.nearestEdge(px + Math.cos(a) * d, pz + Math.sin(a) * d, 60);
       if (!ne || ne.e.drive || ne.e.len - ne.e.ta - ne.e.tb < 24) continue;
       const e = ne.e; if (e.cls === 0 && Math.random() < 0.5) continue;
-      const side = Math.random() < 0.5 ? 1 : -1, s = e.ta + 3 + Math.random() * (e.len - e.ta - e.tb - 6), q = swPos(e, side, s);
+      const side = e.ow || Math.random() < 0.5 ? 1 : -1, s = e.ta + 3 + Math.random() * (e.len - e.ta - e.tb - 6), q = swPos(e, side, s);
       if (Math.hypot(q[0] - px, q[1] - pz) < (first ? 14 : 70) || world.inSolid(q[0], q[1], 0.4)) continue;
       const doors = doorsOf(e, side);
       if (!first && doors.length && Math.random() < 0.6) { const dr = doors[Math.floor(Math.random() * doors.length)], p = make(dr.x, dr.z, 0); p.wp = [[...swPos(e, side, dr.s), 0]]; p.after = [e, side, dr.s, Math.random() < 0.5 ? 1 : -1]; p.state = 'link'; p.fade = 0; return p; }

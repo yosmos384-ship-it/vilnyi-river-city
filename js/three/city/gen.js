@@ -1,7 +1,7 @@
 // City Drive — what stands on a block, along a street and at a junction (deterministic, generated on demand and cached).
 // Typical Bucharest fabric: communist-era slab blocks with ground-floor shops on the boulevards, interwar villas with
 // tiled roofs and front fences on the side streets, new glass offices, markets, parks. Shop brands are invented.
-import { ROAD, rng, hash2, inPoly, segD } from './map.js?v=3.6';
+import { ROAD, rng, hash2, inPoly, segD } from './map.js?v=3.7';
 export const SHOPS = ['Brutăria Luna', 'Cafeneaua Albastră', 'Florăria Mara', 'Librăria Pagina', 'Patiseria Dor', 'Covrigăria Rond', 'Farmacia Verde', 'Optica Clar',
   'Croitoria Ac și Ață', 'Frizeria Tuns', 'Minimarket Colț', 'Fructe & Legume', 'Cofetăria Zmeura', 'Pizzeria Forno Mic', 'Gelateria Nea', 'Ceainăria Frunză',
   'Bistro Morii', 'Anticariat Filă', 'Papetăria Creion', 'Ceasornicărie', 'Încălțăminte Pas', 'Telefoane Fix', 'Bijuteria Aur Vechi', 'Mezeluri de Casă',
@@ -58,7 +58,23 @@ export function genBlock(map, b) {
   const poiBoard = (B, s, text, w = 9, h = 1.1, y = null) => G.signs.push({ x: B.x - s.nx * (B.hd + 0.08), y: y ?? Math.min(B.h - 0.9, 6.5), z: B.z - s.nz * (B.hd + 0.08), nx: -s.nx, nz: -s.nz, w, h, kind: 'poi', text });
   const best = sides.filter(s => s.e).sort((p, q) => q.cls - p.cls || q.L - p.L)[0] || sides[0];
   const z = b.zone;
-  if (z === 'blocks' || z === 'offices') {
+  if (b.interior && (z === 'blocks' || z === 'offices' || z === 'villas')) {
+    // a plot between the real streets (real map): slab blocks of flats in green courtyards, a tower, or a cluster of houses
+    const s0 = sides[0].L >= sides[1].L ? sides[0] : sides[1], W = s0 === sides[0] ? sides[1].L : sides[0].L, L = s0.L;
+    if (z === 'blocks') {
+      const floors = pick([4, 4, 8, 10, 10, 11]), col = pick(SLAB), depth = floors > 4 ? 13 : 11.5, len = Math.min(L - 6, Math.max(24, L * R(0.62, 0.86)));
+      if (W > depth * 2 + 16) { put(s0, (L - len) / 2, len, depth, 3, { st: 0, h: floors * 2.8 + 0.4, fh: 2.8, col, shop: false, roof: 0 }); put(s0, (L - len * 0.8) / 2, len * 0.8, depth, W - depth - 3, { st: 0, h: pick([4, 8, 10]) * 2.8 + 0.4, fh: 2.8, col: r() < 0.7 ? col : pick(SLAB), shop: false, roof: 0 }); }
+      else put(s0, (L - len) / 2, len, depth, (W - depth) / 2, { st: 0, h: floors * 2.8 + 0.4, fh: 2.8, col, shop: false, roof: 0 });
+      treeIn(7, 3);
+    } else if (z === 'offices') {
+      const w = Math.min(L - 8, R(22, 34)), d = Math.min(W - 8, R(18, 26));
+      put(s0, (L - w) / 2, w, d, (W - d) / 2, { st: 2, h: Math.round(R(8, 18)) * 3.6, fh: 3.6, col: pick(GLASS), shop: false, roof: 0 }); treeIn(4, 3);
+    } else {
+      for (const s of [s0, sides[(sides.indexOf(s0) + 2) % 4]]) { let t = R(3, 6); while (t < s.L - 12) { const w = R(9, 12.5), depth = R(9, 11.5), fl = r() < 0.55 ? 2 : r() < 0.8 ? 1 : 3;
+        const B = put(s, t, w, depth, R(2.5, 4), { st: fl === 3 ? 0 : 1, h: fl * 3.2 + 0.5, fh: 3.2, col: pick(VILLA), shop: false, roof: fl === 3 ? 0 : 1, roofCol: pick(TILE) }); t += (B ? w : 0) + R(3, 6); } }
+      treeIn(6, 3);
+    }
+  } else if (z === 'blocks' || z === 'offices') {
     const floors = z === 'offices' ? Math.round(R(7, 18)) : pick([4, 4, 8, 8, 10, 11]), col = z === 'offices' ? pick(GLASS) : pick(SLAB);
     for (const s of sides.slice().sort((p, q) => q.cls - p.cls)) {
       if (!s.e) continue;
@@ -140,6 +156,10 @@ export function genBlock(map, b) {
   return (b.gen = G);
 }
 
+// nothing of the street furniture may stand in any other carriageway (dual roads: the partner carriageway is close by)
+export function clearOf(map, x, z, self = null, pad = 1.0) {
+  const c = map.cellAt(x, z); for (const o of c.edges) { if (o === self || o.dead) continue; const p = map.nodes[o.a], q = map.nodes[o.b]; if (segD(x, z, p.x, p.z, q.x, q.z) < o.hw + pad) return false; } return true;
+}
 // lamps, trees, kerb parking and stops along a street
 export function genEdge(map, e) {
   if (e.gen) return e.gen;
@@ -147,13 +167,13 @@ export function genEdge(map, e) {
   const at = (t, lat) => [a.x + e.ux * t - e.uz * lat, a.z + e.uz * t + e.ux * lat];
   // nothing may stand in the carriageway of another street that meets this one
   const others = [...map.nodes[e.a].edges, ...map.nodes[e.b].edges].map(i => map.edges[i]).filter(o => o !== e && !o.dead);
-  const clear = ([x, z]) => { for (const o of others) { const p = map.nodes[o.a], q = map.nodes[o.b]; if (segD(x, z, p.x, p.z, q.x, q.z) < o.hw + 1.2) return false; } return true; };
+  const clear = ([x, z]) => { for (const o of others) { const p = map.nodes[o.a], q = map.nodes[o.b]; if (segD(x, z, p.x, p.z, q.x, q.z) < o.hw + 1.2) return false; } return clearOf(map, x, z, e); };
   const t0 = e.ta + 5, t1 = e.len - e.tb - 5; if (t1 - t0 < 12) return (e.gen = G);
   const n = Math.max(1, Math.round((t1 - t0) / 34));
   for (let k = 0; k < n; k++) { const t = t0 + (k + 0.5) * (t1 - t0) / n, side = (k + e.id) % 2 ? 1 : -1; const [x, z] = at(t, side * (e.hw + 0.55)); G.lamp.push([x, z, Math.atan2(e.uz * side, -e.ux * side) + Math.PI / 2 * 0, side]); if (e.cls >= 2) { const [x2, z2] = at(t + 17 > t1 ? t - 12 : t + 17, -side * (e.hw + 0.55)); G.lamp.push([x2, z2, 0, -side]); } }
   if (e.cls >= 1 && !e.drive) for (let t = t0 + 6; t < t1 - 4; t += 13) for (const side of [-1, 1]) if (r() < 0.6) { const q = at(t + r() * 3, side * (e.hw + 0.95)); if (clear(q)) G.tree.push([q[0], q[1], 0.62 + r() * 0.3]); }
   if (C.park && !e.drive) for (const side of [-1, 1]) for (let t = t0 + 4; t < t1 - 6; t += 5.9) if (r() < 0.3) { const [x, z] = at(t, side * (e.hw - 1.08)); G.park.push({ x, z, yaw: Math.atan2(e.ux, e.uz) + (side > 0 ? 0 : Math.PI), k: r() }); }
-  if (e.cls >= 2 && hash2(e.id, 5) < 0.3 && t1 - t0 > 50) { const side = hash2(e.id, 6) < 0.5 ? 1 : -1, t = t0 + 14, [x, z] = at(t, side * (e.hw + 1.9)); G.stop.push({ x, z, a: Math.atan2(e.ux, e.uz), side, tram: e.tram, name: e.name, nx: -e.uz * -side, nz: e.ux * -side }); }
+  if (e.cls >= 2 && !e.rab && hash2(e.id, 5) < 0.3 && t1 - t0 > 50) { const side = e.ow || hash2(e.id, 6) < 0.5 ? 1 : -1, t = t0 + 14, [x, z] = at(t, side * (e.hw + 1.9)); G.stop.push({ x, z, a: Math.atan2(e.ux, e.uz), side, tram: e.tram, name: e.name, nx: -e.uz * -side, nz: e.ux * -side }); }
   if (e.tram) for (let t = t0; t < t1; t += 38) { const [x, z] = at(t, 0); G.pole.push([x, z, Math.atan2(e.ux, e.uz)]); }
   if (hash2(e.id, 9) < 0.5) { const side = hash2(e.id, 10) < 0.5 ? 1 : -1; G.bin.push(at(t0 + 2.5, side * (e.hw + 0.8))); }
   G.lamp = G.lamp.filter(clear); G.bin = G.bin.filter(clear);
@@ -169,8 +189,8 @@ export function genNode(map, n) {
     const out = e.a === n.id ? 1 : -1, dx = e.ux * out, dz = e.uz * out, t = (out > 0 ? e.ta : e.tb) + 0.6;
     // approaching traffic drives on its right: seen from the junction looking out along the arm that is the left side
     const lx = dz, lz = -dx;   // left of the outward direction
-    if (n.signal) G.tl.push({ x: n.x + dx * t + lx * (e.hw + 0.7), z: n.z + dz * t + lz * (e.hw + 0.7), a: Math.atan2(dx, dz), edge: e.id, grp: k % 2 === 0 ? 0 : 1, axis: e.axis, dx, dz });
-    if (k % 2 === 0 && arms.length > 1) { const o = arms[(k + 1) % arms.length]; G.plate.push({ x: n.x + dx * (t + 1.2) - lx * (e.hw + 0.9), z: n.z + dz * (t + 1.2) - lz * (e.hw + 0.9), a: Math.atan2(dx, dz), t1: e.name, t2: o.name }); }
+    if (n.signal && clearOf(map, n.x + dx * t + lx * (e.hw + 0.7), n.z + dz * t + lz * (e.hw + 0.7), e, 0.4)) G.tl.push({ x: n.x + dx * t + lx * (e.hw + 0.7), z: n.z + dz * t + lz * (e.hw + 0.7), a: Math.atan2(dx, dz), edge: e.id, grp: k % 2 === 0 ? 0 : 1, axis: e.axis, dx, dz });
+    if (k % 2 === 0 && arms.length > 1 && clearOf(map, n.x + dx * (t + 1.2) - lx * (e.hw + 0.9), n.z + dz * (t + 1.2) - lz * (e.hw + 0.9), e, 0.4)) { const o = arms[(k + 1) % arms.length]; G.plate.push({ x: n.x + dx * (t + 1.2) - lx * (e.hw + 0.9), z: n.z + dz * (t + 1.2) - lz * (e.hw + 0.9), a: Math.atan2(dx, dz), t1: e.name, t2: o.name }); }
   });
   return (n.gen = G);
 }

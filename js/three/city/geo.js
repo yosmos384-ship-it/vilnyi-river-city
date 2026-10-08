@@ -99,6 +99,15 @@ const GROUND_FRAG = `
         m = max(m * step(med - 0.2, ax), 0.0);
       }
     }
+    else if (cls > 6.5) {   // tram track: sleepers on ballast, two rails 1.435 m apart
+      col = vec3(0.24, 0.225, 0.2) * (0.75 + 0.5 * n); float tie = step(0.6, fract(u.x / 0.65)) * step(ax, 1.15) * fade; col = mix(col, vec3(0.3, 0.27, 0.23), tie * 0.8);
+      float rail = 1.0 - smoothstep(0.035, 0.035 + aw, abs(ax - 0.72)); col = mix(col, vec3(0.5, 0.5, 0.52), rail * fade); m = 0.0;
+    }
+    else if (cls > 5.5) {   // one-way carriageway: solid edge lines, dashed lane dividers (p3 = lanes)
+      float nl = max(vCA.w, 1.0), lw = 2.0 * hw / nl;
+      m = 1.0 - smoothstep(0.08, 0.08 + aw, abs(ax - (hw - 0.3)));
+      for (int k = 1; k < 4; k++) { if (float(k) >= nl) break; m = max(m, (1.0 - smoothstep(0.07, 0.07 + aw, abs(u.y + hw - float(k) * lw))) * dash); }
+    }
     else if (cls > 4.5) { m = (1.0 - smoothstep(0.05, 0.05 + aw, abs(fract(u.x / 2.6) - 0.5) * 2.6)) * step(abs(fract(u.y / 11.0) - 0.5), 0.23); }
     col = mix(col, vec3(0.78, 0.78, 0.74), m * fade * 0.92);
   } else if (id < 1.5) {
@@ -162,10 +171,10 @@ export function createMaterials() {
   return { ground, groundBase, groundTop, bld, prop, sign, U, dispose() { ground.dispose(); groundBase.dispose(); groundTop.dispose(); bld.dispose(); prop.dispose(); sign.dispose(); if (sign.map) sign.map.dispose(); } };
 }
 
-// ------------------------------------------------------------------ sign atlas: 8 × 32 cells of 256 × 32 px on a 2048 × 1024 canvas
+// ------------------------------------------------------------------ sign atlas: 8 × 64 cells of 256 × 32 px on a 2048 × 2048 canvas
 const SIGN_COLS = ['#7a1f24', '#1f4a7a', '#22603a', '#6a3d1a', '#3a2a6a', '#17595e', '#8a5a12', '#2b2f36', '#7a2a5a', '#0f3d2e'];
 export function createSignAtlas(texts) {   // texts: [{text, kind:'shop'|'poi'|'street'|'metro'}] → {tex, uv(i) → [u0,v0,u1,v1], index(text)}
-  const CW = 256, CH = 32, NX = 8, NY = 32, c = document.createElement('canvas'); c.width = CW * NX; c.height = CH * NY;
+  const CW = 256, CH = 32, NX = 8, NY = 64, c = document.createElement('canvas'); c.width = CW * NX; c.height = CH * NY;
   const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
   const idx = new Map();
   texts.slice(0, NX * NY).forEach((t, i) => {

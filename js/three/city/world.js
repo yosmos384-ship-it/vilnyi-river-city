@@ -2,9 +2,10 @@
 // instanced pools for everything that can be knocked over (lamps, bins, traffic lights, fences), sky, lake, the site
 // massing, time of day, and the static collision queries. No scene lights are added per lamp: night is emissive.
 import * as THREE from 'three';
-import { ROAD, CHUNK, hash2, inPoly } from './map.js?v=3.6';
-import { Geo, HEX, createMaterials, createSignAtlas } from './geo.js?v=3.6';
-import { genBlock, genEdge, genNode, obbCorners, poiSign, SHOPS } from './gen.js?v=3.6';
+import { ROAD, CHUNK, hash2, inPoly } from './map.js?v=3.7';
+import { Geo, HEX, createMaterials, createSignAtlas } from './geo.js?v=3.7';
+import { genBlock, genEdge, genNode, obbCorners, poiSign, SHOPS } from './gen.js?v=3.7';
+import { buildLandmarks } from './landmarks.js?v=3.7';
 
 const TIMES = {
   day: { top: '#3f7fd0', hor: '#c9dcec', fog: '#bfd2e2', near: 160, far: 560, hemi: ['#dfeaf6', '#6a6f66', 1.15], sun: ['#fff4de', 2.3, [0.5, 0.8, 0.3]], night: 0, lit: 0.0, exp: 0.95 },
@@ -82,6 +83,8 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
     const sg = new Geo(); const sx = R.x + R.uz * (R.hd + 0.05), sz = R.z - R.ux * (R.hd + 0.05);
     signQuad(sg, sx, 3.5, sz, R.uz, -R.ux, 4.4, 0.55, atlas.uv(atlas.index('poi', 'VILNYI RIVER CITY')));
     const sm = new THREE.Mesh(sg.build(), M.sign); group.add(sm); }
+  // landmarks of the real map (Palace of the Parliament, Arcul de Triumf): built once, seen from afar
+  const LM = buildLandmarks(map, M); group.add(LM.group);
   function signQuad(g, x, y, z, nx, nz, w, h, uv) {
     const tx = nz, tz = -nx; g.col(1, 1, 1);   // left → right as read by someone facing the sign
     g.quad([x - tx * w / 2, y - h / 2, z - tz * w / 2], [x + tx * w / 2, y - h / 2, z + tz * w / 2], [x + tx * w / 2, y + h / 2, z + tz * w / 2], [x - tx * w / 2, y + h / 2, z - tz * w / 2], [nx, 0, nz], [uv[0], uv[1]], [uv[2], uv[1]], [uv[2], uv[3]], [uv[0], uv[3]]);
@@ -99,8 +102,17 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
       const za = e.cls >= 1 && !e.drive && (a.arms || []).length >= 3 && t1 - t0 > 30, zb = e.cls >= 1 && !e.drive && (b.arms || []).length >= 3 && t1 - t0 > 30;
       if (za) { seg(t0, t0 + 3.6, 1, 0, 0, 0, (t, l) => [l, t - t0]); t0 += 3.6; }
       if (zb) { seg(t1 - 3.6, t1, 1, 0, 0, 0, (t, l) => [l, t1 - t]); t1 -= 3.6; }
-      seg(t0, t1, 0, e.drive ? 0 : e.cls, e.hw, e.tram ? 1 : 0, road);
+      seg(t0, t1, 0, e.drive ? 0 : e.ow ? (e.rab ? 4 : 6) : e.cls, e.hw, e.ow ? e.lanes : e.tram ? 1 : 0, road);
       e.za = za; e.zb = zb;
+    }
+    // the Dâmbovița in its walled channel (real map): water just under the road decks, quay paving on both banks
+    for (const [p, q, pp, qn] of map.riverByChunk.get(ch.key) || []) {
+      const W = map.riverHW, ofs = (P0, P1, Pn, d) => { const ax = P1[0] - P0[0], az = P1[1] - P0[1], La = Math.hypot(ax, az) || 1, bx = Pn ? Pn[0] - P1[0] : ax, bz = Pn ? Pn[1] - P1[1] : az, Lb = Math.hypot(bx, bz) || 1, nx = -(az / La + bz / Lb), nz = ax / La + bx / Lb, L = Math.hypot(nx, nz) || 1; return [P1[0] + nx / L * d, P1[1] + nz / L * d]; };
+      const a0 = ofs(pp || [2 * p[0] - q[0], 2 * p[1] - q[1]], p, q, -(W - 3)), a1 = ofs(pp || [2 * p[0] - q[0], 2 * p[1] - q[1]], p, q, W - 3), b0 = ofs(p, q, qn, -(W - 3)), b1 = ofs(p, q, qn, W - 3);
+      g.attr(5, 0, 0, 0).col(1, 1, 1).poly([a0, b0, b1, a1], -0.02);
+      const c0 = ofs(pp || [2 * p[0] - q[0], 2 * p[1] - q[1]], p, q, -W), c1 = ofs(pp || [2 * p[0] - q[0], 2 * p[1] - q[1]], p, q, W), d0 = ofs(p, q, qn, -W), d1 = ofs(p, q, qn, W);
+      g.attr(2, 0, 0, 0).col('#a7a197').poly([c0, d0, b0, a0], 0.1); g.poly([a1, b1, d1, c1], 0.1);
+      g.attr(4, 0, 0, 0).col('#8d8a83'); g.wall(a0, b0, -0.02, 0.1); g.wall(b1, a1, -0.02, 0.1);
     }
     for (const n of ch.nodes) {
       const pts = [];
@@ -122,8 +134,13 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
       else g.attr(2, 0, 0, 0).col('#9c978c').poly(I, 0.14);
       for (const q of G.ground) if (q !== full) tops.push(q);
     }
+    // tram tracks that run outside a boulevard median (real map): two rails on a sleeper bed
+    for (const [p, q] of map.tramByChunk.get(ch.key) || []) {
+      const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz); if (L < 0.5) continue; const rx = -dz / L * 1.25, rz = dx / L * 1.25;
+      tops.push({ poly: [[p[0] - rx, p[1] - rz], [q[0] - rx, q[1] - rz], [q[0] + rx, q[1] + rz], [p[0] + rx, p[1] + rz]], surf: 0, cls: 7, col: '#808080', y: -0.12, uvr: [p, dx / L, dz / L] });
+    }
     const n0 = g.i.length;
-    for (const q of tops) { g.attr(q.surf, q.cls ?? 5, 6, 0).col(q.col); g.poly(q.poly, 0.16 + (q.y || 0)); }
+    for (const q of tops) { if (q.uvr) { const [o, ux, uz] = q.uvr, base = g.p.length / 3; g.attr(q.surf, q.cls ?? 5, 1.25, 0).col(q.col); g.poly(q.poly, 0.16 + (q.y || 0)); for (let k = base; k < g.p.length / 3; k++) { const x = g.p[k * 3] - o[0], z = g.p[k * 3 + 2] - o[1]; g.u[k * 2] = x * ux + z * uz; g.u[k * 2 + 1] = -x * uz + z * ux; } continue; } g.attr(q.surf, q.cls ?? 5, 6, 0).col(q.col); g.poly(q.poly, 0.16 + (q.y || 0)); }
     if (!g.count) return null;
     const geo = g.build(); geo.addGroup(0, n0, 0); if (g.i.length > n0) geo.addGroup(n0, g.i.length - n0, 1);
     return new THREE.Mesh(geo, [M.ground, M.groundTop]);
@@ -173,6 +190,7 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
       }
     }
     for (const e of ch.edges) {
+      if (e.bridge) { const a = map.nodes[e.a]; g.col('#b9b3a6'); for (const sd of [-1, 1]) { const o = e.hw + 0.5; const p0 = [a.x + e.ux * e.ta - e.uz * o * sd, a.z + e.uz * e.ta + e.ux * o * sd], p1 = [a.x + e.ux * (e.len - e.tb) - e.uz * o * sd, a.z + e.uz * (e.len - e.tb) + e.ux * o * sd]; g.wall(p0, p1, 0, 1.05, 0, [-e.uz * sd, e.ux * sd]); g.wall(p1, p0, 0, 1.05, 0, [e.uz * sd, -e.ux * sd]); } }
       const G = genEdge(map, e); G.tree.forEach(t => tree(t, 0.14));
       for (const s of G.stop) shelter(g, sign, circles, s.x, s.z, s.a, s.nx, s.nz, s.name);
       for (const [x, z, a] of G.pole) { g.col('#3d4046'); g.cyl(x, 0, z, 0.09, 0.07, 6.6, 5); obox(g, x, 6.2, z, a + Math.PI / 2, 5.6, 0.06, 0.06); circles.push({ x, z, r: 0.14, k: 'solid' }); }
@@ -200,7 +218,7 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
       for (const [x, z, , side] of G.lamp) { const t = (x - a.x) * e.ux + (z - a.z) * e.uz, cx = a.x + e.ux * t, cz = a.z + e.uz * t; it.push({ k: 'lamp', x, z, a: Math.atan2(cx - x, cz - z), r: 0.16, side, hit: 0 }); }
       for (const [x, z] of G.bin) it.push({ k: 'bin', x, z, a: 0, r: 0.3, hit: 0 }); }
     for (const b of ch.blocks) { const G = genBlock(map, b); for (const [x, z] of G.bin) it.push({ k: 'bin', x, z, a: 0, r: 0.3, hit: 0 }); for (const [x, z, a] of G.fence) it.push({ k: 'fence', x, z, a, r: 1.3, hit: 0 }); }
-    for (const n of ch.nodes) for (const t of genNode(map, n).tl) it.push({ k: 'tl', x: t.x, z: t.z, a: t.a, r: 0.18, hit: 0, node: n, grp: t.axis, tl: t });
+    for (const n of ch.nodes) for (const t of genNode(map, n).tl) it.push({ k: 'tl', x: t.x, z: t.z, a: t.a, r: 0.18, hit: 0, node: n, grp: map.axisAt(n, map.edges[t.edge]), tl: t });
     return (ch.items = it);
   }
   // a chunk is built in small steps spread over frames: its blocks are generated one by one, then the four meshes
@@ -274,16 +292,17 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
     if (lens.instanceColor) lens.instanceColor.needsUpdate = true;
   }
   // ---- per-frame streaming
-  let lastKey = '';
+  let lastKey = '', waiting = false, waitT = 0, lastPre = '';
   function update(px, pz, dt, camera, budgetMs = 7) {
     clock += dt;
     const ci = Math.floor(px / CHUNK), cj = Math.floor(pz / CHUNK), R = Math.ceil(LOAD_R / CHUNK);
     const k0 = ci + ',' + cj;
     const k1 = k0 + ':' + Math.floor(px / 64) + ',' + Math.floor(pz / 64);
-    if (k1 !== lastKey) {
-      lastKey = k1;
+    if (k1 !== lastKey || (waiting && performance.now() - waitT > 200)) {
+      lastKey = k1; waiting = false; waitT = performance.now(); if (map.real && k1 !== lastPre) { lastPre = k1; map.prefetch(px, pz); }
       for (let i = ci - R; i <= ci + R; i++) for (let j = cj - R; j <= cj + R; j++) {
         const ch = map.chunks.get(i + ',' + j); if (!ch || loaded.has(ch.key) || Math.hypot(Math.max(0, Math.abs((i + 0.5) * CHUNK - px) - CHUNK / 2), Math.max(0, Math.abs((j + 0.5) * CHUNK - pz) - CHUNK / 2)) > LOAD_R) continue;
+        if (!map.chunkReady(ch)) { waiting = true; continue; }   // its plots are still on the way (real map: 1 km tiles)
         ch.cx = (i + 0.5) * CHUNK; ch.cz = (j + 0.5) * CHUNK;
         loaded.set(ch.key, ch); ch.m = {}; ch.stage = 0; ch.plan = null; ch.ready = false; queue.push(ch);
       }
@@ -308,6 +327,7 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
       for (const b of c.blocks) { if (seen.has(b.id)) continue; seen.add(b.id); for (const o of genBlock(map, b).solid) if (Math.abs(o.x - x) < r + o.hw + o.hd && Math.abs(o.z - z) < r + o.hw + o.hd) out.push(o); }
     }
     for (const o of map.site.boxes) if (Math.abs(o.x - x) < r + o.hw + o.hd && Math.abs(o.z - z) < r + o.hw + o.hd) out.push(o);
+    for (const o of LM.solids) if (Math.abs(o.x - x) < r + o.hw + o.hd && Math.abs(o.z - z) < r + o.hw + o.hd) out.push(o);
     return out;
   }
   function inSolid(x, z, pad = 0) { for (const o of solidsNear(x, z, pad + 1, inSolid._o || (inSolid._o = []))) { const dx = x - o.x, dz = z - o.z; if (Math.abs(dx * o.ux + dz * o.uz) < o.hw + pad && Math.abs(-dx * o.uz + dz * o.ux) < o.hd + pad) return o; } return null; }
@@ -332,7 +352,7 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
     group, materials: M, atlas, loaded, stats, update, setTime, get time() { return timeMode; }, get night() { return T.night; }, signal, solidsNear, inSolid, propsNear, knock, repairAll,
     on(ev, f) { listeners[ev].push(f); }, get pending() { return queue.length; },
     dispose() {
-      for (const ch of [...loaded.values()]) drop(ch);
+      for (const ch of [...loaded.values()]) drop(ch); LM.dispose();
       group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map && o.material.map !== atlas.tex) o.material.map.dispose(); });
       for (const m of [sky.material, skyline.material, glow.material, pool.material, lens.material]) m.dispose();
       M.dispose(); scene.remove(group); scene.fog = null;

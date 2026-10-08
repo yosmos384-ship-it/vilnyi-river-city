@@ -2,10 +2,10 @@
 // loose bodies after a crash, wrecks, police and the ambulance. All drawn as instances: one mesh per car design
 // (cars.js far model, tinted per car) + one each for contact shadows, roof light bars and night lights.
 import * as THREE from 'three';
-import { carGeometryXForward, CAR_KINDS, CAR_COLOURS, carSpec } from '../cars.js?v=3.6';
-import { ROAD, hash2 } from './map.js?v=3.6';
-import { genEdge, genBlock } from './gen.js?v=3.6';
-import { makeBody, stepBody, bodyBox, obbMTV, collide, collideStatic, CLASS } from './vehicle.js?v=3.6';
+import { carGeometryXForward, CAR_KINDS, CAR_COLOURS, carSpec } from '../cars.js?v=3.7';
+import { ROAD, hash2 } from './map.js?v=3.7';
+import { genEdge, genBlock } from './gen.js?v=3.7';
+import { makeBody, stepBody, bodyBox, obbMTV, collide, collideStatic, CLASS } from './vehicle.js?v=3.7';
 
 const COLS = ['black', 'graphite', 'pearl', 'blue', 'champagne', 'green', 'silver', 'silver', 'burgundy', 'bronze', 'ice', 'red', 'pearl', 'graphite'];
 const KINDS = ['sedan', 'sedan', 'suv', 'suv', 'ev', 'ev', 'gt', 'coupe', 'sedan', 'super'];
@@ -36,7 +36,7 @@ export function createTraffic(G) {
   }
   const remove = c => { const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1); c.mode = 'gone'; if (c.lockNode && c.lockNode.lock === c.id) c.lockNode.lock = 0; };
   // ---- lanes
-  const laneLat = (e, lane) => ROAD[e.cls].med / 2 + (lane + 0.5) * ROAD[e.cls].lw;
+  const laneLat = (e, lane) => (e.ow ? -e.hw + (Math.min(lane, e.lanes - 1) + 0.5) * (2 * e.hw / e.lanes) : ROAD[e.cls].med / 2 + (lane + 0.5) * ROAD[e.cls].lw);   // one-way: lanes across the whole carriageway
   function seg(e, dir) {
     const o = map.nodes[dir > 0 ? e.a : e.b], end = map.nodes[dir > 0 ? e.b : e.a], hx = e.ux * dir, hz = e.uz * dir;
     return { o, end, hx, hz, rx: -hz, rz: hx, s0: dir > 0 ? e.ta : e.tb, s1: e.len - (dir > 0 ? e.tb : e.ta), zebra: dir > 0 ? e.zb : e.za };
@@ -50,19 +50,20 @@ export function createTraffic(G) {
   function enter(c, e, dir, lane, s) { c.e = e; c.dir = dir; c.lane = lane; c.sg = seg(e, dir); c.s = s ?? c.sg.s0; c.lat = c.latT = laneLat(e, lane); c.turn = null; c.next = null; c.v0 = ROAD[e.cls].v * (0.82 + 0.3 * c.k0); }
   function chooseNext(c) {
     const n = c.sg.end, opts = [];
-    for (const ei of n.edges) { const e = map.edges[ei]; if (e === c.e || e.dead) continue; const d = e.a === n.id ? 1 : -1, cs = c.sg.hx * e.ux * d + c.sg.hz * e.uz * d; if (e.drive && Math.random() > 0.04) continue; opts.push({ e, d, w: 0.2 + Math.max(0, cs) ** 2 * 2.2 + (e.cls >= c.e.cls ? 0.4 : 0) }); }
-    if (!opts.length) return { e: c.e, d: -c.dir };
+    for (const ei of n.edges) { const e = map.edges[ei]; if (e === c.e || e.dead) continue; const d = e.a === n.id ? 1 : -1; if (e.ow && d < 0) continue; const cs = c.sg.hx * e.ux * d + c.sg.hz * e.uz * d; if (e.drive && Math.random() > 0.04) continue; opts.push({ e, d, w: 0.2 + Math.max(0, cs) ** 2 * 2.2 + (e.cls >= c.e.cls ? 0.4 : 0) }); }
+    if (!opts.length) return c.e.ow ? null : { e: c.e, d: -c.dir };
     let r = Math.random() * opts.reduce((a, o) => a + o.w, 0); for (const o of opts) { r -= o.w; if (r <= 0) return o; } return opts[0];
   }
   function startTurn(c) {
-    const nx = c.next || chooseNext(c), e2 = nx.e, d2 = nx.d, S2 = seg(e2, d2), lane2 = Math.min(c.lane, e2.lanes - 1), lat2 = laneLat(e2, lane2);
+    const nx = c.next || chooseNext(c); if (!nx) { remove(c); return false; } const e2 = nx.e, d2 = nx.d, S2 = seg(e2, d2), lane2 = Math.min(c.lane, e2.lanes - 1), lat2 = laneLat(e2, lane2);
     const p0 = [c.x, c.z], p2 = [S2.o.x + S2.hx * S2.s0 + S2.rx * lat2, S2.o.z + S2.hz * S2.s0 + S2.rz * lat2];
     const h0 = [c.sg.hx, c.sg.hz], den = h0[0] * S2.hz - h0[1] * S2.hx; let p1;
     if (Math.abs(den) > 0.25) { const t = ((p2[0] - p0[0]) * S2.hz - (p2[1] - p0[1]) * S2.hx) / den; p1 = t > 0 && t < 60 ? [p0[0] + h0[0] * t, p0[1] + h0[1] * t] : [(p0[0] + p2[0]) / 2, (p0[1] + p2[1]) / 2]; }
     else p1 = [(p0[0] + p2[0]) / 2, (p0[1] + p2[1]) / 2];
     let len = 0, px = p0[0], pz = p0[1]; for (let k = 1; k <= 6; k++) { const t = k / 6, u = 1 - t, x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], z = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]; len += Math.hypot(x - px, z - pz); px = x; pz = z; }
     c.turn = { p0, p1, p2, len: Math.max(1, len), t: 0, e2, d2, lane2, sharp: Math.abs(den) > 0.4 };
-    const n = c.sg.end; if (!n.signal) { n.lock = c.id; n.lockT = time; c.lockNode = n; } else stats.sig[world.signal(n, c.e.axis)]++;
+    const n = c.sg.end; if (!n.signal) { n.lock = c.id; n.lockT = time; c.lockNode = n; } else stats.sig[world.signal(n, map.axisAt(n, c.e))]++;
+    return true;
   }
   // ---- spawning
   function density() { return [0, 9, 20, 32][G.settings.traffic] ?? 20; }
@@ -70,7 +71,7 @@ export function createTraffic(G) {
     for (let tries = 0; tries < 12; tries++) {
       const a = Math.random() * 6.283, d = near ? 60 + Math.random() * 120 : 190 + Math.random() * 130, ne = map.nearestEdge(px + Math.cos(a) * d, pz + Math.sin(a) * d, 70);
       if (!ne || ne.e.drive || ne.e.len < 60) continue;
-      const e = ne.e, dir = Math.random() < 0.5 ? 1 : -1, S = seg(e, dir), s = S.s0 + 6 + Math.random() * Math.max(1, S.s1 - S.s0 - 30), lane = Math.floor(Math.random() * e.lanes), lat = laneLat(e, lane);
+      const e = ne.e, dir = e.ow || Math.random() < 0.5 ? 1 : -1, S = seg(e, dir), s = S.s0 + 6 + Math.random() * Math.max(1, S.s1 - S.s0 - 30), lane = Math.floor(Math.random() * e.lanes), lat = laneLat(e, lane);
       const x = S.o.x + S.hx * s + S.rx * lat, z = S.o.z + S.hz * s + S.rz * lat;
       if (Math.hypot(x - px, z - pz) < (near ? 45 : 170)) continue;
       if (cars.some(c => Math.abs(c.x - x) < 11 && Math.abs(c.z - z) < 11)) continue;
@@ -115,7 +116,7 @@ export function createTraffic(G) {
       if (!c.next && S.s1 - c.s < 45) c.next = chooseNext(c);
       if (c.next && d < 28) { const cs = S.hx * c.next.e.ux * c.next.d + S.hz * c.next.e.uz * c.next.d; if (cs < 0.6) v0 = Math.min(v0, 6.5 + Math.max(0, d) * 0.3); }
       let hold = false;
-      if (n.signal) { const st = world.signal(n, c.e.axis); if (st === 2 || (st === 1 && d > c.v * 0.9)) hold = true; }
+      if (n.signal) { const st = world.signal(n, map.axisAt(n, c.e)); if (st === 2 || (st === 1 && d > c.v * 0.9)) hold = true; }
       else if ((n.arms || []).length >= 3) { v0 = Math.min(v0, 7 + Math.max(0, d) * 0.35); if (n.lock && n.lock !== c.id && time - n.lockT < 6) hold = true; }
       if (hold && d > -2.5 && d < gap) { gap = Math.max(0, d); lv = 0; who = null; }
     }
@@ -131,17 +132,17 @@ export function createTraffic(G) {
     if (!c.turn) {
       const slow = who && gap < 14 && lv < c.v0 * 0.55; c.slowT = slow ? c.slowT + dt : 0;
       if ((c.slowT > 1.6 || c.blockT > 4) && Math.abs(c.lat - c.latT) < 0.2) {
-        const cand = c.e.lanes > 1 ? laneLat(c.e, c.lane ? 0 : 1) : (c.blockT > 4 && !c.e.tram ? (c.latT > 0 && c.away ? laneLat(c.e, 0) : -0.4) : null);
+        const nl = c.lane + 1 < c.e.lanes && (c.lane === 0 || Math.random() < 0.5) ? c.lane + 1 : c.lane - 1, cand = c.e.lanes > 1 ? laneLat(c.e, nl) : (c.blockT > 4 && !c.e.tram ? (c.latT > 0 && c.away ? laneLat(c.e, 0) : -0.4) : null);
         if (cand != null && cand !== c.latT) { // is that lane free around us?
           const tx = S.o.x + S.hx * c.s + S.rx * cand, tz = S.o.z + S.hz * c.s + S.rz * cand; let free = true;
           for (const o of others) { if (o === c) continue; const f = (o.x - tx) * S.hx + (o.z - tz) * S.hz, l = (o.x - tx) * S.rx + (o.z - tz) * S.rz; if (Math.abs(l) < 2 && f > -9 && f < 16) { free = false; break; } }
-          if (free) { c.latT = cand; if (c.e.lanes > 1) c.lane = c.lane ? 0 : 1; else c.away = time; c.slowT = 0; c.blockT = 0; }
+          if (free) { c.latT = cand; if (c.e.lanes > 1) c.lane = nl; else c.away = time; c.slowT = 0; c.blockT = 0; }
         }
       }
       if (c.away && c.e.lanes === 1 && time - c.away > 5) { c.latT = laneLat(c.e, 0); c.away = 0; }
       c.lat += clamp(c.latT - c.lat, -1.6 * dt * clamp(c.v / 3, 0.25, 1), 1.6 * dt * clamp(c.v / 3, 0.25, 1));
       c.s += c.v * dt;
-      if (c.s >= S.s1) { place(c); startTurn(c); }
+      if (c.s >= S.s1) { place(c); if (!startTurn(c)) return; }
     } else {
       c.turn.t += c.v * dt / c.turn.len;
       if (c.turn.t >= 1) { const T2 = c.turn; if (c.lockNode) { if (c.lockNode.lock === c.id) c.lockNode.lock = 0; c.lockNode = null; } enter(c, T2.e2, T2.d2, T2.lane2); }
@@ -160,7 +161,7 @@ export function createTraffic(G) {
       if (c.was === 'parked' || !c.driver) { c.mode = 'parked'; return; }
       if (c.dmg >= 55 || c.wreck) { c.mode = 'wreck'; c.wreck = true; c.wreckT = time; if (c.driver) { c.driver = false; G.peds && G.peds.bail(c); } return; }
       // light knock: back into the traffic if a lane is at hand, otherwise the driver gives up
-      const ne = map.nearestEdge(c.x, c.z, 12); if (ne && !ne.e.drive) { const dir = Math.cos(c.yaw - Math.atan2(ne.e.ux, ne.e.uz)) >= 0 ? 1 : -1, S = seg(ne.e, dir), s = dir > 0 ? ne.t : ne.e.len - ne.t; if (s > S.s0 + 2 && s < S.s1 - 6) { c.mode = 'ai'; enter(c, ne.e, dir, 0, s); c.lat = (c.x - (S.o.x + S.hx * s)) * S.rx + (c.z - (S.o.z + S.hz * s)) * S.rz; c.v = 0; return; } }
+      const ne = map.nearestEdge(c.x, c.z, 12); if (ne && !ne.e.drive && !(ne.e.ow && Math.cos(c.yaw - Math.atan2(ne.e.ux, ne.e.uz)) < 0)) { const dir = Math.cos(c.yaw - Math.atan2(ne.e.ux, ne.e.uz)) >= 0 ? 1 : -1, S = seg(ne.e, dir), s = dir > 0 ? ne.t : ne.e.len - ne.t; if (s > S.s0 + 2 && s < S.s1 - 6) { c.mode = 'ai'; enter(c, ne.e, dir, 0, s); c.lat = (c.x - (S.o.x + S.hx * s)) * S.rx + (c.z - (S.o.z + S.hz * s)) * S.rz; c.v = 0; return; } }
       c.mode = 'wreck'; c.wreck = true; c.wreckT = time; c.driver = false; G.peds && G.peds.bail(c);
     }
   }

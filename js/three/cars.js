@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.6';
+import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.7';
 
 export const CAR_KINDS = ['sedan', 'coupe', 'suv', 'gt', 'ev', 'super'];
 export const CAR_COLOURS = {
@@ -904,7 +904,7 @@ function kindGeometry(kind, lod = false) {
   let steer = null, eye = null;
   if (!lod) {
     const IN = INTERIORS[0];   // colours applied per car via vertex colours → the detailed geometry is built per interior
-    out._interiorBuild = ic => interiorGeometry(M, ic);
+    out._interiorBuild = ic => interiorGeometry(M, ic, false, kind);
     steer = steeringGeometry(); eye = [S.driverX, S.eye, S.seat + 0.02];
     const dh = M.belt(S.zA) - 0.02;
     const scr = (w, h, x, y, z, tilt) => {
@@ -1024,10 +1024,155 @@ function farGeometry(kind) {
   return (KIND_GEO[key] = { paint, rest: g, spec: S });
 }
 
+// ------------------------------------------------------------------ cockpit (car being driven): sculpted parts
+// trim finish per design: sports bodies carbon, otherwise from the interior palette (aluminium / carbon / wood), the EV
+// saloon piano black with aluminium
+function trimKindOf(kind, ic) { if (kind === 'super' || kind === 'coupe') return 'carbon'; if (kind === 'ev') return 'piano'; return ic.accent === '#8f8f93' ? 'alu' : ic.accent === '#2b2b2e' ? 'carbon' : 'wood'; }
+// parametric surface (u across, v along a profile) → indexed geometry with normals
+function paramSurface(nu, nv, f) {
+  const P = [], I = [];
+  for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) P.push(...f(i / nu, j / nv));
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1; I.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(I); g.computeVertexNormals(); return g;
+}
+const cr = (pts, t) => { const n = pts.length - 1, f = Math.min(n - 1e-6, Math.max(0, t * n)), k = Math.floor(f), u = f - k, p0 = pts[Math.max(0, k - 1)], p1 = pts[k], p2 = pts[k + 1], p3 = pts[Math.min(n, k + 2)];
+  return p1.map((_, j) => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * u + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * u * u + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * u * u * u)); };
+// the upper dashboard: one soft surface from under the windscreen over a rounded lip down into the leather band, a low
+// crown in front of the driver that blends into the binnacle brow, the ends rolling down into the doors
+function dashTop(fw, dh, dFront, dRear, dxv, kind) {
+  const lo = kind === 'super' || kind === 'coupe' ? 0.7 : 1;
+  return paramSurface(48, 22, (u, v) => {
+    const x = lerp(-fw + 0.025, fw - 0.025, u), end = Math.pow(Math.abs(x) / fw, 8), crown = 0.03 * Math.exp(-Math.pow((x - dxv) / 0.3, 2)) * lo;
+    const pr = [[dFront, dh - 0.045], [dFront - 0.1, dh - 0.004], [lerp(dFront, dRear, 0.55), dh + 0.03 * lo + crown], [dRear + 0.09, dh + 0.036 * lo + crown], [dRear + 0.022, dh + 0.018 + crown * 0.6], [dRear - 0.004, dh - 0.03], [dRear + 0.004, dh - 0.085]];
+    const [z, y] = cr(pr, v); return [x, y - end * 0.06, z + end * 0.03];
+  });
+}
+// binnacle brow: a curved hood over the cluster, its lip rolled toward the driver
+function brow(w, x, yTop, zLip, depth) {
+  return paramSurface(24, 14, (u, v) => {
+    const xx = x + (u - 0.5) * w, e = Math.pow(Math.abs(u - 0.5) * 2, 6);
+    const pr = [[zLip + depth, yTop - 0.03], [zLip + depth * 0.55, yTop + 0.004], [zLip + 0.04, yTop], [zLip + 0.004, yTop - 0.022], [zLip + 0.012, yTop - 0.05]];
+    const [z, y] = cr(pr, v); return [xx, y - e * 0.06, z];
+  });
+}
+// a multi-function wheel: leather rim (thicker at the quarter grips, flat-bottomed on the sports bodies), contrast stitch,
+// a padded logo-free hub, three spokes with button pads and a rocker, aluminium paddle shifters, the column shroud
+function steeringGeometry2(kind, ic) {
+  const parts = [], sport = kind === 'super' || kind === 'coupe' || kind === 'gt', suede = kind === 'super';
+  const P = (g, hex, m, r) => parts.push(tint(g, hex, m, r));
+  const rimC = suede ? '#2a2a2c' : ic.leather === '#d6c9b0' ? '#1d1c1b' : ic.leather, R = 0.183;
+  const rim = new THREE.TorusGeometry(R, 0.0175, 16, 72);
+  { const p = rim.attributes.position;
+    for (let i = 0; i < p.count; i++) { let x = p.getX(i), y = p.getY(i), z = p.getZ(i); const a = Math.atan2(y, x), r0 = Math.hypot(x, y), cx = Math.cos(a) * R, cy = Math.sin(a) * R;
+      const grip = 1 + 0.16 * Math.pow(Math.abs(Math.cos(a)), 6) * (Math.sin(a) > -0.3 ? 1 : 0.4), ox = (x - cx) * grip, oy = (y - cy) * grip; x = cx + ox; y = cy + oy; z *= grip; void r0;
+      if (sport && y < -0.128) y = -0.128 + (y + 0.128) * 0.25;
+      p.setXYZ(i, x, y, z); }
+    rim.computeVertexNormals(); }
+  P(rim, rimC, 0, suede ? 0.9 : 0.48);
+  if (suede) { const mk = new THREE.TorusGeometry(R, 0.0182, 10, 10, 0.16); mk.rotateZ(Math.PI / 2 - 0.08); P(mk, '#c8281e', 0, 0.8); }
+  const st = new THREE.TorusGeometry(R - 0.0125, 0.0013, 4, 72); st.translate(0, 0, -0.0105); if (sport) { const p = st.attributes.position; for (let i = 0; i < p.count; i++) if (p.getY(i) < -0.116) p.setY(i, -0.116 + (p.getY(i) + 0.116) * 0.25); } P(st, suede ? '#c8281e' : '#cbb994', 0, 0.7);
+  // hub: padded airbag cover with a seam, a satin bezel
+  const hub = new RoundedBoxGeometry(0.13, 0.1, 0.05, 4, 0.024); hub.translate(0, -0.012, 0.004); P(hub, '#141414', 0, 0.55);
+  const seam = new RoundedBoxGeometry(0.1, 0.07, 0.002, 2, 0.02); seam.translate(0, -0.012, -0.022); P(seam, '#0b0b0b', 0, 0.7);
+  const bez = new THREE.TorusGeometry(0.066, 0.0025, 6, 40); bez.scale(1, 0.78, 1); bez.translate(0, -0.012, -0.015); P(bez, '#9a9c9f', 1, 0.3);
+  // spokes: left / right with button pads, lower spoke(s)
+  for (const sx of [-1, 1]) {
+    const sp = new RoundedBoxGeometry(0.11, 0.038, 0.022, 3, 0.009); sp.translate(sx * 0.115, -0.006, 0.006); P(sp, '#161616', 0.1, 0.5);
+    const inl = new RoundedBoxGeometry(0.1, 0.005, 0.004, 2, 0.002); inl.translate(sx * 0.115, 0.012, -0.006); P(inl, '#a7a9ac', 1, 0.25);
+    for (let k = 0; k < 4; k++) { const b = new THREE.CylinderGeometry(0.0062, 0.0062, 0.004, 14); b.rotateX(Math.PI / 2); b.translate(sx * (0.088 + (k % 2) * 0.024), -0.012 + (k >> 1) * -0.0, -0.0062); if (k > 1) b.translate(0, -0.0, 0); P(b, '#0a0a0a', 0.3, 0.35); }
+    const rk = new RoundedBoxGeometry(0.01, 0.026, 0.006, 2, 0.003); rk.translate(sx * 0.143, -0.008, -0.006); P(rk, '#0c0c0c', 0.3, 0.35);
+    // paddle shifter behind the rim
+    const pd = new RoundedBoxGeometry(0.03, 0.085, 0.005, 2, 0.002); pd.rotateZ(sx * 0.2); pd.translate(sx * 0.15, 0.02, 0.034); P(pd, '#b9bbbe', 1, 0.28);
+  }
+  for (const dx of sport ? [-0.024, 0.024] : [0]) { const sp = new RoundedBoxGeometry(sport ? 0.016 : 0.045, 0.11, 0.018, 2, 0.006); sp.translate(dx, -0.11, 0.006); P(sp, '#161616', 0.1, 0.5); }
+  const col = new THREE.CylinderGeometry(0.032, 0.045, 0.3, 16); col.rotateX(Math.PI / 2); col.translate(0, 0, 0.18); P(col, '#121212', 0, 0.6);
+  const g = mergeGeometries(parts.map(q => strip(q.index ? q : q, ['position', 'normal', 'color', 'mr'])), false); parts.forEach(q => q.dispose()); g.computeBoundingSphere(); return g;
+}
+// the driver's hands on the wheel at a quarter to three (they turn with it): palm, four fingers curled round the rim,
+// thumb along the spoke, cuff; bare adult hands, black driving gloves in the supercar
+function handsGeometry(kind) {
+  const parts = [], R = 0.183, skin = kind === 'super' ? '#1b1b1d' : '#c49172', sleeve = '#20232a', SK = kind === 'super' ? 0.55 : 0.36;
+  const P = (g, hex, m, r) => parts.push(tint(g, hex, m, r));
+  for (const sx of [1, -1]) {
+    const a = sx > 0 ? 0.18 : Math.PI - 0.18, cx = Math.cos(a) * R, cy = Math.sin(a) * R, tx = -Math.sin(a), ty = Math.cos(a);   // rim point, tangent
+    const at = (along, out, back) => [cx + tx * along + Math.cos(a) * out, cy + ty * along + Math.sin(a) * out, back];
+    // fingers: tori wrapped round the rim tube, stacked along the rim
+    for (let k = 0; k < 4; k++) {
+      const f = new THREE.TorusGeometry(0.027, 0.0086 - k * 0.0006, 8, 14, 4.2);
+      f.rotateZ(-Math.PI / 2);   // from the driver's side, over the outer edge, round to the front
+      const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(Math.cos(a), Math.sin(a), 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(tx, ty, 0));
+      f.applyMatrix4(m); const [x, y, z] = at(-0.03 + k * 0.019, 0, 0); f.translate(x, y, z); P(f, skin, 0, SK);
+    }
+    // palm block behind the rim (driver side) and out
+    const palm = new RoundedBoxGeometry(0.05, 0.085, 0.034, 3, 0.015);
+    palm.applyMatrix4(new THREE.Matrix4().makeRotationZ(a)); { const [x, y] = at(-0.002, 0.012, 0); palm.translate(x, y, -0.03); } P(palm, skin, 0, SK);
+    // thumb along the spoke
+    const th = new THREE.CapsuleGeometry(0.0085, 0.04, 4, 8); th.rotateZ(Math.PI / 2); th.applyMatrix4(new THREE.Matrix4().makeRotationZ(a)); { const [x, y] = at(0.032, -0.026, 0); th.translate(x, y, -0.018); } P(th, skin, 0, SK);
+    // a short wrist toward the driver (the forearm in the jacket sleeve is a separate mesh that follows the wheel)
+    const wr = new THREE.CylinderGeometry(0.024, 0.027, 0.07, 12); wr.rotateX(Math.PI / 2); { const [x, y] = at(-0.002, 0.014, 0); wr.translate(x, y, -0.072); } P(wr, skin, 0, SK);
+  }
+  const g = mergeGeometries(parts.map(q => strip(q.index ? q.toNonIndexed() : q, ['position', 'normal', 'color', 'mr'])), false); parts.forEach(q => q.dispose()); g.computeBoundingSphere(); return g;
+}
+// trim finishes: generated textures (no image files) on a clear-coated physical material
+const TRIM_MATS = {};
+function trimMaterial(kind) {
+  if (TRIM_MATS[kind]) return TRIM_MATS[kind];
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d'); let s = 9; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  if (kind === 'wood') {
+    g.fillStyle = '#4a2c18'; g.fillRect(0, 0, 512, 256);
+    for (let y = 0; y < 256; y += 1) { const v = Math.sin(y * 0.09 + Math.sin(y * 0.013) * 4) * 0.5 + 0.5; g.fillStyle = `rgba(${110 + v * 60},${62 + v * 34},${30 + v * 14},${0.35 + v * 0.3})`; g.fillRect(0, y, 512, 1); }
+    for (let k = 0; k < 160; k++) { const y = r() * 256, x = r() * 512, L = 40 + r() * 200; g.strokeStyle = `rgba(30,16,8,${0.15 + r() * 0.25})`; g.lineWidth = 0.6 + r(); g.beginPath(); g.moveTo(x, y); g.bezierCurveTo(x + L * 0.3, y + (r() - 0.5) * 6, x + L * 0.7, y + (r() - 0.5) * 6, x + L, y + (r() - 0.5) * 4); g.stroke(); }
+  } else if (kind === 'carbon') {
+    g.fillStyle = '#121315'; g.fillRect(0, 0, 512, 256);
+    const t = 16; for (let y = 0; y < 256; y += t) for (let x = 0; x < 512; x += t) { const k = ((x / t + y / t) >> 1) % 2; const gr = g.createLinearGradient(x, y, k ? x + t : x, k ? y : y + t); gr.addColorStop(0, '#1a1b1e'); gr.addColorStop(0.5, k ? '#3a3c41' : '#2b2d31'); gr.addColorStop(1, '#141517'); g.fillStyle = gr; g.fillRect(x, y, t, t); }
+  } else if (kind === 'alu') {
+    g.fillStyle = '#9fa3a8'; g.fillRect(0, 0, 512, 256);
+    for (let k = 0; k < 900; k++) { const y = r() * 256; g.fillStyle = `rgba(${r() < 0.5 ? 255 : 60},${r() < 0.5 ? 255 : 60},${r() < 0.5 ? 255 : 60},0.06)`; g.fillRect(0, y, 512, 0.6 + r()); }
+  } else { g.fillStyle = '#060607'; g.fillRect(0, 0, 512, 256); }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 4;
+  const m = new THREE.MeshPhysicalMaterial({ map: tex, metalness: kind === 'alu' ? 1 : 0.0, roughness: kind === 'alu' ? 0.32 : kind === 'piano' ? 0.12 : 0.36, clearcoat: kind === 'alu' ? 0 : 1, clearcoatRoughness: 0.06, envMapIntensity: 0.9 });
+  m.name = 'vrc-car-trim-' + kind; MATS['trim-' + kind] = m;
+  return (TRIM_MATS[kind] = m);
+}
+const LED_COL = { wood: '#ffb25c', carbon: '#ff4a3a', alu: '#8fd0ff', piano: '#9fd8ff' };
+// the cockpit's own cabin material: the per-vertex PBR of the shared interior plus a fine leather / soft-touch grain
+// (procedural bump, faded out with distance) and a baked-looking occlusion (darker footwells, under the dash, at the floor)
+function cabinMaterial(S) {
+  const key = 'cabin:' + S.floor.toFixed(3) + ':' + S.bA.toFixed(3);
+  if (MATS[key]) return MATS[key];
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, envMapIntensity: 0.8, side: THREE.DoubleSide });
+  const U = { uFloor: { value: S.floor }, uBelt: { value: S.bA }, uDash: { value: S.seat + 0.66 } };
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 mr;\nvarying vec2 vMR;\nvarying vec3 vOP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMR = mr; vOP = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec2 vMR; varying vec3 vOP; uniform float uFloor, uBelt, uDash;
+float ckH(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float ckN(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(ckH(i), ckH(i + vec3(1,0,0)), f.x), mix(ckH(i + vec3(0,1,0)), ckH(i + vec3(1,1,0)), f.x), f.y), mix(mix(ckH(i + vec3(0,0,1)), ckH(i + vec3(1,0,1)), f.x), mix(ckH(i + vec3(0,1,1)), ckH(i + vec3(1,1,1)), f.x), f.y), f.z); }`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vMR.y;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMR.x;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{ float ao = mix(0.42, 1.0, smoothstep(uFloor - 0.02, uFloor + 0.42, vOP.y));
+  ao *= 1.0 - 0.32 * smoothstep(uDash - 0.05, uDash + 0.25, vOP.z) * (1.0 - smoothstep(uBelt - 0.32, uBelt - 0.02, vOP.y));
+  diffuseColor.rgb *= ao; }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{ float w = (1.0 - vMR.x) * smoothstep(0.38, 0.5, vMR.y); vec3 q = vOP * 420.0; float fw = length(fwidth(q));
+  w *= 1.0 - smoothstep(0.25, 0.7, fw);
+  if (w > 0.001) { float h = ckN(q) * 0.7 + ckN(q * 2.3) * 0.3; vec2 dH = vec2(dFdx(h), dFdy(h)) * 0.00045 * w;
+    vec3 sp = -vViewPosition, sx = dFdx(sp), sy = dFdy(sp), r1 = cross(sy, normal), r2 = cross(normal, sx); float det = dot(sx, r1) * faceDirection;
+    vec3 gr = sign(det) * (dH.x * r1 + dH.y * r2); normal = normalize(abs(det) * normal - gr); } }`);
+  };
+  m.customProgramCacheKey = () => 'vrc-car-cabin';
+  return (MATS[key] = m);
+}
+
 // hi = the cockpit of the car being driven: finer tub with the driver's door card split off, stitched seats, vents,
 // binnacle, tablet, console with selector, pedals, door cards, mirror, visors → {geo, door, screens}
-function interiorGeometry(M, ic, hi = false) {
-  const S = M.S, parts = [], doorParts = [];
+function interiorGeometry(M, ic, hi = false, kind = 'sedan') {
+  const S = M.S, parts = [], doorParts = [], trimParts = [], trimDoor = [], ledParts = [], ledDoor = [];
+  const TK = trimKindOf(kind, ic);
   const T = (g, hex, m, r) => parts.push(tint(g, hex, m, r));
   const TD = (g, hex, m, r) => doorParts.push(tint(g, hex, m, r));
   const accM = ic.accent === '#8f8f93' ? 1 : 0.1, CH = '#c8c9cb';
@@ -1072,9 +1217,10 @@ function interiorGeometry(M, ic, hi = false) {
   const ps = new THREE.PlaneGeometry(fw * 2, 0.5); ps.rotateX(-Math.PI / 2); ps.translate(0, M.belt(z0) - 0.01, z0 + 0.25); T(ps, ic.dark, 0, 0.8);
   // dashboard: soft top + lower, wood/alu band, two screens (glow is in the lights mesh), vents
   const dRear = S.seat + 0.66, dFront = S.zA + 0.1, dh = M.belt(S.zA) - 0.02;
-  T(rb(fw * 2 - 0.04, 0.2, dFront - dRear, 0.07, 0, dh - 0.08, (dFront + dRear) / 2), ic.dark, 0, 0.65);
+  if (hi) T(dashTop(fw, dh, dFront, dRear, S.driverX, kind), ic.dark, 0, 0.62);
+  else T(rb(fw * 2 - 0.04, 0.2, dFront - dRear, 0.07, 0, dh - 0.08, (dFront + dRear) / 2), ic.dark, 0, 0.65);
   T(rb(fw * 2 - 0.06, 0.26, 0.26, 0.06, 0, dh - 0.3, dRear + 0.13), ic.leather, 0, 0.55);
-  T(rb(fw * 2 - 0.06, 0.035, 0.02, 0.01, 0, dh - 0.2, dRear + 0.005), ic.accent, ic.accent === '#8f8f93' ? 1 : 0.1, 0.25);
+  if (!hi) T(rb(fw * 2 - 0.06, 0.035, 0.02, 0.01, 0, dh - 0.2, dRear + 0.005), ic.accent, ic.accent === '#8f8f93' ? 1 : 0.1, 0.25);
   if (!hi) for (const x of [-0.55, -0.18, 0.18, 0.55]) T(rb(0.13, 0.04, 0.02, 0.008, x, dh - 0.14, dRear - 0.002), '#c8c9cb', 1, 0.2);
   // centre console + tunnel
   T(rb(0.26, 0.24, dRear + 0.1 - (S.seat - 0.35), 0.04, 0, S.floor + 0.12, (dRear + 0.1 + S.seat - 0.35) / 2), ic.dark, 0, 0.6);
@@ -1115,7 +1261,7 @@ function interiorGeometry(M, ic, hi = false) {
     vent(fw - 0.19, dh - 0.1); vent(-(fw - 0.19), dh - 0.1); vent(0.1, dh - 0.245); vent(-0.1, dh - 0.245);
     // ---- instrument binnacle: hood, cheeks, bezel (the display itself is the 'screens' mesh)
     const dx0 = S.driverX;
-    T(rb(0.46, 0.03, 0.2, 0.014, dx0, dh + 0.158, dRear + 0.105), ic.dark, 0, 0.6);
+    T(brow(0.47, dx0, dh + 0.172, dRear + 0.03, 0.2), ic.dark, 0, 0.6);
     for (const k of [-1, 1]) T(rb(0.03, 0.15, 0.17, 0.012, dx0 + k * 0.215, dh + 0.085, dRear + 0.115), ic.dark, 0, 0.6);
     T(rb(0.4, 0.165, 0.02, 0.008, dx0, dh + 0.072, dRear + 0.06, -0.3), '#060607', 0.3, 0.2);
     T(rb(0.4, 0.004, 0.004, 0.002, dx0, dh + 0.172, dRear + 0.01), stitch, 0, 0.7);
@@ -1169,6 +1315,28 @@ function interiorGeometry(M, ic, hi = false) {
     T(rb(0.02, 0.06, 0.02, 0.006, 0, ym + 0.05, zm + 0.01), '#0b0b0c', 0.2, 0.3);
     // (folded up, in the headliner's own cloth: from the seat they should read as part of the roof, not as dark slabs)
     for (const k of [-1, 1]) T(rb(0.3, 0.012, 0.12, 0.005, k * S.driverX, M.gsec(S.zT1 - 0.04, 0.5 - k * 0.14)[1] - 0.014, S.zT1 - 0.04, 0.05), '#cdc5b6', 0, 0.9);
+    // ---- trims in the design's own finish (wood / carbon / brushed aluminium / piano black), ambient LED lines under them
+    const TR = (g) => trimParts.push(g), LD = (g) => ledParts.push(g);
+    TR(rb(fw * 2 - 0.1, 0.056, 0.03, 0.012, 0, dh - 0.205, dRear - 0.002));
+    LD(rb(fw * 2 - 0.16, 0.0045, 0.006, 0.002, 0, dh - 0.236, dRear - 0.004));
+    TR(rb(0.16, 0.012, 0.42, 0.006, 0, S.floor + 0.268, S.seat + 0.23));                              // console top panel
+    for (const k of [-1, 1]) LD(rb(0.004, 0.004, 0.5, 0.002, k * 0.122, S.floor + 0.2, S.seat + 0.1));  // console sides
+    for (const sx of [1, -1]) {
+      const by = belt0 - 0.2, A = sx > 0 ? (g => trimDoor.push(g)) : TR, AL = sx > 0 ? (g => ledDoor.push(g)) : LD;
+      A(rb(0.01, 0.05, 0.62, 0.006, sx * (xw - 0.008), by + 0.075, S.seat + 0.1));
+      AL(rb(0.004, 0.004, 0.66, 0.002, sx * (xw - 0.014), by + 0.108, S.seat + 0.1));
+      // tweeter grille at the dash corner, map pocket edge
+      T(cyl(0.032, 0.006, 20).rotateX(Math.PI / 2).rotateY(sx * 0.6).translate(sx * (fw - 0.09), dh - 0.03, dRear + 0.05), '#121214', 0.6, 0.45);
+    }
+    // A-pillar trims (headliner cloth) from the dash corners up to the header rail
+    for (const t of [0.115, 0.885]) {
+      const pts = []; for (let i = 0; i <= 10; i++) { const z = lerp(S.zA + 0.02, S.zT1 - 0.02, i / 10), q = M.gsec(z, t); pts.push(new THREE.Vector3(q[0] * 0.965, q[1] - 0.012, z)); }
+      const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.034, 10, false); T(tube, '#' + new THREE.Color(ic.head).lerp(new THREE.Color(ic.dark), 0.55).getHexString(), 0, 0.85);
+    }
+    // grab handles over the rear doors
+    if (S.seats !== 2) for (const sx of [-1, 1]) { const z = S.seat - 0.1, q = M.gsec(z, sx > 0 ? 0.2 : 0.8); T(rb(0.03, 0.025, 0.24, 0.01, q[0] * 0.93, q[1] - 0.06, z), '#1a1a1c', 0.1, 0.5); }
+    // seat bolsters: shoulder wings on the backrests of the front seats (sculpted, piped)
+    for (const x of [dx, -dx]) for (const sd of [-1, 1]) { const bw = rb(0.06, 0.36, 0.11, 0.028, 0, 0, 0, -0.26); bw.rotateY(sd * -0.35); bw.translate(x + sd * 0.25, S.cushion + 0.24, S.seat - 0.24); T(bw, ic.leather, 0, 0.5); }
     // ---- displays: driver cluster + centre screen, mapped onto the shared cockpit canvas (cluster on top)
     const cl = new THREE.PlaneGeometry(0.37, 0.139).rotateX(-0.3).rotateY(Math.PI).translate(dx0, dh + 0.072, dRear + 0.036);
     const mp = new THREE.PlaneGeometry(0.352, 0.198).rotateY(Math.PI).translate(0, dh - 0.07, dRear - 0.0375);
@@ -1181,7 +1349,10 @@ function interiorGeometry(M, ic, hi = false) {
   if (!hi) return g;
   const door = mergeGeometries(doorParts.map(q => strip(q, KEEP)), false); doorParts.forEach(q => q.dispose()); door.computeBoundingSphere();
   const zmR = lerp(S.zT1, S.zA, 0.22);
-  return { geo: g, door, screens, mirror: { y: M.gTop(zmR) - 0.085, z: zmR - 0.0158 } };
+  const planarUV = gs => { const m = mergeGeometries(gs.map(q => strip(q.index ? q.toNonIndexed() : q, ['position', 'normal'])), false); const p = m.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = (p.getX(i) + p.getZ(i) * 0.6) * 3.2; uv[i * 2 + 1] = p.getY(i) * 3.2 + p.getZ(i) * 1.4; } m.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); m.computeBoundingSphere(); return m; };
+  const plain = gs => { const m = mergeGeometries(gs.map(q => strip(q.index ? q.toNonIndexed() : q, ['position'])), false); m.computeBoundingSphere(); return m; };
+  return { geo: g, door, screens, mirror: { y: M.gTop(zmR) - 0.085, z: zmR - 0.0158 }, trimKind: TK,
+    trim: trimParts.length ? planarUV(trimParts) : null, trimD: trimDoor.length ? planarUV(trimDoor) : null, led: ledParts.length ? plain(ledParts) : null, ledD: ledDoor.length ? plain(ledDoor) : null };
 }
 // ------------------------------------------------------------------ live cockpit displays (one canvas: only one car is driven)
 let COCKPIT = null;
@@ -1287,6 +1458,7 @@ function steeringGeometry() {
 
 // ------------------------------------------------------------------ public: one detailed car (≤ 7 draw calls)
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s1 = new THREE.Vector3(1, 1, 1);
+const _w1 = new THREE.Vector3(), _w2 = new THREE.Vector3(), _w3 = new THREE.Vector3(), _w4 = new THREE.Vector3();
 export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
   if (!SPECS[kind]) kind = 'sedan';
   const G = kindGeometry(kind), S = G.spec, MS = shared();
@@ -1314,6 +1486,7 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
   wheels.frustumCulled = false;
   group.add(wheels);
   const state = { spin: 0, steer: 0 };
+  let ck = null, inside = false;
   function setWheels(spin = state.spin, steer = state.steer) {
     state.spin = spin; state.steer = steer;
     G.wheelPos.forEach(([x, y, z, s, front], i) => {
@@ -1325,6 +1498,14 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
     });
     wheels.instanceMatrix.needsUpdate = true;
     sw.rotation.z = -steer * 7.5;
+    if (ck && ck.hands) {   // the hands go with the wheel for small corrections (≈ 30°), then it turns under them
+      const r = Math.max(-0.55, Math.min(0.55, sw.rotation.z)); ck.hands.rotation.z = r;
+      [0.18, Math.PI - 0.18].forEach((a0, i) => {
+        const a = a0 + r, W = _w1.set(Math.cos(a) * 0.196, Math.sin(a) * 0.196 - 0.004, -0.1), E = ck.elbows[i], d = _w2.subVectors(E, W), L = d.length();
+        _q.setFromUnitVectors(_w3.set(0, 1, 0), d.normalize()); _m.compose(W, _q, _w4.set(1, L, 1)); ck.arms.setMatrixAt(i, _m);
+      });
+      ck.arms.instanceMatrix.needsUpdate = true;
+    }
   }
   setWheels(0, 0);
   const uK = lightsMat.userData.uK.value;
@@ -1339,20 +1520,38 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
   const uI = lightsMat.userData.uI.value;
   function setIndicators(left, right) { uI.set(left ? 2.4 : 0.07, right ? 2.4 : 0.07); }
   // ---- cockpit: built for the car being entered — authentic interior, live displays and a driver's door that opens
-  let ck = null, inside = false;
   function setCockpit(v = true) {
     if (!v || ck) return ck;
     const key = kind + ':ck:' + icIndex;
-    const C = KIND_GEO[key] || (KIND_GEO[key] = (() => { const c = interiorGeometry(G.model, INTERIORS[icIndex], true); c.cabin = mergeGeometries([c.geo, G.headliner].filter(Boolean), false); c.cabin.computeBoundingSphere(); c.geo.dispose(); return c; })());
+    const C = KIND_GEO[key] || (KIND_GEO[key] = (() => { const c = interiorGeometry(G.model, INTERIORS[icIndex], true, kind); c.cabin = mergeGeometries([c.geo, G.headliner].filter(Boolean), false); c.cabin.computeBoundingSphere();
+      // headliner in the design's own cloth colour, the pillars a shade darker towards the belt (reads as trim, not as glare)
+      if (G.headliner) { const n0 = c.geo.attributes.position.count, col = c.cabin.attributes.color, pos = c.cabin.attributes.position, hc = new THREE.Color(INTERIORS[icIndex].head);
+        for (let i = n0; i < pos.count; i++) { const y = pos.getY(i), k = 0.5 + 0.42 * clamp((y - (S.roof - 0.32)) / 0.26); col.setXYZ(i, hc.r * k, hc.g * k, hc.b * k); } col.needsUpdate = true; }
+      c.geo.dispose(); return c; })());
     const kit = G.doorKit(), H = kit.hinge;
     body.geometry = kit.paint; glass.geometry = kit.glass; trim.geometry = kit.trim; lamps.geometry = kit.lights; cabin.geometry = C.cabin;
     const pivot = new THREE.Group(); pivot.name = 'driver-door'; pivot.position.set(H[0], H[1], H[2]); group.add(pivot);
     const dm = (geo, mat, name) => { const m = new THREE.Mesh(geo, mat); m.name = name; m.position.set(-H[0], -H[1], -H[2]); m.matrixAutoUpdate = false; m.updateMatrix(); pivot.add(m); return m; };
     const dGlass = dm(kit.glassD, inside ? MS.glassIn : MS.glass, 'door-glass'); dGlass.renderOrder = 3;
     dm(kit.paintD, paint, 'door-paint'); dm(kit.trimD, MS.trim, 'door-trim'); if (kit.lightsD.attributes.position.count) dm(kit.lightsD, lightsMat, 'door-lights'); dm(C.door, MS.interior, 'door-card');
+    // cockpit finish: grained / occluded cabin material, the design's trims and ambient LED lines, the multi-function wheel, hands
+    const CM = cabinMaterial(S); cabin.material = CM; pivot.children.forEach(m => { if (m.name === 'door-card') m.material = CM; });
+    const LEDM = new THREE.MeshBasicMaterial({ color: new THREE.Color(LED_COL[C.trimKind] || '#ffb25c').multiplyScalar(1.6), toneMapped: true });
+    const add = (geo, mat, name, parent = group) => { if (!geo) return null; const m = new THREE.Mesh(geo, mat); m.name = name; m.matrixAutoUpdate = false; if (parent === pivot) { m.position.set(-H[0], -H[1], -H[2]); } m.updateMatrix(); parent.add(m); return m; };
+    add(C.trim, trimMaterial(C.trimKind), 'cabin-trim'); add(C.trimD, trimMaterial(C.trimKind), 'door-trim-inlay', pivot);
+    add(C.led, LEDM, 'cabin-led'); add(C.ledD, LEDM, 'door-led', pivot);
+    const wk = kind + ':wheel2:' + icIndex; sw.geometry = KIND_GEO[wk] || (KIND_GEO[wk] = steeringGeometry2(kind, INTERIORS[icIndex])); sw.material = CM;
+    const hk = kind + ':hands'; const hands = new THREE.Mesh(KIND_GEO[hk] || (KIND_GEO[hk] = handsGeometry(kind)), CM); hands.name = 'hands'; steering.add(hands);
+    // forearms: jacket sleeves from the wrists to the elbows (fixed by the seat), re-aimed every time the wheel turns
+    const armG = new THREE.CylinderGeometry(0.031, 0.04, 1, 12, 1, true); armG.translate(0, 0.5, 0);
+    const armM = new THREE.MeshStandardMaterial({ color: kind === 'super' ? '#16171a' : '#262a33', roughness: 0.86, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide });
+    const arms = new THREE.InstancedMesh(armG, armM, 2); arms.name = 'forearms'; arms.frustumCulled = false; steering.add(arms);
+    steering.updateMatrix(); const inv = steering.matrix.clone().invert();
+    const elbows = [1, -1].map(sx => new THREE.Vector3(S.driverX + sx * 0.3, S.cushion + 0.12, S.seat + 0.08).applyMatrix4(inv));
     const C2 = cockpitCanvas(); if (MS.screen.map !== C2.tex) { MS.screen.map = C2.tex; MS.screen.needsUpdate = true; }
     const scr = new THREE.Mesh(C.screens, MS.screen); scr.name = 'screens'; scr.matrixAutoUpdate = false; group.add(scr);
-    ck = { pivot, dGlass, open: 0, mirrors: [], H };
+    ck = { pivot, dGlass, open: 0, mirrors: [], H, LEDM, hands, arms, armM, armG, elbows };
+    setWheels();
     // rear-view mirrors that really show what is behind: three small views copied off the frame buffer (renderMirrors)
     try {
       const mk2 = (name, w, h, x, y, z, yaw, back, tw, th, cam, parent) => {
@@ -1372,6 +1571,10 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
       const Wg = G.wing;
       if (Wg) for (const sd of [1, -1]) mk2(sd > 0 ? 'mirror-left' : 'mirror-right', 0.166, 0.091, sd * Wg.mx, Wg.my, Wg.mz, sd * 0.12, 0.0668, 128, 70,
         { fov: 17, yaw: -sd * 0.2, dx: sd * 0.02 }, sd > 0 && Wg.onDoor ? pivot : group);
+      // digital rear view in the instrument cluster (the centre mirror's live image), so a tall phone sees behind too
+      const cm = ck.mirrors[0]; if (cm) { const dh = G.model.belt(S.zA) - 0.02, dRear = S.seat + 0.66, g2 = new THREE.PlaneGeometry(0.15, 0.034); g2.rotateX(-0.3); g2.rotateY(Math.PI);
+        { const uv = g2.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); }
+        g2.translate(S.driverX, dh + 0.128, dRear + 0.02); const dm2 = new THREE.Mesh(g2, cm.mat); dm2.name = 'mirror-digital'; dm2.matrixAutoUpdate = false; group.add(dm2); cm.extra = dm2; }
     } catch (e) { console.warn('[cars] mirrors', e); ck.mirrors = []; }
     return ck;
   }
@@ -1388,7 +1591,7 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
       const pr = renderer.getPixelRatio(); st = renderer.getScissorTest();
       renderer.getViewport(_vp); renderer.getScissor(_sc); saved = true;
       const w = (M.tw + 0.01) / pr, h = (M.th + 0.01) / pr;
-      for (const q of ck.mirrors) q.mesh.visible = false;      // a mirror never shows a mirror
+      for (const q of ck.mirrors) { q.mesh.visible = false; if (q.extra) q.extra.visible = false; }      // a mirror never shows a mirror
       sm.autoUpdate = false;   // the mirror reuses the frame's shadow map
       renderer.setViewport(0, 0, w, h); renderer.setScissor(0, 0, w, h); renderer.setScissorTest(true);
       renderer.render(scene, M.cam);
@@ -1401,14 +1604,14 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
     } catch (e) {
       console.warn('[cars] mirror view', e);
       if (saved) { renderer.setViewport(_vp); renderer.setScissor(_sc); renderer.setScissorTest(st); } sm.autoUpdate = au;
-      for (const q of ck.mirrors) { q.mesh.visible = false; } ck.mirrors = []; return false;
+      for (const q of ck.mirrors) { q.mesh.visible = false; if (q.extra) q.extra.visible = false; } ck.mirrors = []; return false;
     }
-    for (const q of ck.mirrors) q.mesh.visible = true;
+    for (const q of ck.mirrors) { q.mesh.visible = true; if (q.extra) q.extra.visible = true; }
     return true;
   }
   // a: 0 closed … 1 open; maxAngle (rad) lets a tight bay limit the swing
   function setDoor(a, maxAngle = 1.08) { if (!ck) return; ck.open = a; ck.pivot.rotation.y = -a * maxAngle; ck.pivot.updateMatrixWorld(true); }
-  function setInside(v) { inside = !!v; glass.material = v ? MS.glassIn : MS.glass; if (ck) ck.dGlass.material = glass.material; }
+  function setInside(v) { inside = !!v; glass.material = v ? MS.glassIn : MS.glass; if (ck) { ck.dGlass.material = glass.material; ck.hands.visible = ck.arms.visible = inside; } }
   // driver's window: 0 up … 1 fully down (the glass drops into the door) — city/index.js
   function setWindow(a) { if (!ck) return; ck.win = Math.max(0, Math.min(1, a)); ck.dGlass.position.y = -ck.H[1] - ck.win * 0.46; ck.dGlass.updateMatrix(); }
   return {
@@ -1419,7 +1622,7 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
     doorSide(out = 0.75) { return group.localToWorld(new THREE.Vector3(S.W / 2 + out, 0, (S.dz0 + S.dz1) / 2 - 0.1)); },
     eye: new THREE.Vector3(...G.eye), body,
     get lightsOn() { return on; }, get hasCockpit() { return !!ck; },
-    dispose() { lightsMat.dispose(); if (plateGeo) plateGeo.dispose(); if (ck) for (const q of ck.mirrors) { q.tex.dispose(); q.mat.dispose(); q.mesh.geometry.dispose(); } group.parent?.remove(group); },
+    dispose() { lightsMat.dispose(); if (plateGeo) plateGeo.dispose(); if (ck) { for (const q of ck.mirrors) { q.tex.dispose(); q.mat.dispose(); q.mesh.geometry.dispose(); if (q.extra) q.extra.geometry.dispose(); } ck.LEDM.dispose(); ck.armM.dispose(); ck.armG.dispose(); } group.parent?.remove(group); },
   };
 }
 

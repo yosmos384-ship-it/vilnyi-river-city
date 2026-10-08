@@ -3,18 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.6';
-import { buildMap, BOUNDS } from './map.js?v=3.6';
-import { createWorld } from './world.js?v=3.6';
-import { createTraffic } from './traffic.js?v=3.6';
-import { createPeds } from './peds.js?v=3.6';
-import { createFx } from './fx.js?v=3.6';
-import { createAudio } from './audio.js?v=3.6';
-import { createRadio } from './radio.js?v=3.6';
-import { createHud } from './hud.js?v=3.6';
-import { cityT, cityDir } from './i18n.js?v=3.6';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.6';
-import { poiSign } from './gen.js?v=3.6';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.7';
+import { buildMap, BOUNDS } from './map.js?v=3.7';
+import { buildRealMap } from './osm.js?v=3.7';
+import { createWorld } from './world.js?v=3.7';
+import { createTraffic } from './traffic.js?v=3.7';
+import { createPeds } from './peds.js?v=3.7';
+import { createFx } from './fx.js?v=3.7';
+import { createAudio } from './audio.js?v=3.7';
+import { createRadio } from './radio.js?v=3.7';
+import { createHud } from './hud.js?v=3.7';
+import { cityT, cityDir } from './i18n.js?v=3.7';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.7';
+import { poiSign } from './gen.js?v=3.7';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -23,7 +24,8 @@ const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v == nu
 export async function startCityDrive(host) {
   const { renderer, container } = host, t = cityT(host.lang), dir = cityDir(host.lang);
   const settings = { violence: ls.get('vrc.city.violence', '1') !== '0', traffic: clamp(+ls.get('vrc.city.traffic', '2') || 2, 1, 3), sound: ls.get('vrc.city.sound', '1') !== '0' };
-  const map = buildMap();
+  // the real streets (OpenStreetMap) when they load, the procedural district otherwise
+  let map; try { map = await buildRealMap(); } catch (e) { console.warn('[city] real street map unavailable — procedural district', e); map = buildMap(); }
   const scene = new THREE.Scene(); scene.environment = host.envMap || null;
   const camera = new THREE.PerspectiveCamera(80, 1, 0.07, 1000);
   const saved = { exposure: renderer.toneMappingExposure, shadow: renderer.shadowMap.autoUpdate };
@@ -40,7 +42,7 @@ export async function startCityDrive(host) {
 
   // ------------------------------------------------------------------ player
   const P = { mode: 'car', car: null, body: null, extras: null, foot: { x: 0, z: 0, yaw: 0, pitch: 0, onFoot: true, vx: 0, vz: 0, isPlayer: true, mode: 'player' }, view: ls.get('vrc.city.view', 'fp') === 'chase' ? 'chase' : 'fp',
-    look: { yaw: 0, pitch: 0 }, fpTune: { up: 0.03, fwd: 0.2, pitch: -0.13, fov: 84 }, engine: false, lights: null, high: false, wipers: false, wipT: 0, ind: 0, indT: 0, hb: false, door: 0, doorT: 0, win: 0, winT: 0, cam: null, shake: 0, surf: { grip: 1, drag: 1 }, surfT: 0, stuck: 0, blood: 0 };
+    look: { yaw: 0, pitch: 0 }, back: 0, fpTune: { up: 0.0, fwd: 0.22, pitch: 0.0, hfov: 72, p: 0.4 }, start: 'garage', engine: false, lights: null, high: false, wipers: false, wipT: 0, ind: 0, indT: 0, hb: false, door: 0, doorT: 0, win: 0, winT: 0, cam: null, shake: 0, surf: { grip: 1, drag: 1 }, surfT: 0, stuck: 0, blood: 0 };
   let heat = 0, hideT = 0, bustT = 0, crimeT = -99, state = 'play', time = 0, frameN = 0, hudT = 0, mapT = 0, route = null, routeT = -9, ambT = -99, lastHit = -9, edgeT = -9, policeT = 0, dmgStage = 0;
   const G0 = map.site.garage;
 
@@ -210,7 +212,9 @@ export async function startCityDrive(host) {
   function setTime(m) { world.setTime(m); setCarEnvScale(m === 'night' ? 0.32 : m === 'dusk' ? 0.7 : 1, scene.environment); if (host.onTime) host.onTime(m); }
   function act(a, v) {
     audio.resume();
-    if (a === 'tap') return;
+    if (a === 'tap') { if (v && P.mode === 'car' && P.view === 'fp' && tapScreen(v.x, v.y)) return hud.showRadio(); return hud.reveal(); }
+    if (a === 'starts') return hud.showStarts(map.starts, P.start);
+    if (a === 'startAt') return startFrom(v);
     if (a === 'hornDown') { audio.horn(true); if (P.mode === 'car' && P.body) peds.hornAt(P.body.x, P.body.z, Math.sin(P.body.yaw), Math.cos(P.body.yaw)); return; } if (a === 'hornUp') return audio.horn(false);
     if (a === 'view') return setView(P.view === 'fp' ? 'chase' : 'fp');
     if (a === 'lights') { P.lights = !lightsOn(); audio.click(); return; }
@@ -224,16 +228,40 @@ export async function startCityDrive(host) {
     if (a === 'out') return getOut(); if (a === 'enter' || a === 'take') return getIn();
     if (a === 'door') { P.doorT = P.doorT ? 0 : 1; audio.door(); return; } if (a === 'window') { P.winT = P.winT ? 0 : 1; return; }
     if (a === 'map') { hud.toggleMap(); mapT = 0; return; }
-    if (a === 'settings') return hud.panelOpen ? hud.panel('') : hud.showSettings(world.time);
+    if (a === 'settings') return hud.panelOpen ? hud.panel('') : hud.showSettings(world.time, about());
     if (a === 'closePanel') return hud.panel('');
     if (a === 'time') return setTime(world.time === 'day' ? 'dusk' : world.time === 'dusk' ? 'night' : 'day');
-    if (a === 'setTime') { setTime(v); return hud.showSettings(world.time); }
-    if (a === 'setViolence') { settings.violence = v === '1'; ls.set('vrc.city.violence', v); if (!settings.violence) { P.blood = 0; if (P.extras) P.extras.blood.visible = false; } return hud.showSettings(world.time); }
-    if (a === 'setTraffic') { settings.traffic = +v; ls.set('vrc.city.traffic', v); return hud.showSettings(world.time); }
-    if (a === 'setSound') { settings.sound = v === '1'; ls.set('vrc.city.sound', v); audio.setEnabled(settings.sound); radio.duck(settings.sound ? 1 : 0); return hud.showSettings(world.time); }
+    if (a === 'setTime') { setTime(v); return hud.showSettings(world.time, about()); }
+    if (a === 'setViolence') { settings.violence = v === '1'; ls.set('vrc.city.violence', v); if (!settings.violence) { P.blood = 0; if (P.extras) P.extras.blood.visible = false; } return hud.showSettings(world.time, about()); }
+    if (a === 'setTraffic') { settings.traffic = +v; ls.set('vrc.city.traffic', v); return hud.showSettings(world.time, about()); }
+    if (a === 'setSound') { settings.sound = v === '1'; ls.set('vrc.city.sound', v); audio.setEnabled(settings.sound); radio.duck(settings.sound ? 1 : 0); return hud.showSettings(world.time, about()); }
     if (a === 'repair') { hud.panel(''); repair(true); if (P.mode === 'car' && (world.inSolid(P.body.x, P.body.z, 0.5) || P.stuck > 2)) respawnOnRoad(); hud.toast(t('repair'), 1400); return; }
     if (a === 'tow') { hud.panel(''); return toGarage('tow'); }
     if (a === 'garage' || a === 'exit') { hud.panel(''); return leave('garage'); }
+  }
+  const about = () => (map.real ? t('aboutOsm') : t('about'));
+  // a tap on the car's centre screen (3D) opens the radio strip
+  const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2();
+  function tapScreen(fx, fy) {
+    const scr = P.car && P.car.group.getObjectByName('screens'); if (!scr) return false;
+    _ndc.set(fx * 2 - 1, -(fy * 2 - 1)); _ray.setFromCamera(_ndc, camera); const hit = _ray.intersectObject(scr, false)[0];
+    return !!(hit && hit.uv && hit.uv.y < 0.64);
+  }
+  // "Start from…": fade out, the car on the chosen street (the Palace of the Parliament is the featured start), fade in
+  async function startFrom(id) {
+    if (state !== 'play' && state !== 'intro') return; state = 'fade'; hud.panel(''); await hud.fade(true);
+    const p = map.startPose(id);
+    if (P.mode === 'foot') { P.mode = 'car'; }
+    P.car.group.visible = true; Object.assign(P.body, { x: p.x, z: p.z, yaw: p.yaw, vx: 0, vz: 0, w: 0 }); P.body.steer = 0;
+    heat = 0; G.wanted = 0; hideT = bustT = 0; traffic.clearUnits(); hud.banner('');
+    for (const c of [...traffic.cars]) if (c.mode !== 'parked' || Math.hypot(c.x - p.x, c.z - p.z) < 9) traffic.remove(c);
+    P.cam = null; P.look.yaw = P.look.pitch = 0; P.back = 0; P.start = p.garage ? 'garage' : id; ls.set('vrc.city.start', P.start);
+    try { await map.prefetch(p.x, p.z); } catch { /* the chunks come as the tiles arrive */ }
+    for (let k = 0; k < 500 && (k < 3 || world.pending); k++) { world.update(p.x, p.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
+    for (let k = 0; k < 30; k++) traffic.update(0.4, P.body, null, null);
+    P.car.setInside(P.view === 'fp'); routeT = -9; P.stuck = 0;
+    await hud.fade(false); state = 'play';
+    const S = map.starts.find(s => s.id === P.start); if (S) hud.toast(t(S.key), 2400);
   }
   let leaving = false;
   async function leave(reason) { if (leaving) return; leaving = true; state = 'fade'; await hud.fade(true); game.active = false; try { host.onExit && host.onExit(reason); } catch (e) { console.warn(e); } }
@@ -307,32 +335,56 @@ export async function startCityDrive(host) {
   }
   function mapData(range) {
     const E = active();
-    if (time - routeT > 2) { routeT = time; const a = map.nearestNode(E.x, E.z); route = a ? map.route(a.id, G0.node) : null; }
+    if (time - routeT > 2) { routeT = time; const a = map.nearestNode(E.x, E.z); route = a ? (map.route(a.id, G0.node, true) || map.route(a.id, G0.node)) : null; }
     return { map, x: E.x, z: E.z, yaw: P.mode === 'car' ? E.yaw : E.yaw, range, route, time, police: traffic.units.map(u => ({ x: u.x, z: u.z, amb: u.unit.kind === 'amb' })), label: p => (p.kind === 'metro' ? 'M ' + p.name : poiSign(p)) };
   }
 
   // ------------------------------------------------------------------ the frame
   const inp = { gas: 0, brake: 0, steer: 0, hb: false }; let gasA = 0, brakeA = 0;
-  // autopilot for the automated tests: follows the junction route to a node at a set speed, on the right-hand side
+  // autopilot for the automated tests: pure pursuit along the route polyline on the right-hand lane, slowing for bends and
+  // for whatever is ahead in the lane
+  function autoPath(path) {
+    const pts = [];
+    for (let k = 0; k < path.length - 1; k++) {
+      const a = map.nodes[path[k]], b = map.nodes[path[k + 1]], e = map.edgeBetween(a.id, b.id), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1;
+      const lat = !e ? 0 : e.ow ? Math.max(0, e.hw - 1.9) - (e.lanes > 1 ? 0 : 0) : Math.min(e.hw - 1.6, (map.real ? 0 : 0) + (e.cls >= 3 ? 4.9 : e.cls === 2 ? 1.8 : 1.6));
+      const rx = -dz / L * lat, rz = dx / L * lat; if (!pts.length) pts.push([a.x + rx, a.z + rz]); pts.push([b.x + rx, b.z + rz]);
+    }
+    const cum = [0]; for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+    return { pts, cum };
+  }
   function autoDrive(b) {
-    const A = P.auto; let n = map.nodes[A.path[A.i]];
-    while (A.i < A.path.length - 1 && Math.hypot(n.x - b.x, n.z - b.z) < 16 + Math.hypot(b.vx, b.vz) * 0.7) n = map.nodes[A.path[++A.i]];
-    const prev = map.nodes[A.path[Math.max(0, A.i - 1)]], dx = n.x - prev.x, dz = n.z - prev.z, L = Math.hypot(dx, dz) || 1, e = A.i > 0 ? map.edgeBetween(prev.id, n.id) : null, lat = e ? Math.min(e.hw * 0.5, 3.4) : 0;
-    // aim at a point ahead on the right-hand lane of the current leg
-    const tt = clamp(((b.x - prev.x) * dx + (b.z - prev.z) * dz) / (L * L) + (10 + Math.hypot(b.vx, b.vz) * 0.9) / L, 0, 1), tx = prev.x + dx * tt - dz / L * lat, tz = prev.z + dz * tt + dx / L * lat;
+    const A = P.auto, { pts, cum } = A.poly, sp = Math.hypot(b.vx, b.vz);
+    // nearest point on the polyline at or after the current index
+    let best = A.k || 0, bd = Infinity, bs = 0;
+    for (let k = Math.max(0, (A.k || 0) - 2); k < Math.min(pts.length - 1, (A.k || 0) + 25); k++) { const p = pts[k], q = pts[k + 1], dx = q[0] - p[0], dz = q[1] - p[1], L2 = dx * dx + dz * dz || 1, t = clamp(((b.x - p[0]) * dx + (b.z - p[1]) * dz) / L2), d = Math.hypot(b.x - p[0] - dx * t, b.z - p[1] - dz * t); if (d < bd) { bd = d; best = k; bs = cum[k] + t * Math.sqrt(L2); } }
+    A.k = best; const total = cum[cum.length - 1];
+    const at = s2 => { s2 = Math.min(total, s2); let k = A.k; while (k < pts.length - 2 && cum[k + 1] < s2) k++; const f = (s2 - cum[k]) / ((cum[k + 1] - cum[k]) || 1); return [pts[k][0] + (pts[k + 1][0] - pts[k][0]) * f, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * f]; };
+    const look = 5 + sp * 0.6, [tx, tz] = at(bs + look);
     const err = Math.atan2(Math.sin(Math.atan2(tx - b.x, tz - b.z) - b.yaw), Math.cos(Math.atan2(tx - b.x, tz - b.z) - b.yaw)), v = b.vx * Math.sin(b.yaw) + b.vz * Math.cos(b.yaw);
-    const done = A.i >= A.path.length - 1 && Math.hypot(n.x - b.x, n.z - b.z) < 14, vT = done ? 0 : Math.min(A.v, 7 + A.v * (1 - Math.min(1, Math.abs(err) / 0.5)));
-    if (done) A.done = true;
-    return { steer: clamp(err * 2.6, -1, 1), gas: v < vT ? 1 : 0, brake: v > vT + 1.5 || done ? 1 : 0 };
+    // bend ahead: heading change over the next 30 m
+    const h = s0 => { const p = at(s0), q = at(s0 + 6); return Math.atan2(q[0] - p[0], q[1] - p[1]); };
+    // speed profile: every bend within 50 m caps the speed by the distance left to brake for it
+    let vT = A.v;
+    for (let d = 0; d <= 50; d += 5) { const a1 = h(bs + d - 7), a2 = h(bs + d + 1), turn = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+      if (turn > 0.25) { const vt = 4 + 7 * Math.max(0, 1 - turn / 1.3); vT = Math.min(vT, Math.sqrt(vt * vt + 2 * 2.6 * Math.max(0, d - 4))); } }
+    // something in the lane ahead
+    const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
+    for (const c of traffic.cars) { if (c.mode === 'gone') continue; const dx = c.x - b.x, dz = c.z - b.z, f = dx * fx + dz * fz, l = Math.abs(dx * fz - dz * fx); if (f > 2 && f < 9 + sp * 1.2 && l < 2.3) vT = Math.min(vT, Math.max(0, (f - 7) * 0.6)); }
+    const done = total - bs < 10; if (done) A.done = true;
+    if (done) vT = 0;
+    return { steer: clamp(err * 2.4, -1, 1), gas: v < vT - 0.3 ? 1 : 0, brake: v > vT + 1.2 ? 1 : 0 };
   }
   function frame(dtRaw) {
     if (!game.active) return;
     const dt = Math.min(0.05, Math.max(1e-4, dtRaw || 0)); time += dt; frameN++;
-    const w = container.clientWidth || 1, h = container.clientHeight || 1; if (Math.abs(camera.aspect - w / h) > 1e-3) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
+    const w = container.clientWidth || 1, h = container.clientHeight || 1, scrA = w / h;
     const pad = hud.pad, k = keys, paused = state !== 'play' || hud.panelOpen;
     const gas = paused ? 0 : Math.max(k.has('KeyW') || k.has('ArrowUp') ? 1 : 0, pad.gas), brake = paused ? 0 : Math.max(k.has('KeyS') || k.has('ArrowDown') ? 1 : 0, pad.brake);
     let steer = (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) - (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0); if (Math.abs(pad.steer) > Math.abs(steer)) steer = pad.steer; if (paused) steer = 0;
-    const L = P.look; L.yaw = clamp(L.yaw - hud.look.dx * 0.0052, -2.7, 2.7); L.pitch = clamp(L.pitch - hud.look.dy * 0.004, -0.6, 0.5); hud.look.dx = hud.look.dy = 0;
+    const L = P.look, inCar = P.mode === 'car' && P.view === 'fp';
+    L.yaw = clamp(L.yaw - hud.look.dx * 0.0052, inCar ? -1.45 : -2.7, inCar ? 1.45 : 2.7); L.pitch = clamp(L.pitch - hud.look.dy * 0.004, inCar ? -0.45 : -0.6, inCar ? 0.35 : 0.5); hud.look.dx = hud.look.dy = 0;
+    P.back += clamp((hud.pad.back && P.mode === 'car' ? 1 : 0) - P.back, -dt * 4.5, dt * 4.5);
     const b = P.body;
     if (P.auto && P.mode === 'car' && !paused) { const A = autoDrive(b); gasA = A.gas; brakeA = A.brake; steer = A.steer; } else { gasA = gas; brakeA = brake; }
     if (P.mode === 'car') {
@@ -343,7 +395,7 @@ export async function startCityDrive(host) {
       const n = Math.max(1, Math.min(8, Math.ceil(dt * 120)));
       for (let i = 0; i < n; i++) { stepBody(b, inp, dt / n, P.surf); collideStatic(b, world, impact, true); traffic.carHits(b, (o, sp, m) => impact('car', sp, m.px, m.pz, m.nx, m.nz, o)); }
       const sp = Math.hypot(b.vx, b.vz);
-      if (map.inLake(b.x, b.z)) { fx.emit('steam', b.x, 0.5, b.z, 0, 3, 0, 20, 3); respawnOnRoad(t('water')); }
+      if (map.inWater(b.x, b.z)) { fx.emit('steam', b.x, 0.5, b.z, 0, 3, 0, 20, 3); respawnOnRoad(t('water')); }
       if (b.x < BOUNDS.x0 + 60 || b.x > BOUNDS.x1 - 60 || b.z < BOUNDS.z0 + 60 || b.z > BOUNDS.z1 - 60) { if (time - edgeT > 5) { edgeT = time; hud.toast(t('edge'), 2200); } }
       // stuck (wedged, or on top of something): back on the road by itself
       if (P.engine && gasA > 0.5 && !b.dead && !P.hb) { P.stuck += dt; if (!P.stuckAt || Math.hypot(b.x - P.stuckAt[0], b.z - P.stuckAt[1]) > 2.5) { P.stuckAt = [b.x, b.z]; P.stuck = 0; } if (P.stuck > 5) { respawnOnRoad(t('respawn')); P.stuckAt = null; } } else { P.stuck = 0; P.stuckAt = null; }
@@ -351,7 +403,7 @@ export async function startCityDrive(host) {
     } else {
       const f = P.foot, mv = (gas - brake) * 4.6; f.yaw += steer * 2.4 * dt + L.yaw; L.yaw = 0;
       const nx = f.x + Math.sin(f.yaw) * mv * dt, nz = f.z + Math.cos(f.yaw) * mv * dt;
-      if (!world.inSolid(nx, f.z, 0.35) && !map.inLake(nx, f.z)) f.x = nx; if (!world.inSolid(f.x, nz, 0.35) && !map.inLake(f.x, nz)) f.z = nz;
+      if (!world.inSolid(nx, f.z, 0.35) && !map.inWater(nx, f.z)) f.x = nx; if (!world.inSolid(f.x, nz, 0.35) && !map.inWater(f.x, nz)) f.z = nz;
       f.vx = Math.sin(f.yaw) * mv; f.vz = Math.cos(f.yaw) * mv;
       if (b) { b.vx *= 0.9; b.vz *= 0.9; }
     }
@@ -381,17 +433,38 @@ export async function startCityDrive(host) {
     }
     // ---- camera
     P.shake *= Math.exp(-dt * 5); const shk = P.shake * 0.06, sx = (Math.random() - 0.5) * shk, sy2 = (Math.random() - 0.5) * shk;
-    if (!hud.look.drag && P.mode === 'car') { L.yaw *= 1 - damp(2.4, dt); L.pitch *= 1 - damp(2.4, dt); }
-    let fov = camera.aspect < 1 ? 92 : 70;
+    // the head turns back to the road once the car moves (stopped, it stays where the driver looked)
+    if (!hud.look.drag && P.mode === 'car' && (Math.hypot(b.vx, b.vz) > 1.5 || P.view !== 'fp')) { L.yaw *= 1 - damp(2.4, dt); L.pitch *= 1 - damp(2.4, dt); }
+    // field of view from the HORIZONTAL angle wanted (a tall phone keeps a believable windscreen width)
+    const hf = (a, hdeg) => 2 * Math.atan(Math.tan(hdeg * Math.PI / 360) / a) * 180 / Math.PI;
+    // tall phone, cockpit: an off-axis frustum puts the horizon at P.fpTune.p of the height (less headliner, more road)
+    let fov = scrA < 1 ? 92 : 70, vo = 0; const fpVo = scrA < 1 ? P.fpTune.p : 0, fpA = fpVo ? scrA / (2 * (1 - fpVo)) : scrA;
+    const fpFov = scrA < 1 ? hf(fpA, P.fpTune.hfov) : Math.min(78, hf(scrA, Math.min(104, 80 + (scrA - 1) * 22)));
     if (P.mode === 'car') {
       const sp = Math.hypot(b.vx, b.vz); fov += clamp(sp / 83) * 9;
-      if (P.view === 'fp') { const tall = camera.aspect < 1, T = P.fpTune; _v.copy(P.car.eye); _v.y += tall ? T.up : 0.02; _v.z += tall ? T.fwd : 0.02; P.car.group.localToWorld(_v); camera.position.set(_v.x + sx, _v.y + sy2, _v.z); camera.rotation.set(b.pitch * 0.9 + (tall ? T.pitch : -0.04) + L.pitch, b.yaw + Math.PI + L.yaw, -b.roll * 0.6, 'YXZ'); if (tall) fov = T.fov + clamp(sp / 83) * 7; }
+      if (P.view === 'fp') {
+        const tall = scrA < 1, T = P.fpTune, kB = P.back * P.back * (3 - 2 * P.back);
+        // head on the neck: the eyes sit ~9 cm ahead of the pivot and swing with the turn; look-back = over the right shoulder
+        const hy = L.yaw * (1 - kB) - (Math.PI - 0.24) * kB, nk = 0.09;
+        // forward offset per body: on a tall screen the header rail sits just inside the top edge (≈ 40° up)
+        const S = P.car.spec, fw = clamp((S.zT1 - (S.roof - 0.08 - P.car.eye.y - T.up) / Math.tan(tall ? 0.7 : 0.62)) - P.car.eye.z, 0.02, tall ? T.fwd : 0.14);
+        _v.copy(P.car.eye); _v.y += (tall ? T.up : 0.025) + 0.04 * kB; _v.z += fw - nk;
+        _v.x += Math.sin(hy) * nk + Math.sin(hy) * 0.035 * (1 - kB) - 0.26 * kB; _v.z += Math.cos(hy) * nk;
+        P.car.group.localToWorld(_v); camera.position.set(_v.x + sx, _v.y + sy2, _v.z);
+        camera.rotation.set(b.pitch * 0.9 + (tall ? T.pitch : -0.075) + L.pitch * (1 - kB) - 0.06 * kB, b.yaw + Math.PI + hy, -b.roll * 0.6, 'YXZ');
+        fov = fpFov + clamp(sp / 83) * (tall ? 5 : 6); vo = fpVo;
+      }
       else {
         const dist = 6.4 + clamp(sp / 80) * 2.2, a = b.yaw + L.yaw + (b.reversing && sp > 2 ? 0 : 0), wantX = b.x - Math.sin(a) * dist, wantZ = b.z - Math.cos(a) * dist; let ch = 2.5;
         _v.set(wantX, ch, wantZ); for (let q = 0; q < 5 && world.inSolid(_v.x, _v.z, 0.5); q++) { _v.x = b.x + (_v.x - b.x) * 0.7; _v.z = b.z + (_v.z - b.z) * 0.7; _v.y += 0.5; }
         if (!P.cam) P.cam = _v.clone(); else P.cam.lerp(_v, damp(9, dt)); camera.position.set(P.cam.x + sx, P.cam.y + sy2, P.cam.z); camera.lookAt(b.x + Math.sin(b.yaw) * 2, 1.05 + L.pitch * 3, b.z + Math.cos(b.yaw) * 2);
       }
-    } else { const f = P.foot; camera.position.set(f.x, 1.7 + 0.14, f.z); camera.rotation.set(L.pitch, f.yaw + Math.PI + L.yaw, 0, 'YXZ'); fov = camera.aspect < 1 ? 86 : 68; }
+    } else { const f = P.foot; camera.position.set(f.x, 1.7 + 0.14, f.z); camera.rotation.set(L.pitch, f.yaw + Math.PI + L.yaw, 0, 'YXZ'); fov = scrA < 1 ? 86 : 68; }
+    { const wantA = vo ? scrA / (2 * (1 - vo)) : scrA;
+      if (Math.abs(camera.aspect - wantA) > 1e-4 || camera.userData.vo !== vo || camera.userData.h !== h || camera.userData.w !== w) {
+        camera.aspect = wantA; camera.userData.vo = vo; camera.userData.w = w; camera.userData.h = h;
+        if (vo) camera.setViewOffset(w, 2 * (1 - vo) * h, 0, (1 - 2 * vo) * h, w, h); else camera.clearViewOffset();
+        if (Math.abs(camera.fov - fov) > 8) camera.fov = fov; camera.updateProjectionMatrix(); } }
     if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * clamp(dt * 6 + (P.cam ? 0 : 1)); camera.updateProjectionMatrix(); }
     { const nr = P.mode === 'car' ? (P.view === 'fp' ? 0.07 : 0.35) : 0.12; if (camera.near !== nr) { camera.near = nr; camera.updateProjectionMatrix(); } }
     camera.updateMatrixWorld();
@@ -421,7 +494,7 @@ export async function startCityDrive(host) {
       else { const own = Math.hypot(f.x - b.x, f.z - b.z) < 4.2, n = traffic.nearest(f.x, f.z, 3.4); if (own && !(n && n.d + 1 < Math.hypot(f.x - b.x, f.z - b.z) - 2)) acts.push('enter'); else if (n) acts.push('take'); if (b.dead) acts.push('tow'); }
     }
     return { kmh: P.mode === 'car' ? Math.round(Math.abs(b.vx * Math.sin(b.yaw) + b.vz * Math.cos(b.yaw)) * 3.6) : 0, gear: P.mode === 'car' ? (b.gear === 'D' ? 'D' + b.gearN : b.gear) : '–', rpm: P.engine ? clamp(b.rpm / 7600) : 0, dmg: b ? b.dmg : 0, fuel: b ? b.fuel : 1,
-      stars: Math.ceil(heat), hiding: heat > 0 && hideT > 1.5, onFoot: P.mode !== 'car', lights: lightsOn(), high: P.high, wipers: P.wipers, indL: P.ind === 1, indR: P.ind === -1, hb: P.hb, engine: P.engine, radio: radioState, actions: acts };
+      stars: Math.ceil(heat), hiding: heat > 0 && hideT > 1.5, onFoot: P.mode !== 'car', moving: P.mode === 'car' && sp > 2.8, lights: lightsOn(), high: P.high, wipers: P.wipers, indL: P.ind === 1, indR: P.ind === -1, hb: P.hb, engine: P.engine, radio: radioState, actions: acts };
   }
   // ---- wanted level, police, busted, escape
   function wantedTick(dt, E) {
@@ -456,12 +529,14 @@ export async function startCityDrive(host) {
   const c0 = host.car || {};
   mountCar(c0.kind || 'gt', c0.colour || 'graphite', G0.x, G0.z, G0.yaw, 0, c0.seed || 11);
   setTime(host.timeMode || 'day');
+  try { await map.prefetch(G0.x, G0.z); } catch { /* */ }
   for (let k = 0; k < 600 && (k < 3 || world.pending); k++) { world.update(G0.x, G0.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
   for (let k = 0; k < 40; k++) { traffic.update(0.4, P.body, null, null); }   // seed some traffic before the first frame
   if (host.autoStart !== false && host.gesture) ignition(true);
+  if (map.real && host.chooser !== false) hud.showStarts(map.starts, 'garage', true);   // where to start: the Palace of the Parliament is the featured one
   game.api = {
-    P, map, world, traffic, peds, fx, hud, radio, audio, scene, camera, settings, act, ignition, impact, crime, repair, toGarage, getOut, getIn, setTime, setView, respawnOnRoad,
-    autopilot(nodeId, v = 14) { const a = map.nearestNode(P.body.x, P.body.z), path = a ? map.route(a.id, nodeId) : null; P.auto = path ? { path, i: 0, v } : null; return path ? path.length : 0; },
+    P, map, world, traffic, peds, fx, hud, radio, audio, scene, camera, settings, act, ignition, impact, crime, repair, toGarage, getOut, getIn, setTime, setView, respawnOnRoad, startFrom, tapScreen,
+    autopilot(nodeId, v = 14) { const b0 = P.body, ne = map.nearestEdge(b0.x, b0.z, 40), fwd = ne ? (ne.e.ux * Math.sin(b0.yaw) + ne.e.uz * Math.cos(b0.yaw) >= 0 ? ne.e.b : ne.e.a) : null, a = fwd != null ? map.nodes[fwd] : map.nearestNode(b0.x, b0.z), path = a ? (map.route(a.id, nodeId, true) || map.route(a.id, nodeId)) : null; P.auto = path ? { path, i: 0, k: 0, v, poly: autoPath(path) } : null; return path ? path.length : 0; },
     get heat() { return heat; }, set heat(v) { heat = v; G.wanted = Math.ceil(v); }, get state() { return state; }, get time() { return time; }, keys, inp, hudState,
     info() { const i = renderer.info; return { calls: i.render.calls, tris: i.render.triangles, geos: i.memory.geometries, tex: i.memory.textures, chunks: world.loaded.size, cars: traffic.cars.length, peds: peds.list.length }; },
   };

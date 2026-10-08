@@ -3,7 +3,7 @@
 // data is used: the arterial roads are drawn through the real points of interest of panorama.js (same coordinates) and
 // carry the real street names; the local street grid between them is generated (deterministic) and named after streets
 // of the district. Frame "G": x = metres east, z = metres south of the project pin (map north = −z), ground at y = 0.
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.6';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.7';
 
 export const PROJECT_LL = [44.4639, 26.0347];   // = panorama.js PROJECT_LL
 const M_LAT = 111195, M_LON = 111195 * Math.cos(PROJECT_LL[0] * Math.PI / 180);
@@ -49,6 +49,7 @@ export const ROAD = [
   { lanes: 1, lw: 3.1, med: 0, park: 2.1, hw: 5.2, v: 12 },  // 1 street (kerb parking)
   { lanes: 2, lw: 3.2, med: 0.4, park: 0, hw: 6.6, v: 15 },  // 2 avenue
   { lanes: 2, lw: 3.25, med: 6.4, park: 0, hw: 9.7, v: 16 }, // 3 boulevard (tram bed / planted median)
+  { lanes: 2, lw: 3.3, med: 0, park: 0, hw: 6.6, v: 15 },     // 4 one-way carriageway of a dual road (real map: lanes / width per street)
 ];
 export const BOUNDS = { x0: -1760, x1: 2160, z0: -1160, z1: 2360 };
 export const CHUNK = 256;
@@ -293,6 +294,8 @@ export function buildMap() {
   }
   const edgeBetween = (a, b) => { for (const ei of nodes[a].edges) { const e = edges[ei]; if ((e.a === a && e.b === b) || (e.b === a && e.a === b)) return e; } return null; };
   const inLake = (x, z) => inPoly(lake, x, z) && Math.hypot(x - island.c[0], z - island.c[1]) > island.r;
-  MAP = { nodes, edges, blocks, pois, lake, island, fountain, site, cells, chunks, cellAt, nearestEdge, nearestNode, route, edgeBetween, inLake, S, wax, bounds: B };
+  MAP = { nodes, edges, blocks, pois, lake, island, fountain, site, cells, chunks, cellAt, nearestEdge, nearestNode, route, edgeBetween, inLake, S, wax, bounds: B,
+    real: false, axisAt: (n, e) => e.axis, inWater: inLake, chunkReady: () => true, prefetch: () => Promise.resolve(), tram: [], river: [], tramByChunk: new Map(), riverByChunk: new Map(),
+    startPose: () => ({ x: site.garage.x, z: site.garage.z, yaw: site.garage.yaw, garage: true }), starts: [{ id: 'garage', key: 'stGarage' }], landmark: () => null };
   return MAP;
 }

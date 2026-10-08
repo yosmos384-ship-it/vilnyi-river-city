@@ -2,9 +2,9 @@
 // (js/pano-tour.js + three.js) is imported lazily on the first open().
 //   window.VRC_PANO = { ready, available(unitId, styleId) → boolean, has(typeId, styleId), open(container, opts) → handle }
 // opts: { unitId, styleId, startRoom, i18n, lang, dir, onExit }   (startRoom may also be 'lobby' | 'corridor' | 'parking')
-import { unitById, TYPES } from './data.js?v=3.6';
+import { unitById, TYPES } from './data.js?v=3.7';
 
-const MANIFEST_URL = new URL('../assets/pano/index.json?v=3.6', import.meta.url);
+const MANIFEST_URL = new URL('../assets/pano/index.json?v=3.7', import.meta.url);
 let manifest = null;
 const ready = fetch(MANIFEST_URL, { cache: 'no-cache' })
   .then(r => (r.ok ? r.json() : null)).catch(() => null)
@@ -37,7 +37,7 @@ function has(typeId, styleId) {
 let modP = null;
 async function open(container, opts = {}) {
   await ready;
-  modP = modP || import('./pano-tour.js?v=3.6');
+  modP = modP || import('./pano-tour.js?v=3.7');
   const mod = await modP;
   return mod.openPanoTour(container, opts);
 }
