@@ -1,6 +1,27 @@
 # VILNYI River City — versions
 
-Every published version has a commit id (below). To go back to one: ask Claude "restore version vX.Y".
+## Restore points
+
+The last published version is always saved, numbered, **before** anything new is uploaded.
+
+- Named restore points (branches in this repository, never published): `backup/v2.8`, `backup/v3.0`, `backup/v3.3`,
+  `backup/v3.4`, `backup/v3.5`, `backup/v3.5.1` — a new `backup/<version>` is added before every release.
+- Every other version: by its commit id in the table below.
+- To go back: ask Claude "restore version vX.Y". It is done as a new commit on `main` that puts back the files of that
+  version — history is never rewritten, so going back can itself be undone:
+
+```
+git checkout main && git pull --ff-only
+git rm -rq . && git checkout origin/backup/vX.Y -- .      # or the commit id from the table
+git checkout HEAD -- VERSIONS.md CNAME .nojekyll
+git commit -m "restore vX.Y" && git push origin main
+```
+
+- The site's footer shows the version that is running (since v3.5.1).
+
+## All versions
+
+Every published version has a commit id (below).
 
 | Version | Commit | What changed |
 |---|---|---|
