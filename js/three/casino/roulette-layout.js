@@ -2,7 +2,7 @@
 // the tests). Seen from the player's end of the table: u across (right positive), v away from the player towards the
 // wheel. Numbers: 3 columns × 12 rows with 34-35-36 nearest the player and 1-2-3 next to the zero at the wheel end;
 // the "2 : 1" column boxes nearest the player; the dozens and the even chances in two strips on the left.
-import { BET } from './roulette.js?v=3.5.1';
+import { BET } from './roulette.js?v=3.6';
 
 export const RL = { cell: [0.19, 0.1], u0: -0.18, v0: 0.2, dozW: 0.105, evW: 0.105, zeroH: 0.13, colH: 0.105, ppm: 620 };      // wide cells: easy to hit on a phone
 RL.w = 3 * RL.cell[0] + RL.dozW + RL.evW; RL.h = 12 * RL.cell[1] + RL.zeroH + RL.colH;

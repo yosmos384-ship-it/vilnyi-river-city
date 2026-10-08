@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng } from '../rng.js?v=3.5.1';
-import { WHEEL, REDS, colorOf, BET, payout, settle, spin, Roulette, RULES } from '../roulette.js?v=3.5.1';
+import { seededRng } from '../rng.js?v=3.6';
+import { WHEEL, REDS, colorOf, BET, payout, settle, spin, Roulette, RULES } from '../roulette.js?v=3.6';
 
 test('wheel order and colours of the European wheel', () => {
   assert.equal(WHEEL.length, 37); assert.deepEqual([...WHEEL].sort((a, b) => a - b), Array.from({ length: 37 }, (_, i) => i));

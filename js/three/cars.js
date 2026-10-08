@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.5.1';
+import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.6';
 
 export const CAR_KINDS = ['sedan', 'coupe', 'suv', 'gt', 'ev', 'super'];
 export const CAR_COLOURS = {
@@ -515,29 +515,32 @@ function shadowGeometry() {
 }
 // local matrix of a car's shadow quad (in the car frame)
 const shadowLocal = S => new THREE.Matrix4().compose(new THREE.Vector3(0, 0.014, (S.zF + S.zR) / 2), new THREE.Quaternion(), new THREE.Vector3((S.W + 0.1) * 64 / 38, 1, (S.L + 0.06) * 128 / 100));
-// Number plates: a fictional format (two letters · three digits · two letters, gold band, no country code), 36 on one atlas
-const PLATE_N = [4, 9];
+// Number plates: Romanian format with FICTIONAL numbers (county code B for București · two or three digits · three
+// letters, blue EU band with RO), 72 different ones on one atlas
+const PLATE_N = [4, 18];
 let PLATE_TEX = null;
 function plateTex() {
   if (PLATE_TEX) return PLATE_TEX;
-  const c = document.createElement('canvas'); c.width = 1024; c.height = 512; const g = c.getContext('2d'), r = rng(4821);
-  const AZ = 'ABCDEFGHJKLMNPRSTVXZ', cw = 256, ch = 512 / PLATE_N[1];
-  g.fillStyle = '#111'; g.fillRect(0, 0, 1024, 512);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d'), r = rng(4821);
+  const AZ = 'ABCDEFGHJKLMNPRSTVXZ', cw = 256, ch = 1024 / PLATE_N[1], seen = new Set();
+  g.fillStyle = '#111'; g.fillRect(0, 0, 1024, 1024);
   for (let i = 0; i < PLATE_N[0] * PLATE_N[1]; i++) {
     const x = (i % PLATE_N[0]) * cw, y = Math.floor(i / PLATE_N[0]) * ch;
-    g.fillStyle = '#f3f2ec'; g.beginPath(); g.roundRect(x + 2, y + 2, cw - 4, ch - 4, 6); g.fill();
+    g.fillStyle = '#f6f6f2'; g.beginPath(); g.roundRect(x + 2, y + 2, cw - 4, ch - 4, 6); g.fill();
     g.strokeStyle = '#16171a'; g.lineWidth = 2.5; g.beginPath(); g.roundRect(x + 4.5, y + 4.5, cw - 9, ch - 9, 5); g.stroke();
-    g.fillStyle = '#b8964e'; g.beginPath(); g.roundRect(x + 6, y + 6, 24, ch - 12, [4, 0, 0, 4]); g.fill();
-    g.fillStyle = '#16171a'; g.beginPath(); g.moveTo(x + 18, y + ch / 2 - 9); g.lineTo(x + 25, y + ch / 2); g.lineTo(x + 18, y + ch / 2 + 9); g.lineTo(x + 11, y + ch / 2); g.closePath(); g.fill();
+    g.fillStyle = '#1b3f9c'; g.beginPath(); g.roundRect(x + 6, y + 6, 26, ch - 12, [4, 0, 0, 4]); g.fill();
+    g.fillStyle = '#f2c81e'; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.beginPath(); g.arc(x + 19 + Math.cos(a) * 7, y + ch * 0.36 + Math.sin(a) * 7, 1.15, 0, 7); g.fill(); }
+    g.fillStyle = '#ffffff'; g.font = '700 11px Arial, sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText('RO', x + 19, y + ch * 0.78);
     const L = () => AZ[Math.floor(r() * AZ.length)], D = () => String(Math.floor(r() * 10));
-    g.font = '700 38px "DIN Alternate", "Arial Narrow", Arial, sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center';
-    g.fillText(`${L()}${L()} ${D()}${D()}${D()} ${L()}${L()}`, x + 30 + (cw - 36) / 2, y + ch / 2 + 2, cw - 52);
+    let txt; do { txt = `B ${r() < 0.5 ? D() + D() : D() + D() + D()} ${L()}${L()}${L()}`; } while (seen.has(txt)); seen.add(txt);
+    g.fillStyle = '#16171a'; g.font = '700 38px "DIN Alternate", "Arial Narrow", Arial, sans-serif';
+    g.fillText(txt, x + 32 + (cw - 38) / 2, y + ch / 2 + 2, cw - 54);
   }
   PLATE_TEX = new THREE.CanvasTexture(c); PLATE_TEX.colorSpace = THREE.SRGBColorSpace; PLATE_TEX.anisotropy = 4; return PLATE_TEX;
 }
 // the two plates of one car (front + rear quads) with the atlas cell `n`
 function plateGeometry(G, n) {
-  const g = G.plates.clone(), uv = g.attributes.uv, k = ((n % 36) + 36) % 36, cx = k % PLATE_N[0], cy = Math.floor(k / PLATE_N[0]);
+  const NP = PLATE_N[0] * PLATE_N[1], g = G.plates.clone(), uv = g.attributes.uv, k = ((n % NP) + NP) % NP, cx = k % PLATE_N[0], cy = Math.floor(k / PLATE_N[0]);
   for (let i = 0; i < uv.count; i++) uv.setXY(i, (cx + uv.getX(i)) / PLATE_N[0], 1 - (cy + 1 - uv.getY(i)) / PLATE_N[1]);
   return g;
 }
@@ -1349,7 +1352,7 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
     dm(kit.paintD, paint, 'door-paint'); dm(kit.trimD, MS.trim, 'door-trim'); if (kit.lightsD.attributes.position.count) dm(kit.lightsD, lightsMat, 'door-lights'); dm(C.door, MS.interior, 'door-card');
     const C2 = cockpitCanvas(); if (MS.screen.map !== C2.tex) { MS.screen.map = C2.tex; MS.screen.needsUpdate = true; }
     const scr = new THREE.Mesh(C.screens, MS.screen); scr.name = 'screens'; scr.matrixAutoUpdate = false; group.add(scr);
-    ck = { pivot, dGlass, open: 0, mirrors: [] };
+    ck = { pivot, dGlass, open: 0, mirrors: [], H };
     // rear-view mirrors that really show what is behind: three small views copied off the frame buffer (renderMirrors)
     try {
       const mk2 = (name, w, h, x, y, z, yaw, back, tw, th, cam, parent) => {
@@ -1406,7 +1409,10 @@ export function createCar(kind = 'sedan', colour = 'black', opts = {}) {
   // a: 0 closed … 1 open; maxAngle (rad) lets a tight bay limit the swing
   function setDoor(a, maxAngle = 1.08) { if (!ck) return; ck.open = a; ck.pivot.rotation.y = -a * maxAngle; ck.pivot.updateMatrixWorld(true); }
   function setInside(v) { inside = !!v; glass.material = v ? MS.glassIn : MS.glass; if (ck) ck.dGlass.material = glass.material; }
+  // driver's window: 0 up … 1 fully down (the glass drops into the door) — city/index.js
+  function setWindow(a) { if (!ck) return; ck.win = Math.max(0, Math.min(1, a)); ck.dGlass.position.y = -ck.H[1] - ck.win * 0.46; ck.dGlass.updateMatrix(); }
   return {
+    setWindow,
     group, wheels, steering, lights: lightsMat, setLights, setIndicators, setWheels, setInside, setCockpit, setDoor, kind, colour, spec: S,
     updateDisplays(st, force) { if (ck) drawCockpit(st, force); }, renderMirrors,
     // world position of a point just outside the driver's door (where one stands to get in)
@@ -1459,6 +1465,9 @@ export function createCarInstances(list, { shadows = false } = {}) {
     dispose() { for (const { p, r } of Object.values(meshes)) { p.dispose(); r.dispose(); } shadow.dispose(); group.parent?.remove(group); },
   };
 }
+// The shared cockpit display canvas ({c, g, tex, …}: cluster 512 × 192 on top, centre screen 512 × 320 below), for a
+// module that paints its own instruments on it (city/index.js) instead of calling car.updateDisplays().
+export function cockpitSurface() { return cockpitCanvas(); }
 // A single-material, x-forward geometry (vertex colours) for foreign instanced car meshes (environment traffic).
 export function carGeometryXForward(kind = 'sedan') {
   const G = farGeometry(kind);

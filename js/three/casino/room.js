@@ -5,14 +5,14 @@
 // Loaded lazily by the 'casino' zone of yacht-rooms.js. Coordinates are yacht-local; y is relative to the deck in ctx
 // helpers and absolute in the GeoB builders (c.y added).
 import * as THREE from 'three';
-import { GeoB, UBOX } from '../yacht-kit.js?v=3.5.1';
-import { YACHT_I18N } from '../yacht-i18n.js?v=3.5.1';
-import * as ART from './art.js?v=3.5.1';
-import { chipMaterial, chipMesh, CHIP_T } from './batches.js?v=3.5.1';
-import { CT, LANGS } from './i18n.js?v=3.5.1';
-import { attachPlay } from './play.js?v=3.5.1';
+import { GeoB, UBOX } from '../yacht-kit.js?v=3.6';
+import { YACHT_I18N } from '../yacht-i18n.js?v=3.6';
+import * as ART from './art.js?v=3.6';
+import { chipMaterial, chipMesh, CHIP_T } from './batches.js?v=3.6';
+import { CT, LANGS } from './i18n.js?v=3.6';
+import { attachPlay } from './play.js?v=3.6';
 
-import { X0, X1, H, TOP, hw, WALL_A, STATIONS, CASHIER, D_OUT, BJ_BOX, BAC_AREA, HLD, RL_TABLE, CR_TABLE, MACHINE } from './layout.js?v=3.5.1';      // (the felts are drawn from these positions)
+import { X0, X1, H, TOP, hw, WALL_A, STATIONS, CASHIER, D_OUT, BJ_BOX, BAC_AREA, HLD, RL_TABLE, CR_TABLE, MACHINE } from './layout.js?v=3.6';      // (the felts are drawn from these positions)
 const HALF = Math.PI / 2;
 
 // yacht.t() (YT) strings the shared code asks for: roles and greetings of the casino's people

@@ -4,10 +4,11 @@
 // Everything static is baked (merged by material) → roughly one draw call per material. Collisions use invisible boxes.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TYPES, GEOM, LEVELS } from '../data.js?v=3.5.1';
-import { getMaterials, tickTv } from './materials.js?v=3.5.1';
-import { F, FX } from './furniture.js?v=3.5.1';
-import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js?v=3.5.1';
+import { TYPES, GEOM, LEVELS } from '../data.js?v=3.6';
+import { getMaterials, tickTv } from './materials.js?v=3.6';
+import { F, FX } from './furniture.js?v=3.6';
+import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js?v=3.6';
+import { attachBake } from './bake.js?v=3.6';
 
 const CH = LEVELS.ceiling;            // clear ceiling height 2.7
 const LH = LEVELS.typicalH;           // storey height 3.0 (duplex upper floor at y = 3.0)
@@ -1561,10 +1562,14 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   const lc = (v0 + v1) / 2;
   const sofaLen = clamp(zd - 0.7, 1.9, 2.5);
   const floating = zw >= 4.6 || !farIsWall;
-  const sofaU = floating ? tvWall - t * Math.min(3.05, zw - 0.55) : farWall + t * 0.52;
-  put(g, F.sofa(m, { len: sofaLen }), sofaU, lc, toTV);
+  // one-room flats (no bedroom): the sofa is a pull-out sofa bed, set a little further from the TV wall so that the
+  // opened bed leaves the lane to the balcony door free; its light table parks beside the bed (see placeSofaBed)
+  const studio = !ctx.sofaBed && !ctx.P.duplex && !ctx.P.T.list.some(r => r.kind === 'bedroom');
+  const sofaU = floating ? tvWall - t * Math.min(studio ? 3.25 : 3.05, zw - 0.55) : farWall + t * 0.52;
+  if (studio) placeSofaBed(ctx, g, sofaU, lc, toTV, sofaLen, t);
+  else put(g, F.sofa(m, { len: sofaLen }), sofaU, lc, toTV);
   const ctU = sofaU + t * 1.0;
-  put(g, F.coffeeTable(m), ctU, lc, s === 'milano' ? '+u' : '+v');
+  if (!studio) put(g, F.coffeeTable(m), ctU, lc, s === 'milano' ? '+u' : '+v');
   const rugU = Math.min(3.0, Math.abs(tvWall - sofaU) + 0.1), rugV = Math.min(sofaLen + 0.9, zd + 0.2);
   put(g, F.rug(m, { w: rugV, d: rugU }), sofaU + t * (rugU / 2 - 0.35), lc, '+u');
   const tvLen = Math.min(2.2, zd - 0.45);
@@ -1599,6 +1604,124 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   ctx.lightSpots.push({ u: (sofaU + tvWall) / 2, v: lc, y: L.y, k: 1.0, pri: 0 });
   ctx.livingEye = { u: farWall + t * 0.6, v: v0 };
   return { sofaU, t, back: sofaU - t * 0.52 };       // back: the far side of the sofa (and of the lamp beside it)
+}
+// ---------------- studio sofa bed (one-room flats): F.sofaBed + its switching colliders and tap targets
+// The sofa's own collider (put) stays solid in both states; `ext` is the pulled-out part of the bed, `tHome` / `tPark`
+// the light table in front of the sofa / parked beside the bed. Tap targets carry the walkthrough's click contract
+// (action {type:'aptDoor', part:'sofaBed'} + toggle) — see wireSofaBed.
+function placeSofaBed(ctx, g, u, v, face, len, t) {
+  const sb = put(g, F.sofaBed(ctx.m, { len, side: t, fixed: ctx.cut }), u, v, face), api = sb.userData.sofaBed;
+  if (ctx.cut || !api) return sb;
+  const bx = (b, name) => { const o = collider(sb, b.x0, 0.02, b.z0, b.x1, b.h, b.z1); o.name = name; return o; };
+  const tap = (b, h, pad) => {
+    const o = collider(sb, b.x0 - pad, 0.02, b.z0 - pad, b.x1 + pad, h, b.z1 + pad);
+    delete o.userData.solid; o.name = 'sofabed-tap'; o.userData.piece = 'sofaBed'; o.userData.sofaBed = true;
+    o.userData.action = { type: 'aptDoor', unitId: ctx.unit.id, part: 'sofaBed' };
+    return o;
+  };
+  ctx.sofaBed = { obj: sb, api, ext: bx(api.ext, 'col-sofabed'), tHome: bx(api.tHome, 'col-sofabed-table'), tPark: bx(api.tPark, 'col-sofabed-table'),
+    taps: [tap(api.sofa, api.sofa.h, 0.04), tap(api.ext, 0.68, 0.04)] };
+  return sb;
+}
+const SOFA_HINT = {
+  en: 'Tap the sofa to open it into a double bed — tap again to fold it', he: 'הקישו על הספה כדי לפתוח אותה למיטה זוגית — הקשה נוספת מקפלת אותה',
+  ro: 'Atinge canapeaua pentru a o deschide în pat dublu — încă o atingere o strânge', ru: 'Нажмите на диван, чтобы разложить его в двуспальную кровать, — ещё одно нажатие сложит его',
+  uk: 'Торкніться дивана, щоб розкласти його у двоспальне ліжко, — ще один дотик складе його', fr: 'Touchez le canapé pour l’ouvrir en lit double — touchez à nouveau pour le replier',
+  it: 'Tocca il divano per aprirlo in letto matrimoniale — tocca di nuovo per richiuderlo', de: 'Sofa antippen, um es zum Doppelbett auszuziehen — erneut antippen klappt es wieder ein',
+};
+const SOFA_WAIT = {
+  en: 'Step aside — the bed opens here', he: 'זוזו מעט הצידה — המיטה נפתחת כאן', ro: 'Fă un pas într-o parte — patul se deschide aici', ru: 'Отойдите в сторону — здесь раскладывается кровать',
+  uk: 'Відійдіть убік — тут розкладається ліжко', fr: 'Écartez-vous — le lit s’ouvre ici', it: 'Spostati di lato — il letto si apre qui', de: 'Bitte zur Seite treten — hier klappt das Bett aus',
+};
+let SOFA_HINTED = false;
+const SOFA_MEM = new WeakMap();        // walkthrough element → Map(unit id → open): a rebuilt flat (new design) keeps its state
+function sofaToast(dict, key, ms = 4200) {
+  if (typeof document === 'undefined') return;
+  const toast = document.querySelector('.vw-toast'); if (!toast) return;                 // (only inside the walkthrough)
+  const text = dict[String(document.documentElement.lang || 'en').slice(0, 2)] || dict.en;
+  try { window.dispatchEvent(new CustomEvent('vrc:hint', { detail: { key, text } })); } catch { /* no DOM */ }
+  toast.textContent = text; toast.classList.add('show');
+  setTimeout(() => { if (toast.textContent === text) toast.classList.remove('show'); }, ms);
+}
+// State machine of the sofa bed. Built folded, except inside the walkthrough (a `.vw` element exists), where the
+// visitor finds the bed OPEN and — once, ~2 s after it first comes into his view from inside the flat — it folds
+// itself into the sofa; afterwards it stays the way he leaves it (remembered per flat for the walkthrough's life).
+// Opening waits while the visitor stands where the bed or its table is going to be.
+function wireSofaBed(ctx, root, opts) {
+  const sb = ctx.sofaBed; if (!sb) return null;
+  const { api, ext, tHome, tPark, taps } = sb, unit = ctx.unit, P = ctx.P;
+  // walk.js passes sofaBed: 'auto' explicitly: its pre-warm builds the flat before the `.vw` element exists
+  const walkCtx = opts.sofaBed === 'auto' || (typeof document !== 'undefined' && !!document.querySelector('.vw'));
+  const memOf = () => { const vw = typeof document !== 'undefined' ? document.querySelector('.vw') : null; if (!vw) return null; let m = SOFA_MEM.get(vw); if (!m) SOFA_MEM.set(vw, m = new Map()); return m; };
+  let mem = memOf();
+  const mode = opts.sofaBed || 'auto', known = !!mem && mem.has(unit.id);
+  let open = mode === 'open' ? true : mode === 'folded' ? false : known ? mem.get(unit.id) : walkCtx;
+  let auto = mode === 'auto' && walkCtx && !known && open;
+  let anim = null, pending = null, disposed = false, seen = 0, camAt = 0, promise = null;
+  const cam = new THREE.Vector3(), lp = new THREE.Vector3(), tgt = new THREE.Vector3(), dir = new THREE.Vector3(), bx = new THREE.Box3(), ray = new THREE.Raycaster();
+  const fire = () => { try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('vrc:colliders-changed', { detail: { unitId: unit.id, sofaBed: true, open } })); } catch { /* no DOM */ } };
+  const setSolid = (c, on) => { c.userData.solid = on; c.raycast = on ? MESH_RAYCAST : NO_RAYCAST; };
+  const cols = (bed, parked) => { setSolid(ext, bed); setSolid(tPark, parked); setSolid(tHome, !bed && !parked); fire(); };
+  const flags = () => { for (const p of taps) { p.userData.open = p.userData._open = open; p.userData._anim = !!anim; } taps[1].raycast = open || anim ? MESH_RAYCAST : NO_RAYCAST; };
+  const settle = () => { cols(open, open); flags(); };
+  const inWay = () => {
+    if (!camAt || performance.now() - camAt > 8000) return false;                        // no frames drawn lately → nobody is there
+    for (const c of [ext, tPark]) { bx.setFromObject(c); if (cam.x > bx.min.x - 0.34 && cam.x < bx.max.x + 0.34 && cam.z > bx.min.z - 0.34 && cam.z < bx.max.z + 0.34 && cam.y > bx.min.y && cam.y < bx.min.y + 2.4) return true; }
+    return false;
+  };
+  // the bed is in the visitor's view: he is inside the flat, it is on screen and no wall / closed door stands between
+  const visible = (camera) => {
+    root.worldToLocal(lp.copy(cam));
+    if (lp.x < 0 || lp.x > P.W || lp.z < 0.1 || lp.z > P.D + BD || lp.y < 0.3 || lp.y > CH) return false;
+    bx.setFromObject(ext).getCenter(tgt); tgt.y = bx.min.y + 0.45;
+    lp.copy(tgt).applyMatrix4(camera.matrixWorldInverse); if (lp.z > -0.3) return false;
+    lp.applyMatrix4(camera.projectionMatrix); if (Math.abs(lp.x) > 0.92 || Math.abs(lp.y) > 0.92) return false;
+    dir.subVectors(tgt, cam); const d = dir.length(); if (d > 12 || d < 0.4) return d < 0.4;
+    ray.set(cam, dir.divideScalar(d)); ray.near = 0; ray.far = d - 0.35;
+    return !ray.intersectObjects(ctx.cg.children.filter(c => c.isMesh && c.userData.solid === true), false).length;
+  };
+  const run = () => {
+    if (anim) anim.cancel = true;
+    const me = anim = { cancel: false }, from = api.t, to = open ? 1 : 0, dur = Math.max(250, api.dur * Math.abs(to - from)), t0 = performance.now();
+    if (open) cols(true, true);                 // opening: solid at once (the visitor is not there); folding: solid until it is away
+    flags();
+    return promise = new Promise(res => {
+      const step = () => {
+        if (me.cancel || disposed) return res();
+        const k = Math.max(0, Math.min(1, (performance.now() - t0) / dur));
+        api.setT(from + (to - from) * k);
+        if (k < 1) requestAnimationFrame(step); else { anim = null; settle(); res(); }
+      };
+      step();
+    });
+  };
+  const toggle = (want, o = {}) => {
+    want = want === undefined ? !open : !!want;
+    if (!o.auto) auto = false;                  // the visitor took over
+    if (want === open) return (anim || pending) && promise ? promise : Promise.resolve();
+    open = want; if (!mem) mem = memOf(); if (mem) mem.set(unit.id, open);
+    if (pending) { const res = pending; pending = null; flags(); res(); return Promise.resolve(); }   // never started: nothing to undo
+    if (o.instant) { if (anim) { anim.cancel = true; anim = null; } api.setT(open ? 1 : 0); settle(); return Promise.resolve(); }
+    if (open && !anim && inWay()) { flags(); sofaToast(SOFA_WAIT, 'sofaBedWait', 2600); return promise = new Promise(res => { pending = res; }); }
+    return run();
+  };
+  api.onFrame = (camera) => {
+    if (disposed || !camera || !camera.isPerspectiveCamera) return;
+    const now = performance.now(), dt = Math.min(100, now - (camAt || now)); camAt = now;
+    cam.setFromMatrixPosition(camera.matrixWorld);
+    if (pending && !inWay()) { const res = pending; pending = null; run().then(res); }
+    if (auto && open && !anim && !pending && visible(camera)) {
+      seen += dt;
+      if (seen >= 2000) { auto = false; toggle(false, { auto: true }).then(() => { if (!disposed && !open && !SOFA_HINTED) { SOFA_HINTED = true; sofaToast(SOFA_HINT, 'sofaBed', 5200); } }); }
+    }
+  };
+  for (const p of taps) p.userData.toggle = (o) => toggle(o);
+  api.setT(open ? 1 : 0); settle();
+  return {
+    get open() { return open; }, get moving() { return !!anim || !!pending; }, get auto() { return auto; },
+    toggle, proxies: taps, colliders: { ext, tHome, tPark }, piece: sb.obj, dur: api.dur, setT: (t) => api.setT(t),
+    dispose() { disposed = true; if (anim) anim.cancel = true; if (pending) { const res = pending; pending = null; res(); } api.onFrame = null; },
+  };
 }
 // ---------------- kitchen island (kitchen along the corridor wall)
 const ISL_D = 0.86, ISL_AISLE = 0.95;
@@ -2055,6 +2178,7 @@ function build(unit, styleId, opts = {}) {
   };
   if (opts.startOnBalcony && doors.length) mainDoor()?.toggle(true, { instant: true });
   const tvs = opts.cutaway ? [] : wireTvs(ctx, root);
+  const sofaBed = opts.cutaway ? null : wireSofaBed(ctx, root, opts);
   // play pieces (island tap / chopping board / salad bowl, snooker table, chalk): proxies become tap targets
   // … and the water play: toilet lids & flush plates, basin / bath / kitchen taps, showers, shampoo pumps
   const fixtures = [];
@@ -2092,9 +2216,13 @@ function build(unit, styleId, opts = {}) {
     baked.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     if (ctx.door) ctx.door.leaf.geometry.dispose();
     if (movers) movers.dispose();
+    if (sofaBed) sofaBed.dispose();
     if (ctx.game) ctx.game.dispose();
   };
   const views = cameraViews(ctx, P);
+  // baked global illumination ("Realistic lighting"): patches the materials once, loads the bake of this type × width
+  // when the apartment is shown; without a bake nothing changes — see bake.js
+  attachBake(root, unit, m, opts);
   return {
     group: root, rooms, entrance: { u: P.doorU, v: 0 }, balconyPoint, lights, plan: P, views,
     stats: { meshes: baked.children.length + (ctx.door ? 2 : 0) + (movers ? movers.batches : 0), colliders: cg.children.length, fronts: movers ? movers.count : 0, ms: { furnish: Math.round(T1 - T0), fronts: Math.round(T2 - T1), bake: Math.round(T3 - T2) } },
@@ -2114,6 +2242,10 @@ function build(unit, styleId, opts = {}) {
     // kitchen island {u, v, len, depth, level} and snooker table {size (ft), u, v, outer, clear} if this plan has them;
     // game: the table's controller — walk.js calls game.frame(walker, dt) every frame (play prompt, play mode)
     island: ctx.island || null, snooker: ctx.snooker || null, game,
+    // studios: the pull-out sofa bed {open, moving, toggle(open, {instant}) → Promise, proxies (tap targets), colliders}.
+    // opts.sofaBed: 'open' | 'folded' | 'auto' (default: folded, except inside the walkthrough, where it is built open
+    // and folds itself once ~2 s after the visitor first sees it)
+    sofaBed,
     // water play proxies (userData: playPart 'toiletLid'|'flush'|'tap'|'bathTap'|'shower'|'shampoo', piece, open, toggle)
     fixtures,
     closeBalconyDoors: () => Promise.all(doors.filter(d => d.open).map(d => d.toggle(false))),
@@ -2189,4 +2321,4 @@ function cameraViews(ctx, P) {
 
 export function buildApartment(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, opts); }
 export function buildApartmentCutaway(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, { ...opts, cutaway: true }); }
-export { STYLES } from './materials.js?v=3.5.1';
+export { STYLES } from './materials.js?v=3.6';

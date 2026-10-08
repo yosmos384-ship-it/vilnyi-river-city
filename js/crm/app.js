@@ -1,23 +1,23 @@
 // VRC CRM — shell: access gate, layout, router, language switcher, global search.
-import { LANGS, langInfo, setLang, lang, initialLang, onLangChange } from '../i18n.js?v=3.5.1';
-import { UNITS } from '../data.js?v=3.5.1';
-import { tc } from './i18n-crm.js?v=3.5.1';
-import { S, boot, onChange, syncLeads, entries, clientName, get } from './store.js?v=3.5.1';
-import { esc, icon, $, $$, debounce, initials } from './util.js?v=3.5.1';
-import { seedDemo } from './demo.js?v=3.5.1';
+import { LANGS, langInfo, setLang, lang, initialLang, onLangChange } from '../i18n.js?v=3.6';
+import { UNITS } from '../data.js?v=3.6';
+import { tc } from './i18n-crm.js?v=3.6';
+import { S, boot, onChange, syncLeads, entries, clientName, get } from './store.js?v=3.6';
+import { esc, icon, $, $$, debounce, initials } from './util.js?v=3.6';
+import { seedDemo } from './demo.js?v=3.6';
 
 const VIEWS = {
-  dashboard: () => import('./v-dashboard.js?v=3.5.1'),
-  clients: () => import('./v-clients.js?v=3.5.1'),
-  client: () => import('./v-clients.js?v=3.5.1'),
-  pipeline: () => import('./v-clients.js?v=3.5.1'),
-  units: () => import('./v-units.js?v=3.5.1'),
-  deals: () => import('./v-deals.js?v=3.5.1'),
-  deal: () => import('./v-deals.js?v=3.5.1'),
-  documents: () => import('./v-documents.js?v=3.5.1'),
-  email: () => import('./v-email.js?v=3.5.1'),
-  tasks: () => import('./v-tasks.js?v=3.5.1'),
-  settings: () => import('./v-settings.js?v=3.5.1'),
+  dashboard: () => import('./v-dashboard.js?v=3.6'),
+  clients: () => import('./v-clients.js?v=3.6'),
+  client: () => import('./v-clients.js?v=3.6'),
+  pipeline: () => import('./v-clients.js?v=3.6'),
+  units: () => import('./v-units.js?v=3.6'),
+  deals: () => import('./v-deals.js?v=3.6'),
+  deal: () => import('./v-deals.js?v=3.6'),
+  documents: () => import('./v-documents.js?v=3.6'),
+  email: () => import('./v-email.js?v=3.6'),
+  tasks: () => import('./v-tasks.js?v=3.6'),
+  settings: () => import('./v-settings.js?v=3.6'),
 };
 const NAV = [['dashboard', 'dash'], ['clients', 'users'], ['pipeline', 'kanban'], ['units', 'building'], ['deals', 'deal'], ['documents', 'doc'], ['email', 'mail'], ['tasks', 'task'], ['settings', 'cog']];
 
@@ -100,10 +100,10 @@ function shell() {
   document.addEventListener('click', () => { pop.hidden = true; });
   pop.addEventListener('click', async e => {
     const k = e.target.closest('[data-new]')?.dataset.new; if (!k) return;
-    if (k === 'client') (await import('./v-clients.js?v=3.5.1')).editClient();
-    if (k === 'deal') (await import('./v-deals.js?v=3.5.1')).newDeal({});
-    if (k === 'task') (await import('./v-tasks.js?v=3.5.1')).editTask({});
-    if (k === 'document') (await import('./v-documents.js?v=3.5.1')).newDocument({});
+    if (k === 'client') (await import('./v-clients.js?v=3.6')).editClient();
+    if (k === 'deal') (await import('./v-deals.js?v=3.6')).newDeal({});
+    if (k === 'task') (await import('./v-tasks.js?v=3.6')).editTask({});
+    if (k === 'document') (await import('./v-documents.js?v=3.6')).newDocument({});
   });
   bindSearch();
 }

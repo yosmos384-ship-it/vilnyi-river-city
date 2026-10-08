@@ -7,9 +7,12 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
-} from '../data.js?v=3.5.1';
-import { I18N } from '../i18n.js?v=3.5.1';
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.5.1';
+} from '../data.js?v=3.6';
+import { I18N } from '../i18n.js?v=3.6';
+import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.6';   // post-processing + adaptive quality (Graphics setting)
+import { PbrAssets } from './pbr.js?v=3.6';                     // CC0 HDRI lighting + detail maps (Medium / High only)
+import './bake.js?v=3.6';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.6';
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -87,6 +90,9 @@ const BALCONY_DOOR_TXT = {
   de: 'Die Balkontüren öffnen sich, wenn Sie sich nähern — oder tippen Sie auf die Tür, um sie zu öffnen und zu schließen',
 };
 for (const [l, v] of Object.entries(BALCONY_DOOR_TXT)) (LOCAL[l] ||= {})['walk.balconyDoorHint'] = v;
+// Settings row "Realistic lighting": baked global illumination in the apartments (bake.js → window.VRC.bakedLighting)
+const BAKE_TXT = { en: 'Realistic lighting', he: 'תאורה מציאותית', ro: 'Iluminare realistă', ru: 'Реалистичный свет', uk: 'Реалістичне світло', fr: 'Éclairage réaliste', it: 'Luce realistica', de: 'Realistisches Licht' };
+for (const [l, v] of Object.entries(BAKE_TXT)) (LOCAL[l] ||= {})['walk.bakedLight'] = v;
 // Photoreal toggle: there is no photoreal panorama of the spot the visitor stands on (or it failed to load) — the
 // visitor stays in live 3D, exactly where he is; the tour never opens somewhere else instead.
 const PHOTO_TXT = {
@@ -247,8 +253,8 @@ async function loadModules(injected = {}) {
     try { out[key] = await import(path); } catch (e) { console.warn(`[walk] ${path} unavailable — continuing without it`, e); out[key] = null; }
   };
   await Promise.all([
-    tryImport('environment', './environment.js?v=3.5.1'), tryImport('exterior', './exterior.js?v=3.5.1'),
-    tryImport('apartment', './apartment.js?v=3.5.1'), tryImport('commons', './commons.js?v=3.5.1'), tryImport('materials', './materials.js?v=3.5.1'),
+    tryImport('environment', './environment.js?v=3.6'), tryImport('exterior', './exterior.js?v=3.6'),
+    tryImport('apartment', './apartment.js?v=3.6'), tryImport('commons', './commons.js?v=3.6'), tryImport('materials', './materials.js?v=3.6'),
   ]);
   return out;
 }
@@ -378,7 +384,7 @@ export async function prewarmWalk({ unitId, styleId = 'milano', shaders = true }
     let apt = PREBUILT.get(key);
     if (!apt) {
       PREBUILT.clear();                                   // keep one: the apartment whose panel is open
-      apt = M.apartment.buildApartment(unit, styleId, {});
+      apt = M.apartment.buildApartment(unit, styleId, { sofaBed: 'auto' });
       if (!apt || !apt.group) return false;
       PREBUILT.set(key, apt);
     }
@@ -474,6 +480,10 @@ const CSS = `
 .vw-seg button{flex:1;padding:6px 0;font-size:11px;letter-spacing:.04em;color:#d9ccb0;touch-action:manipulation}
 .vw-seg button.on{background:var(--g);color:#111;font-weight:700}
 .vw-zoom{direction:ltr;align-items:center}
+.vw-gfx{flex-wrap:wrap;border-radius:12px}
+.vw-gfx button{flex:1 0 50%;min-width:0;padding:5px 2px;font-size:10px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vw-gfx button.eff:not(.on){color:var(--g2);box-shadow:inset 0 -2px 0 var(--g)}
+.vw.phone .vw-gfx button{padding:8px 2px;font-size:11.5px}
 .vw-zoom button{font-size:15px;line-height:1;padding:4px 0;color:var(--g2)}
 .vw-zoom button:active{background:rgba(201,164,92,.25)}
 .vw-zoom .zv{flex:1.1;text-align:center;font-size:10.5px;letter-spacing:.04em;color:#e9dfc8;font-variant-numeric:tabular-nums}
@@ -482,6 +492,13 @@ const CSS = `
 .vw-styles button{text-align:start;padding:5px 9px;border-radius:8px;font-size:11.5px;border:1px solid transparent;color:#e9dfc8}
 .vw-styles button.on{border-color:var(--g);color:var(--g2);background:rgba(201,164,92,.10)}
 .vw-prow{display:none}
+.vw-brow{display:flex;align-items:center;gap:7px;padding:5px 2px 1px;border:0;border-top:1px solid rgba(201,164,92,.18);background:none;font:inherit;font-size:10.5px;line-height:1.2;color:#e9dfc8;text-align:start;cursor:pointer}
+.vw-brow i{flex:0 0 22px;height:12px;border-radius:7px;border:1px solid var(--ln);position:relative;transition:background .2s}
+.vw-brow i::after{content:"";position:absolute;top:1px;inset-inline-start:1px;width:8px;height:8px;border-radius:50%;background:#8d8676;transition:inset-inline-start .2s,background .2s}
+.vw-brow[aria-pressed=true] i{background:rgba(201,164,92,.28)}
+.vw-brow[aria-pressed=true] i::after{inset-inline-start:11px;background:var(--g)}
+.vw-brow span{unicode-bidi:plaintext}
+.vw.phone .vw-brow{font-size:12px;gap:9px;padding:7px 4px 1px}
 .vw-bottom{position:absolute;bottom:calc(10px + var(--sb));left:calc(10px + var(--sl));right:calc(10px + var(--sr));display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .vw-row{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;pointer-events:auto;padding:1px;max-width:100%;align-self:center;touch-action:pan-x}
 .vw-row::-webkit-scrollbar,.vw-bottom::-webkit-scrollbar{display:none}
@@ -769,6 +786,9 @@ export class Walkthrough {
     // Sharper floors/walls at grazing angles; phones get a lighter 8× cap.
     this._aniso = Math.min(this.renderer.capabilities.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 1, isTouchDevice() ? 8 : 16);
     this.canvas = this.renderer.domElement; this.canvas.className = 'vw-gl'; this.canvas.tabIndex = 0;
+    this.postfx = new PostFX(this.renderer, { touch: isTouchDevice() });   // Graphics: auto / low / medium / high
+    this.pbr = new PbrAssets(this.renderer, { touch: isTouchDevice() });
+    this.postfx.onChange = () => this._gfxSync();
     this.root.appendChild(this.canvas);
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.08, 6000);   // near 8 cm: 60 % more depth precision than 5 cm (no far-wall z-fight)
@@ -803,6 +823,7 @@ export class Walkthrough {
     mark('modules');
     if (this.disposed) return;
     const M = this.mods;
+    this.pbr.watch(M.materials);
     this.styles = (M.materials && Array.isArray(M.materials.STYLES) && M.materials.STYLES.length) ? M.materials.STYLES : FALLBACK_STYLES;
     if (!this.styles.some(s => s.id === this.styleId)) this.styleId = this.styles[0].id;
 
@@ -1037,10 +1058,10 @@ export class Walkthrough {
     let url = null;
     try {
       r.setPixelRatio(pr); r.setSize(w, h, false);
-      r.render(this.scene, this.camera);
+      this.postfx.render(this.scene, this.camera, 0, { photo: true });
       url = this.canvas.toDataURL('image/png');   // same task as render → drawing buffer still valid
     } catch (e) { console.warn('[walk] photo failed', e); }
-    finally { r.setPixelRatio(prev); r.setSize(w, h, false); r.render(this.scene, this.camera); }
+    finally { r.setPixelRatio(prev); r.setSize(w, h, false); this.postfx.render(this.scene, this.camera, 0); }
     if (!url) return null;
     this.el.fade.style.transition = 'none'; this.el.fade.style.background = '#fff'; this.el.fade.style.opacity = '0.7';
     requestAnimationFrame(() => { this.el.fade.style.transition = ''; this.el.fade.style.opacity = '0'; setTimeout(() => { this.el.fade.style.background = ''; }, 320); });
@@ -1070,6 +1091,7 @@ export class Walkthrough {
     this._unbind();
     const safe = f => { try { f(); } catch (e) { console.warn('[walk] dispose', e); } };
     safe(() => this._engineStop());
+    safe(() => this._cityHook && this._cityHook.dispose());
     safe(() => this.fleet && this.fleet.dispose());
     safe(() => this.outdoorPoles && this.outdoorPoles.dispose());
     safe(() => this.outdoor && this.outdoor.dispose());
@@ -1081,6 +1103,8 @@ export class Walkthrough {
     safe(() => { for (const o of this._own) disposeTree(o); this._own = []; });
     safe(() => disposeTree(this.scene));   // sweep anything left (textures of shared caches are re-uploaded if reused)
     safe(() => { this.scene.environment = null; this.scene.background = null; this.scene.clear(); });
+    safe(() => this.postfx.dispose());
+    safe(() => this.pbr.dispose());
     safe(() => { this.renderer.dispose(); this.renderer.forceContextLoss(); });
     this.root.remove();
     this.solids = this.floors = this.actions = [];
@@ -1111,7 +1135,7 @@ export class Walkthrough {
     const pre = PREBUILT.get(unit.id + '|' + this.styleId);          // built (and its shaders compiled) during pre-warm
     if (pre) { PREBUILT.delete(unit.id + '|' + this.styleId); apt = pre; }
     else if (M.apartment && M.apartment.buildApartment) {
-      try { apt = M.apartment.buildApartment(unit, this.styleId, {}); } catch (e) { console.warn('[walk] buildApartment threw', e); }
+      try { apt = M.apartment.buildApartment(unit, this.styleId, { sofaBed: 'auto' }); } catch (e) { console.warn('[walk] buildApartment threw', e); }
     }
     if (!apt || !apt.group) apt = this._fallbackApartment(unit);
     this._polish(apt.group);
@@ -1336,6 +1360,7 @@ export class Walkthrough {
     this._unregister('commons'); this._registerCommons(c);
   }
   _registerCommons(c) {
+    this.pbr.decorate(c.group);
     this._register(c.group, 'commons', false, new Set(c.lifts.map(L => L.group)));
     for (const L of c.lifts) if (L.group) this._register(L.group, 'commons', true);
     this._register(c._helpers, 'commons');
@@ -1964,7 +1989,7 @@ export class Walkthrough {
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
-        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.5.1');
+        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.6');
         const reg = window.VRC_PANO;
         if (reg && reg.ready && typeof reg.ready.then === 'function') await reg.ready;
       } catch (e) { console.info('[walk] photoreal tour not deployed yet', e && e.message); this._panoFailed = true; }
@@ -1975,7 +2000,7 @@ export class Walkthrough {
   // The pano manifest (same file pano-tour.js reads) — fetched only once a type/style is known to exist.
   async _panoManifest() {
     if (!this._panoMan) {
-      const url = new URL('../../assets/pano/index.json?v=3.5.1', import.meta.url);
+      const url = new URL('../../assets/pano/index.json?v=3.6', import.meta.url);
       this._panoMan = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return this._panoMan;
@@ -2010,7 +2035,7 @@ export class Walkthrough {
     this._panoBusy = true;
     let mod = this.mods.panoTour;
     try {
-      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.5.1');
+      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.6');
     } catch (e) {
       console.warn('[walk] pano-tour.js unavailable', e);
       this._panoFailed = true; this._panoBusy = false; this._renderModes(); this._soonTip(); return;
@@ -2155,6 +2180,7 @@ export class Walkthrough {
     if (act.type === 'doorbell') return this._ringBell(a);
     if (act.type === 'aptMonitor') return this._monitorOpen(act.unitId);
     if (act.type === 'intercom') return this._icShow(act);
+    if (act.type === 'gate') return this._cityHook && this._cityHook.tapGate();   // car-park exit gate (city/gate.js)
     if (act.type === 'liftCall') return this._callLift(act.stair, act.building, a.obj, a.hit && a.hit.object, a.hit);
     if (act.type === 'liftButton') return this._pressLiftButton(act.floor, act);
     if (act.type === 'liftDoor') return this._liftDoorKey(act);
@@ -3128,11 +3154,13 @@ export class Walkthrough {
     this._raf = requestAnimationFrame(this._loop);
     if (this._paused || this._pano || this._photoPaused) return;   // hidden tab, or a photoreal tour owns the screen
     const dt = Math.min(this.clock.getDelta(), 0.1);
+    if (this._cityHook && this._cityHook.frame(dt)) return;   // City Drive game mode (city/hook.js, opt-in) owns the frame; otherwise this runs the car-park gate
     if (this._ghosts && this._ghosts.length) this._reconcileGhosts();
     this._update(dt);
     if (this.apt && this.apt.game) this.apt.game.frame(this, dt);   // snooker table (snooker.js): "Play" prompt; in play mode it owns the camera (walking is held by this.busy)
     try { this.env && this.env.update && this.env.update(dt, this.camera); } catch (e) { if (!this._envErr) { console.warn(e); this._envErr = true; } }
-    this.renderer.render(this.scene, this.camera);
+    this.postfx.setContext(this.drive ? 'drive' : this.yacht && this.yacht.active ? 'yacht' : this._placeKind === 'outdoor' ? 'outdoor' : 'indoor', this.envMode);
+    this.postfx.render(this.scene, this.camera, dt);   // Low: renderer.render(); Medium / High: postfx.js
   }
 
   _update(dt) {
@@ -3226,9 +3254,11 @@ export class Walkthrough {
   // Interior IBL indoors, sky IBL outdoors (balcony, street) for correct glass/metal reflections.
   _syncEnvMap() {
     const cur = this.scene.environment;
-    if (cur && cur !== this.roomEnv) this.skyEnv = cur;
+    if (cur && cur !== this.roomEnv && !this.pbr.owns(cur)) this.skyEnv = cur;
     const outside = this._placeKind === 'outdoor';
-    const want = (!outside && this.roomEnv) ? this.roomEnv : this.skyEnv;
+    let want = (!outside && this.roomEnv) ? this.roomEnv : this.skyEnv;
+    // HDRI lighting on Medium / High: outdoors and inside apartments (the lobby, corridors and lifts keep their own studio light)
+    if (outside || this._inAptId) want = this.pbr.pick(want, outside, this.envMode, this.env && this.env.sun);
     if (want && cur !== want) this.scene.environment = want;
   }
 
@@ -3477,6 +3507,9 @@ export class Walkthrough {
         <div class="vw-styles"></div>
         <button class="vw-tlabel st" data-k="flabel"></button>
         <div class="vw-styles vw-finish"></div>
+        <button class="vw-brow" data-k="bake" role="switch" aria-pressed="true"><i></i><span></span></button>
+        <div class="vw-tlabel vw-glabel"></div>
+        <div class="vw-seg vw-gfx" data-k="gfx" role="group">${GFX_MODES.map(g => `<button data-g="${g}" aria-pressed="false"></button>`).join('')}</div>
         <button class="vw-prow" data-k="help"><i>?</i><span></span></button>
       </div>
       <div class="vw-map vw-panel"><canvas></canvas></div>
@@ -3539,6 +3572,7 @@ export class Walkthrough {
     e.helpBtn.title = this.t('walk.help');
     e.prow.textContent = this.t('walk.help');
     e.gear.title = this.t('walk.settings'); e.gear.setAttribute('aria-label', e.gear.title);
+    this._gfxSync();
     e.mapBtn.title = this.t('walk.map'); e.mapBtn.setAttribute('aria-label', e.mapBtn.title);
     e.zoom.children[0].title = this.t('walk.zoomOut'); e.zoom.children[0].setAttribute('aria-label', e.zoom.children[0].title);
     e.zoom.children[2].title = this.t('walk.zoomIn'); e.zoom.children[2].setAttribute('aria-label', e.zoom.children[2].title);
@@ -3625,7 +3659,13 @@ export class Walkthrough {
       b.classList.toggle('on', id === cur); b.setAttribute('aria-pressed', String(id === cur)); box.appendChild(b);
     }
   }
-  _renderTime() { if (this.el) for (const b of this.el.timeSeg.children) b.classList.toggle('on', b.dataset.t === this.envMode); }
+  _renderTime() {
+    if (this.el) for (const b of this.el.timeSeg.children) b.classList.toggle('on', b.dataset.t === this.envMode);
+    // baked apartment lighting follows the day / dusk / night setting; its on/off row lives in the same panel
+    const B = typeof window !== 'undefined' && window.VRC && window.VRC.bakedLighting, row = this.el && this.el.tools.querySelector('.vw-brow');
+    if (B) B.setTime(this.envMode);
+    if (row) { row.hidden = !B; row.setAttribute('aria-pressed', String(!!(B && B.enabled))); row.lastElementChild.textContent = this.t('walk.bakedLight'); }
+  }
   _renderTeleports() {
     const box = this.el.tp; box.innerHTML = '';
     for (const k of ['entrance', 'lobby', 'corridor', 'apartment', 'balcony', 'parking']) {
@@ -3893,6 +3933,20 @@ export class Walkthrough {
     else this._zoom(dy);
   }
 
+  // Graphics setting (postfx.js): labels, the chosen mode, and — in Auto — a mark on the tier the device is running
+  _gfxSync() {
+    const box = this.el && this.el.tools.querySelector('.vw-gfx'); if (!box || !this.postfx) return;
+    const s = this.postfx.getTier(), L = this.lang;
+    // photographic lighting / detail maps follow the tier (a frame-rate fallback to Low keeps them: they cost next to nothing)
+    if (this.pbr) { const was = this.pbr.on; this.pbr.setTier(s.tier !== 'low' ? s.tier : s.mode === 'low' ? 'low' : this.pbr.tier); if (this.pbr.on && !was) this.pbr.decorate(this.scene); }
+    box.previousElementSibling.textContent = gfxText(L, 'title'); box.setAttribute('aria-label', gfxText(L, 'title'));
+    for (const b of box.children) {
+      const g = b.dataset.g, on = g === s.mode;
+      b.textContent = gfxText(L, g); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+      b.classList.toggle('eff', s.mode === 'auto' && g === s.tier); b.disabled = !s.supported && g !== 'low' && g !== 'auto';
+    }
+  }
+
   // ---- HUD visibility: popover, minimap toggle, auto-fade ----
   _setPopover(open) {
     this._popOpen = !!open;
@@ -4074,6 +4128,8 @@ export class Walkthrough {
     // Only the −1 commons carries cars. (Every other floor has an empty list: adopting that used to mark the fleet's
     // 'parking' source as taken, so the real cars were refused later and their instances hidden — an empty car park.)
     if (!c || !Array.isArray(c.parkedCars) || !c.parkedCars.length) return;
+    // the car park's exit gate + the opt-in "City Drive" game mode: fetched the first time the −1 level is on screen
+    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.6').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
     if (!this.fleet && !this._carsTried) { this._carsTried = true; this._initCars(); }   // in the car park before the world finished streaming
     if (!this.fleet) return;
     if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
@@ -4640,6 +4696,7 @@ export class Walkthrough {
     if (b.dataset.limo) return this._limoHud(b.dataset.limo, b);
     const k = b.dataset.k;
     if (k === 'gear') return this._setPopover(!this._popOpen);
+    if (b.dataset.g) { this.postfx.setTier(b.dataset.g); return this._gfxSync(); }
     if (k === 'flabel') return;
     if (b.dataset.fin) return this.setFinish(b.dataset.fin);
     if (k === 'map') return this._setMapOpen(true);
@@ -4656,6 +4713,7 @@ export class Walkthrough {
     if (k === 'exit') { if (this.drive) this._engineStop(); return this.opts.onExit && this.opts.onExit(); }
     if (k === 'help') { this._setPopover(false); return this._showHelp(true); }
     if (k === 'photo') return this.takePhoto();
+    if (k === 'bake') { const B = window.VRC && window.VRC.bakedLighting; if (B) B.setEnabled(!B.enabled); return this._renderTime(); }
     if (k === 'helpok') return this._showHelp(false);
     if (k === 'dlabel') return this.el.tools.classList.toggle('col');
     if (b.dataset.vm) {
@@ -4707,7 +4765,7 @@ Object.assign(Walkthrough.prototype, {
       if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
       this._yachtP = (async () => {
         await this._ready; await (this._worldP || this._streamWorld());
-        const mod = await import('./yacht.js?v=3.5.1');
+        const mod = await import('./yacht.js?v=3.6');
         if (this.disposed) return null;
         return (this.yacht = mod.createYacht(this));
       })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
@@ -4756,7 +4814,7 @@ Object.assign(Walkthrough.prototype, {
   async _initLimo() {
     if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
     try {
-      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.5.1'));
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.6'));
       if (this.disposed || this.limo) return;
       this.limo = new mod.LimoExperience(this);
       (window.VRC = window.VRC || {}).PIER = mod.PIER;

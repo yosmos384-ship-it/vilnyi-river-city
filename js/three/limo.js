@@ -14,9 +14,9 @@
 // No lights are added to the scene: the walkthrough's one spot light (the fleet's headlights) is borrowed as the
 // canopy light, the cabin light and the quay light in turn; everything else is emissive.
 import * as THREE from 'three';
-import { carKit, carSpec } from './cars.js?v=3.5.1';
-import { LAKE } from '../data.js?v=3.5.1';
-import { ROADS, FORECOURTS, QUAY, ENTRANCES } from './environment.js?v=3.5.1';
+import { carKit, carSpec } from './cars.js?v=3.6';
+import { LAKE } from '../data.js?v=3.6';
+import { ROADS, FORECOURTS, QUAY, ENTRANCES } from './environment.js?v=3.6';
 
 const { kindGeometry, tint, glow, strip, flipWinding, gridSurface, project, lightMaterial, paintMaterial, shared, shadowGeometry, shadowLocal, mergeGeometries, RoundedBoxGeometry, mrMaterial } = carKit;
 const TAU = Math.PI * 2;

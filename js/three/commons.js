@@ -11,11 +11,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.5.1';
+import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.6';
 import {
   CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, BASEMENT, RAMP as RAMP_D, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
   coresOf, isMirrored,
-} from '../data.js?v=3.5.1';
+} from '../data.js?v=3.6';
 
 const TAU = Math.PI * 2;
 const DOOR_W = 0.95, DOOR_H = 2.2;          // apartment entrance opening
@@ -2872,9 +2872,8 @@ function buildParking(bId) {
   tr.translate((rx0 + rx1) / 2, H + yAt(tl) / 2 + 0.15, (rz1 + tl) / 2); B.add('ceilingP', tr);
   for (let k = 0; k < 4; k++) { const z = rz1 - 1.5 - k * 2.8; B.box('ledCool', (rx0 + rx1) / 2 - 0.75, (rx0 + rx1) / 2 + 0.75, H + yAt(z) - 0.05, H + yAt(z), z - 0.05, z + 0.05); }
   // (the ramp top is open: outdoor floors continue at grade — built by walk.js/cars.js)
-  // barrier at the ramp foot
-  B.box('white', rx1 - 0.6, rx1 - 0.3, 0, 1.05, rz1 - 0.3, rz1 - 0.1);
-  for (let k = 0; k < 6; k++) B.box(k % 2 ? 'white' : 'pipeRed', rx1 - 0.49, rx1 - 0.41, 1.03 + k * 0.33, 1.03 + (k + 1) * 0.33, rz1 - 0.24, rz1 - 0.16);   // boom raised
+  // (the exit gate at the ramp foot — roll-up door, working barrier arm, plate reader, signal — is city/gate.js,
+  //  added by walk.js while this level is loaded)
   // lobbies (glass boxes) + core volumes; a mirrored block's lobbies are built canonically and reflected about its axis
   for (const L of lobbies) {
     if (!L.mirror) { parkingLobby(wctx, ctx, L.canon, L.id === bId); continue; }

@@ -1,0 +1,42 @@
+{
+ "marble": {
+  "aspect": 1.0,
+  "source": "ambientCG Marble006",
+  "bytes": {
+   "1024": 227191,
+   "512": 53669
+  }
+ },
+ "mineral": {
+  "aspect": 1.0,
+  "source": "ambientCG Rock020",
+  "bytes": {
+   "1024": 525769,
+   "512": 139237
+  }
+ },
+ "fabric": {
+  "aspect": 1.0,
+  "source": "Poly Haven fabric_pattern_07",
+  "bytes": {
+   "1024": 423919,
+   "512": 117790
+  }
+ },
+ "wood": {
+  "aspect": 2.0,
+  "source": "ambientCG WoodFloor043",
+  "bytes": {
+   "1024": 163801,
+   "512": 39086
+  }
+ },
+ "plaster": {
+  "aspect": 1.0,
+  "source": "procedural (generated for this project)",
+  "bytes": {
+   "1024": 490787,
+   "512": 161015
+  }
+ }
+}

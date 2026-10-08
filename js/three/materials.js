@@ -931,7 +931,7 @@ function texWorker() {
   try {
     if (typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function') return false;
     const oc = new OffscreenCanvas(1, 1); if (!oc.getContext('2d')) return false;
-    _worker = new Worker(new URL('./tex-worker.js?v=3.5.1', import.meta.url), { type: 'module' });
+    _worker = new Worker(new URL('./tex-worker.js?v=3.6', import.meta.url), { type: 'module' });
     _worker.onmessage = ({ data }) => { const w = _wwait.get(data.id); if (w) { _wwait.delete(data.id); w(data); } };
     _worker.onerror = e => { e.preventDefault && e.preventDefault(); for (const w of _wwait.values()) w({ error: 'worker' }); _wwait.clear(); try { _worker.terminate(); } catch { /* */ } _worker = false; };
   } catch (e) { _worker = false; }
@@ -947,7 +947,7 @@ export function prewarmTextures(styleId = 'milano', { cacheOnly = false } = {}) 
   if (cacheOnly) {
     return new Promise(res => {
       const id = ++_wseq; _wwait.set(id, data => res(!!(data && data.cached)));
-      w.postMessage({ id, styleId, cacheOnly: true, src: new URL('./materials.js?v=3.5.1', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
+      w.postMessage({ id, styleId, cacheOnly: true, src: new URL('./materials.js?v=3.6', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
     });
   }
   try { performance.mark('walk:tex-request'); } catch { /* */ }
@@ -957,7 +957,7 @@ export function prewarmTextures(styleId = 'milano', { cacheOnly = false } = {}) 
       try { performance.mark('walk:tex-arrived'); } catch { /* */ }
       if (data && data.entries) { adoptTextures(data.entries); res(true); } else { _prewarm.delete(styleId); res(false); }
     });
-    w.postMessage({ id, styleId, src: new URL('./materials.js?v=3.5.1', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
+    w.postMessage({ id, styleId, src: new URL('./materials.js?v=3.6', import.meta.url).href, three: new URL('../../vendor/three.module.min.js', import.meta.url).href });
   });
   _prewarm.set(styleId, p);
   return p;
@@ -1582,5 +1582,14 @@ export function getMaterials(styleId = 'milano') {
   m.art.forEach((a, i) => a.name = `${styleId}.art${i}`);
   cache.set(styleId, m);
   if (typeof document !== 'undefined' && !TEXREC) TEXMEM.clear();   // the textures now own their canvases
+  for (const fn of MAT_HOOKS) { try { fn(m, styleId); } catch (e) { console.warn('[materials] hook', e); } }
   return m;
+}
+// Decorators for every material set (pbr.js adds CC0 detail maps on Medium / High graphics): called once per style when
+// the set is created, and at once for the sets that already exist. Returns an unsubscribe function.
+const MAT_HOOKS = new Set();
+export function onMaterials(fn) {
+  MAT_HOOKS.add(fn);
+  for (const [id, m] of cache) { try { fn(m, id); } catch (e) { console.warn('[materials] hook', e); } }
+  return () => MAT_HOOKS.delete(fn);
 }

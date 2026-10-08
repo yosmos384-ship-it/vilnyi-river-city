@@ -1,6 +1,6 @@
 // VILNYI RIVER CITY — strings for the "360° around the project" section (js/panorama.js), all 8 site languages.
 // Kept apart from i18n.js so the panorama module stays self-contained. Falls back to English, then to the key.
-import { lang } from './i18n.js?v=3.5.1';
+import { lang } from './i18n.js?v=3.6';
 
 // distance units per language (comma = decimal comma)
 export const CARD = {

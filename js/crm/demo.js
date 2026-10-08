@@ -1,8 +1,8 @@
 // LOCAL DEMO MODE ONLY: seeds fictional sample data so the CRM can be evaluated outside claude.ai.
 // Never runs in the artifact runtime (store.mode === 'artifact').
-import { UNITS, PROJECT } from '../data.js?v=3.5.1';
-import { S, setDoc, buildSchedule, all } from './store.js?v=3.5.1';
-import { uid, addDays, addMonths, today } from './util.js?v=3.5.1';
+import { UNITS, PROJECT } from '../data.js?v=3.6';
+import { S, setDoc, buildSchedule, all } from './store.js?v=3.6';
+import { uid, addDays, addMonths, today } from './util.js?v=3.6';
 
 const PEOPLE = [
   ['Avi', 'Cohen', 'he', 'IL', '+972 52 000 0001'], ['Noa', 'Levi', 'he', 'IL', '+972 54 000 0002'], ['Daniel', 'Mizrahi', 'he', 'IL', '+972 50 000 0003'],

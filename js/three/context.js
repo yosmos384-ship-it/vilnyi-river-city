@@ -6,8 +6,8 @@
 // Balcony slabs, parapets, the deck and the ramp are merged vertex-coloured meshes. ~15 draw calls in total.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CONTEXT_BLOCKS, LEVELS, SPIRAL as SPIRAL_D } from '../data.js?v=3.5.1';
-import { createCarInstances, pickCar, carRng } from './cars.js?v=3.5.1';
+import { CONTEXT_BLOCKS, LEVELS, SPIRAL as SPIRAL_D } from '../data.js?v=3.6';
+import { createCarInstances, pickCar, carRng } from './cars.js?v=3.6';
 
 const TAU = Math.PI * 2;
 const GH = LEVELS.groundH, FH = LEVELS.typicalH;
