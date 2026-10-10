@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.9';
-import { buildMap, BOUNDS } from './map.js?v=3.9';
-import { buildRealMap } from './osm.js?v=3.9';
-import { createWorld } from './world.js?v=3.9';
-import { createTraffic } from './traffic.js?v=3.9';
-import { createPeds } from './peds.js?v=3.9';
-import { createFx } from './fx.js?v=3.9';
-import { createAudio } from './audio.js?v=3.9';
-import { createRadio } from './radio.js?v=3.9';
-import { createHud } from './hud.js?v=3.9';
-import { cityT, cityDir } from './i18n.js?v=3.9';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.9';
-import { poiSign } from './gen.js?v=3.9';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.10';
+import { buildMap, BOUNDS } from './map.js?v=3.10';
+import { buildRealMap } from './osm.js?v=3.10';
+import { createWorld } from './world.js?v=3.10';
+import { createTraffic } from './traffic.js?v=3.10';
+import { createPeds } from './peds.js?v=3.10';
+import { createFx } from './fx.js?v=3.10';
+import { createAudio } from './audio.js?v=3.10';
+import { createRadio } from './radio.js?v=3.10';
+import { createHud } from './hud.js?v=3.10';
+import { cityT, cityDir } from './i18n.js?v=3.10';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.10';
+import { poiSign } from './gen.js?v=3.10';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -42,13 +42,13 @@ export async function startCityDrive(host) {
   // a mute that is always on screen: the whole game's sound (engine, traffic, radio) goes quiet, and stays so
   let muted = ls.get('vrc.city.mute', '0') === '1';
   const muteB = document.createElement('button'); muteB.type = 'button'; muteB.className = 'cg-mute';
-  muteB.style.cssText = 'position:absolute;top:10px;' + (dir === 'rtl' ? 'right' : 'left') + ':10px;z-index:40;width:42px;height:42px;border-radius:50%;border:1px solid rgba(201,164,92,.55);background:rgba(10,9,7,.82);color:#e6cc92;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;padding:0';
+  muteB.className = 'cg-b cg-mute';
   const setMute = v => { muted = !!v; ls.set('vrc.city.mute', muted ? '1' : '0'); audio.setEnabled(!muted && settings.sound); radio.duck(muted ? 0 : 1); paintMute(); };
   const paintMute = () => { const lbl = muted ? t('sound') + ' · ' + t('off') : t('sound') + ' · ' + t('on'); muteB.setAttribute('aria-label', lbl); muteB.title = lbl; muteB.setAttribute('aria-pressed', String(muted));
     muteB.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/>${muted ? '<path d="M16 9.5l5 5M21 9.5l-5 5"/>' : '<path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'}</svg>`; };
   muteB.addEventListener('click', ev => { ev.stopPropagation(); setMute(!muted); });
   for (const n of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'dblclick']) muteB.addEventListener(n, ev => ev.stopPropagation());
-  container.appendChild(muteB); paintMute(); if (muted) setMute(true);
+  hud.addTop(muteB); paintMute(); if (muted) setMute(true);
 
   // ------------------------------------------------------------------ player
   const P = { mode: 'car', car: null, body: null, extras: null, foot: { x: 0, z: 0, yaw: 0, pitch: 0, onFoot: true, vx: 0, vz: 0, isPlayer: true, mode: 'player' }, view: ls.get('vrc.city.view', 'fp') === 'chase' ? 'chase' : 'fp',
@@ -175,7 +175,7 @@ export async function startCityDrive(host) {
     if (P.mode !== 'car' || !P.body) return; const on = v == null ? !P.engine : !!v;
     if (on && P.body.dead) { hud.toast(t('wrecked') + ' — ' + t('wreckedSub'), 3200); return; }
     P.engine = on; audio.resume();
-    if (on) { audio.engine(true, P.body.kind, P.body.C.ev); if (!radioState.on) radio.power(true); }   // the radio comes on with the ignition
+    if (on) { audio.engine(true, P.body.kind, P.body.C.ev); if (!radioState.on) radio.power(true, true); }   // the radio comes on with the ignition
     else { audio.engine(false); radio.power(false); }
   }
   function respawnOnRoad(msg) {
@@ -218,6 +218,8 @@ export async function startCityDrive(host) {
     if (a === 'tap') { if (v && P.mode === 'car' && P.view === 'fp' && tapScreen(v.x, v.y)) return hud.showRadio(); return hud.reveal(); }
     if (a === 'starts') return hud.showStarts(map.starts, P.start);
     if (a === 'startAt') return startFrom(v);
+    if (a === 'locate') return hud.showLocate('ask');
+    if (a === 'locAsk') return askLocation();
     if (a === 'hornDown') { audio.horn(true); if (P.mode === 'car' && P.body) peds.hornAt(P.body.x, P.body.z, Math.sin(P.body.yaw), Math.cos(P.body.yaw)); return; } if (a === 'hornUp') return audio.horn(false);
     if (a === 'view') return setView(P.view === 'fp' ? 'chase' : 'fp');
     if (a === 'lights') { P.lights = !lightsOn(); audio.click(); return; }
@@ -251,20 +253,32 @@ export async function startCityDrive(host) {
     return !!(hit && hit.uv && hit.uv.y < 0.64);
   }
   // "Start from…": fade out, the car on the chosen street (the Palace of the Parliament is the featured start), fade in
-  async function startFrom(id) {
+  async function startFrom(id, pose) {
     if (state !== 'play' && state !== 'intro') return; state = 'fade'; hud.panel(''); await hud.fade(true);
-    const p = map.startPose(id);
+    const p = pose || map.startPose(id), mine = !!pose;
     if (P.mode === 'foot') { P.mode = 'car'; }
     P.car.group.visible = true; Object.assign(P.body, { x: p.x, z: p.z, yaw: p.yaw, vx: 0, vz: 0, w: 0 }); P.body.steer = 0;
     heat = 0; G.wanted = 0; hideT = bustT = 0; traffic.clearUnits(); hud.banner('');
     for (const c of [...traffic.cars]) if (c.mode !== 'parked' || Math.hypot(c.x - p.x, c.z - p.z) < 9) traffic.remove(c);
-    P.cam = null; P.look.yaw = P.look.pitch = 0; P.back = 0; P.start = p.garage ? 'garage' : id; ls.set('vrc.city.start', P.start);
+    P.cam = null; P.look.yaw = P.look.pitch = 0; P.back = 0; P.start = mine ? 'mine' : p.garage ? 'garage' : id; ls.set('vrc.city.start', P.start);
     try { await map.prefetch(p.x, p.z); } catch { /* the chunks come as the tiles arrive */ }
     for (let k = 0; k < 500 && (k < 3 || world.pending); k++) { world.update(p.x, p.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
     for (let k = 0; k < 30; k++) traffic.update(0.4, P.body, null, null);
     P.car.setInside(P.view === 'fp'); routeT = -9; P.stuck = 0;
     await hud.fade(false); state = 'play';
-    const S = map.starts.find(s => s.id === P.start); if (S) hud.toast(t(S.key), 2400);
+    const S = map.starts.find(s => s.id === P.start); if (S) hud.toast(t(S.key), 2400); else if (mine) hud.toast(t('locOk') + (p.street ? ' · ' + p.street : ''), 2800);
+  }
+  // "Start from my location": one position fix, asked only after the visitor's own tap; the position is used for this placement and is not kept or sent
+  async function askLocation() {
+    if (state !== 'play' && state !== 'intro') return;
+    if (!map.real || !navigator.geolocation) return hud.showLocate('fail');
+    hud.showLocate('busy');
+    let pos = null;
+    try { pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 })); }
+    catch (e) { return hud.showLocate(e && e.code === 1 ? 'denied' : 'fail'); }
+    const r = map.snapToRoad(pos.coords.latitude, pos.coords.longitude); pos = null;
+    if (!r.pose) return hud.showLocate(r.reason);
+    return startFrom(null, r.pose);
   }
   let leaving = false;
   async function leave(reason) { if (leaving) return; leaving = true; state = 'fade'; await hud.fade(true); game.active = false; try { host.onExit && host.onExit(reason); } catch (e) { console.warn(e); } }
@@ -338,7 +352,7 @@ export async function startCityDrive(host) {
   }
   function mapData(range) {
     const E = active();
-    if (time - routeT > 2) { routeT = time; const a = map.nearestNode(E.x, E.z); route = a ? (map.route(a.id, G0.node, true) || map.route(a.id, G0.node)) : null; }
+    if (time - routeT > 2) { routeT = time; const a = map.nearestNode(E.x, E.z), goal = map.site.exitNode != null && Math.hypot(E.x - G0.x, E.z - G0.z) < 420 ? map.site.exitNode : G0.node; route = a ? (map.route(a.id, goal, true) || map.route(a.id, goal)) : null; }
     return { map, x: E.x, z: E.z, yaw: P.mode === 'car' ? E.yaw : E.yaw, range, route, time, police: traffic.units.map(u => ({ x: u.x, z: u.z, amb: u.unit.kind === 'amb' })), label: p => (p.kind === 'metro' ? 'M ' + p.name : poiSign(p)) };
   }
 
@@ -538,6 +552,7 @@ export async function startCityDrive(host) {
   if (host.autoStart !== false && host.gesture) ignition(true);
   if (map.real && host.chooser !== false && A0 === G0) hud.showStarts(map.starts, 'garage', true);   // where to start: the Palace of the Parliament is the featured one
   if (A0 !== G0) { P.start = host.startId; const SS = map.starts.find(x => x.id === host.startId); if (SS) hud.toast(t(SS.key), 2600); }
+  else if (map.site.exitNode != null) hud.toast(t('exitRoute'), 3600);
   game.api = {
     P, map, world, traffic, peds, fx, hud, radio, audio, scene, camera, settings, act, ignition, impact, crime, repair, toGarage, getOut, getIn, setTime, setView, respawnOnRoad, startFrom, tapScreen,
     autopilot(nodeId, v = 14) { const b0 = P.body, ne = map.nearestEdge(b0.x, b0.z, 40), fwd = ne ? (ne.e.ux * Math.sin(b0.yaw) + ne.e.uz * Math.cos(b0.yaw) >= 0 ? ne.e.b : ne.e.a) : null, a = fwd != null ? map.nodes[fwd] : map.nearestNode(b0.x, b0.z), path = a ? (map.route(a.id, nodeId, true) || map.route(a.id, nodeId)) : null; P.auto = path ? { path, i: 0, k: 0, v, poly: autoPath(path) } : null; return path ? path.length : 0; },

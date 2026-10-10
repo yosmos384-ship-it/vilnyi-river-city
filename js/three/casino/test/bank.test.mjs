@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Bank, START, fmt, chipsFor, CHIPS } from '../bank.js?v=3.9';
+import { Bank, START, fmt, chipsFor, CHIPS } from '../bank.js?v=3.10';
 
 const mem = () => { const m = new Map(); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => { m.set(k, String(v)); }, m }; };
 test('starts with €1,000, stakes, pays, persists', () => {

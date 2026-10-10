@@ -2,14 +2,14 @@
 // and INDIVIDUAL sending — one Gmail message per client, addressed only to that client (no CC/BCC lists).
 // Sends through the viewer's Gmail connector (artifact `mcp` capability: server "Gmail", tool "send_message").
 // Throttled, stoppable, every send logged in db `emails/{campaignId}` (one document per run).
-import { unitById } from '../data.js?v=3.9';
-import { LANGS, lang as uiLang } from '../i18n.js?v=3.9';
-import { tc, tcL } from './i18n-crm.js?v=3.9';
-import { S, entries, get, setDoc, settings, dealFinance, clientName, STAGES } from './store.js?v=3.9';
-import { esc, icon, eurL, fmtDate, fmtDateTime, uid, openModal, toast, $, $$, isEmail, b64FromBytes } from './util.js?v=3.9';
-import { pageHead, flag, empty, fld, stageChip, allStages, tabs } from './ui.js?v=3.9';
-import { BUILTIN_TEMPLATES, MERGE_FIELDS } from './templates.js?v=3.9';
-import { unitLabelDoc } from './pdf.js?v=3.9';
+import { unitById } from '../data.js?v=3.10';
+import { LANGS, lang as uiLang } from '../i18n.js?v=3.10';
+import { tc, tcL } from './i18n-crm.js?v=3.10';
+import { S, entries, get, setDoc, settings, dealFinance, clientName, STAGES } from './store.js?v=3.10';
+import { esc, icon, eurL, fmtDate, fmtDateTime, uid, openModal, toast, $, $$, isEmail, b64FromBytes } from './util.js?v=3.10';
+import { pageHead, flag, empty, fld, stageChip, allStages, tabs } from './ui.js?v=3.10';
+import { BUILTIN_TEMPLATES, MERGE_FIELDS } from './templates.js?v=3.10';
+import { unitLabelDoc } from './pdf.js?v=3.10';
 
 const GMAIL = 'Gmail', TOOL = 'send_message';
 const A = { tab: 'compose', tpl: 'tpl_welcome', stages: [], building: '', langs: [], withUnit: false, q: '', attach: 'none', picked: null, prevIdx: 0, throttle: null, editTpl: null, editLang: 'he' };
@@ -92,7 +92,7 @@ async function pdfForClient(c, kind) {
   if (!kind || kind === 'none') return null;
   const docs = entries('documents').filter(d => d.clientId === c.id && d.type === kind && d.status !== 'void').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   if (!docs[0]) return null;
-  const { pdfBytesFor, fileNameFor } = await import('./v-documents.js?v=3.9');
+  const { pdfBytesFor, fileNameFor } = await import('./v-documents.js?v=3.10');
   return { bytes: await pdfBytesFor(docs[0]), filename: fileNameFor(docs[0]), doc: docs[0] };
 }
 
@@ -249,7 +249,7 @@ function renderTemplates(body, root) {
   body.querySelectorAll('[data-el]').forEach(b => b.onclick = async () => { const x = collect(); const cur = templates()[id]; if (x.subject[L] !== (cur.subject?.[L] || '') || x.body[L] !== (cur.body?.[L] || '')) await saveT(); A.editLang = b.dataset.el; render(root); });
   $('[data-act=saveTpl]', body).onclick = async () => { await saveT(); toast(tc('saved')); };
   $('[data-act=newTpl]', body).onclick = async () => { const nid = uid('tpl_'); await setDoc('templates', nid, { name: { [uiLang]: tc('mail.newTpl'), en: 'New template' }, customName: true, subject: {}, body: {} }); A.editTpl = nid; render(root); };
-  $('[data-act=delTpl]', body)?.addEventListener('click', async () => { const { delDoc } = await import('./store.js?v=3.9'); await delDoc('templates', id, `template deleted ${id}`); A.editTpl = null; render(root); });
+  $('[data-act=delTpl]', body)?.addEventListener('click', async () => { const { delDoc } = await import('./store.js?v=3.10'); await delDoc('templates', id, `template deleted ${id}`); A.editTpl = null; render(root); });
 }
 
 // ---------------- single send (from a document or client) ----------------
@@ -266,12 +266,12 @@ export function sendSingle({ clientId, docId }) {
     onMount: (dl, close) => dl.querySelector('[data-send]').onclick = async () => {
       const btn = dl.querySelector('[data-send]'); btn.disabled = true; const err = dl.querySelector('.err');
       const subject = dl.querySelector('[name=subject]').value, text = dl.querySelector('[name=body]').value;
-      let pdf = null; if (d && dl.querySelector('[name=att]')?.checked) { const { pdfBytesFor, fileNameFor } = await import('./v-documents.js?v=3.9'); pdf = { bytes: await pdfBytesFor(d), filename: fileNameFor(d) }; }
+      let pdf = null; if (d && dl.querySelector('[name=att]')?.checked) { const { pdfBytesFor, fileNameFor } = await import('./v-documents.js?v=3.10'); pdf = { bytes: await pdfBytesFor(d), filename: fileNameFor(d) }; }
       const entry = { clientId, email: c.email, at: new Date().toISOString(), subject };
       try { const r = await sendOne({ to: c.email, subject, body: text, html: htmlEmail(text, m.lang), pdf }); entry.status = r.simulated ? 'simulated' : 'sent'; entry.messageId = r.id; }
       catch (e) { entry.status = 'failed'; entry.error = e?.code || 'error'; err.textContent = mailErrorText(e); err.hidden = false; btn.disabled = false; }
       await setDoc('emails', uid('m_'), { kind: 'single', subject, docId: docId || null, createdAt: entry.at, by: S.me.id || null, total: 1, sent: entry.status === 'failed' ? 0 : 1, failed: entry.status === 'failed' ? 1 : 0, status: entry.status === 'failed' ? 'failed' : 'done', simulated: entry.status === 'simulated', log: [entry] });
-      if (entry.status !== 'failed') { const { addTimeline } = await import('./store.js?v=3.9'); await addTimeline(clientId, { type: 'email', text: `${subject}${pdf ? ' · ' + pdf.filename : ''}` }); toast(entry.status === 'simulated' ? tc('mail.simulated') : tc('mail.sentTo', { to: c.email })); close(); }
+      if (entry.status !== 'failed') { const { addTimeline } = await import('./store.js?v=3.10'); await addTimeline(clientId, { type: 'email', text: `${subject}${pdf ? ' · ' + pdf.filename : ''}` }); toast(entry.status === 'simulated' ? tc('mail.simulated') : tc('mail.sentTo', { to: c.email })); close(); }
     },
   });
 }

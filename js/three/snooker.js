@@ -10,7 +10,7 @@
 // Compact tables only (a 12 ft table needs a 6.3 × 4.5 m clear zone): 8 ft or 7 ft bed with a 10-red snooker set.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FX } from './furniture.js?v=3.9';
+import { FX } from './furniture.js?v=3.10';
 
 export const TABLES = { 8: { ft: 8, PL: 2.24, PW: 1.12 }, 7: { ft: 7, PL: 1.98, PW: 0.99 } };
 const R = 0.026, CUSH = 0.05, RAIL = 0.105, BED = 0.8, RAILH = 0.038;

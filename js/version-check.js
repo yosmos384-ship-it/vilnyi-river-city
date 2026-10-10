@@ -15,7 +15,7 @@
   var RUN = String(window.VRC_VERSION || '');
   if (!RUN) return;
   var me = document.currentScript;
-  var FILE = new URL('../version.json?v=3.9', (me && me.src) || location.href);
+  var FILE = new URL('../version.json?v=3.10', (me && me.src) || location.href);
   var AUTO_LATER = !(me && me.getAttribute('data-auto') === 'first');   // crm.html: auto-reload only right after load
   var KEY = 'vrc.ver.reload', PARAM = '_v';
   var TEXT = {
@@ -44,10 +44,18 @@
   }
 
   // Something the visitor would lose on a reload?
+  // v3.10: a reload is never made while a game, a drive, the walkthrough or a tour is on screen; the home page only,
+  // and only after 45 s without a touch, key or scroll. Until then the update waits (retry) or shows the chip.
+  var IDLE_MS = 45000, lastAct = Date.now(), pubWaiting = null, retryT = 0;
+  ['pointerdown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach(function (n) { window.addEventListener(n, function () { lastAct = Date.now(); }, { capture: true, passive: true }); });
+  function homePage() { return !/crm\.html$/.test(location.pathname); }
+  function idle() { return document.visibilityState === 'visible' && Date.now() - lastAct > IDLE_MS; }
   function busy() {
     var h = document.documentElement.classList;
-    if (h.contains('walk-open') || h.contains('modal-open') || h.contains('pano-open')) return true;
-    if (document.querySelector('dialog[open], [aria-modal="true"]')) return true;
+    if (h.contains('walk-open') || h.contains('modal-open') || h.contains('pano-open') || h.contains('game-open')) return true;
+    // only dialogs that are on screen (the booking sheet #pickB is aria-modal but hidden until used)
+    var ms = document.querySelectorAll('dialog[open], [aria-modal="true"]');
+    for (var i = 0; i < ms.length; i++) if (ms[i].getClientRects().length) return true;
     var a = document.activeElement;
     return !!(a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable));
   }
@@ -60,6 +68,14 @@
     location.replace(u.href);
   }
 
+  function ensureRetry() {
+    if (retryT) return;
+    retryT = setInterval(function () {
+      if (!pubWaiting) return;
+      if (ssGet() === pubWaiting || urlV() === pubWaiting) { pubWaiting = null; return; }
+      if (!busy() && idle() && homePage()) { var v = pubWaiting; pubWaiting = null; go(v, false); }
+    }, 5000);
+  }
   var chip = null;
   function showChip(v) {
     if (chip || !document.body) return;
@@ -105,7 +121,8 @@
           return;
         }
         var tried = ssGet() === pub || urlV() === pub;   // already reloaded for this release in this tab → never loop
-        if (!tried && !busy() && (isFirst || AUTO_LATER)) go(pub, false);
+        if (!tried && (isFirst || AUTO_LATER) && homePage() && !busy() && idle()) go(pub, false);
+        else if (!tried && (isFirst || AUTO_LATER) && homePage()) { pubWaiting = pub; ensureRetry(); showChip(pub); }   // applied as soon as the visitor is idle
         else showChip(pub);
       })
       .catch(function () { pending = false; first = false; });

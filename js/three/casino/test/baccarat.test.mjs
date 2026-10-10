@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng, cards } from '../rng.js?v=3.9';
-import { Baccarat, RULES, bankerDraws, playCoup, settle, total, pointOf } from '../baccarat.js?v=3.9';
+import { seededRng, cards } from '../rng.js?v=3.10';
+import { Baccarat, RULES, bankerDraws, playCoup, settle, total, pointOf } from '../baccarat.js?v=3.10';
 
 const coup = (s) => { const q = cards(s); return playCoup(() => { if (!q.length) throw new Error('drew too many'); return q.shift(); }); };
 test('card points and totals', () => {

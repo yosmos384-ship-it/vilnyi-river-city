@@ -4,8 +4,8 @@
 // is painted by yacht-crowd.js (mix-and-match, its own atlas per zone, loaded with the zone). Interactions are social only:
 // greeting, a toast, dancing together, a cheek-kiss hello, a high five / handshake.
 import * as THREE from 'three';
-import { discoFigureMat } from './yacht-disco.js?v=3.9';
-import { UBOX, colMat } from './yacht-kit.js?v=3.9';
+import { discoFigureMat } from './yacht-disco.js?v=3.10';
+import { UBOX, colMat } from './yacht-kit.js?v=3.10';
 
 const TAU = Math.PI * 2, PXM = 284;                 // atlas pixels per metre
 const CW = 256, CH = 512, COLS = 8;                 // body cell (0.9 m × 1.8 m)
@@ -273,7 +273,7 @@ function shadowMat() {
   return SHADOW;
 }
 let CROWD_MOD = null;
-const crowdMod = () => CROWD_MOD || (CROWD_MOD = import('./yacht-crowd.js?v=3.9'));
+const crowdMod = () => CROWD_MOD || (CROWD_MOD = import('./yacht-crowd.js?v=3.10'));
 const nextFrame = () => new Promise(r => { let d = false; const f = () => { if (!d) { d = true; r(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
 
 export function createPeople(yacht) {

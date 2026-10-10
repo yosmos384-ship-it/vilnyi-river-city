@@ -40,11 +40,11 @@
 // Projection: image centre = +v (+z) of the scene frame, left quarter = +u; yaw = three.js camera rotation.y.
 // Scene frames: apartment = unit-local (x = u, z = v, y = 0 on the unit's floor); places = world (both blocks have rotY 0).
 import * as THREE from 'three';
-import { unitById, unitLabel, TYPES, BUILDINGS, BASEMENT, floorY, unitYaw, localToWorld, corridorsOf, coresOf } from './data.js?v=3.9';
-import { tt, RTL } from './i18n-tour.js?v=3.9';
-import { createOutside, ENV_GLSL, OVERSCAN } from './pano-outside.js?v=3.9';
+import { unitById, unitLabel, TYPES, BUILDINGS, BASEMENT, floorY, unitYaw, localToWorld, corridorsOf, coresOf } from './data.js?v=3.10';
+import { tt, RTL } from './i18n-tour.js?v=3.10';
+import { createOutside, ENV_GLSL, OVERSCAN } from './pano-outside.js?v=3.10';
 
-const MANIFEST_URL = new URL('../assets/tour/tour.json?v=3.9', import.meta.url);
+const MANIFEST_URL = new URL('../assets/tour/tour.json?v=3.10', import.meta.url);
 const ASSET_BASE = new URL('../assets/tour/', import.meta.url);
 let MAN = null;
 export const tourReady = fetch(MANIFEST_URL, { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null)

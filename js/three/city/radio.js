@@ -50,7 +50,8 @@ export function createRadio({ audio, onChange = () => {} } = {}) {
   return {
     state, stations: list,
     // call from a user gesture (the ignition button): browsers only start audio then
-    power(v) { on = v == null ? !on : !!v; if (!on) { tok++; stopEl(); synthOn(false); return set('off'); } tune(); },
+    // quiet: the car's ignition — the generated programme (no network), so no live stream is held open by the game
+    power(v, quiet = false) { on = v == null ? !on : !!v; if (!on) { tok++; stopEl(); synthOn(false); return set('off'); } if (quiet) idx = list.length - 1; tune(); },
     // a station picked from the list: tune it at once (the radio turns on)
     pick(i) { if (!list.length) return; dirn = 1; idx = ((+i % list.length) + list.length) % list.length; list[idx].dead = false; on = true; tune(); },
     next(d = 1) { dirn = d >= 0 ? 1 : -1; idx = (idx + dirn + list.length) % list.length; list[idx].dead = false; if (on) tune(); else onChange(state()); },

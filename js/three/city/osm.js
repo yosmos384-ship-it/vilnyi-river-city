@@ -4,10 +4,10 @@
 // traced between its OSM bridges, parks are placed at their real positions with approximate outlines.
 // buildRealMap() returns the same map interface as the procedural map.js (nodes / edges / blocks / chunks / queries), so the
 // world, traffic, people and police run on it unchanged. Frame "G": x = metres east, z = metres south of the project pin.
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.9';
-import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG } from './map.js?v=3.9';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.10';
+import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG, segD as segDist } from './map.js?v=3.10';
 
-const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.9', import.meta.url);
+const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.10', import.meta.url);
 const VER = GRAPH_URL.search;
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
 
@@ -71,7 +71,7 @@ export async function buildRealMap() {
   const pieces = [];
   const addEdge = (a, b, o) => {
     const len = Math.hypot(b.x - a.x, b.z - a.z); if (len < 0.3) return null;
-    const e = { id: edges.length, a: a.id, b: b.id, axis: 0, cls: o.cls, name: o.name, tram: !!o.tram, lanes: o.lanes, hw: o.hw, len, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len, ta: 0, tb: 0, drive: !!o.drive, ow: !!o.ow, rab: !!o.rab, bridge: !!o.bridge };
+    const e = { id: edges.length, a: a.id, b: b.id, axis: 0, cls: o.cls, name: o.name, tram: !!o.tram, lanes: o.lanes, hw: o.hw, len, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len, ta: 0, tb: 0, drive: !!o.drive, ow: !!o.ow, rab: !!o.rab, bridge: !!o.bridge, exit: !!o.exit };
     edges.push(e); a.edges.push(e.id); b.edges.push(e.id); return e;
   };
   D.edges.forEach(([ia, ib, cls, ni, fl, hw, lanes], k) => {
@@ -81,11 +81,78 @@ export async function buildRealMap() {
     pieces[k] = list;
   });
   // ---- the garage lane: courtyard → street → nearest junction (as in map.js); its name is the project's
-  { const g0 = mkNode(site.garage.x, site.garage.z), g1 = mkNode(gB[0], gB[1]); g0.special = g1.special = true;
+  // the nearest named street node the driveway may join: a drivable named edge that can be entered in its own direction
+  function nearestStreetNode(p) {
     let best = null, bd = Infinity;
-    for (const n of nodes) { if (n.special || !n.edges.length) continue; const d = Math.hypot(n.x - g1.x, n.z - g1.z); if (d < bd && d > 20) { bd = d; best = n; } }
-    site.lane = [addEdge(g0, g1, { cls: 0, name: 'VILNYI RIVER CITY', hw: 3.0, lanes: 1, drive: true }), best && addEdge(g1, best, { cls: 0, name: 'Acces VILNYI RIVER CITY', hw: 3.0, lanes: 1, drive: true })];
-    site.garage.node = g0.id; site.gate = g1.id; }
+    for (const n of nodes) {
+      if (n.special || !n.edges.length) continue;
+      const d = Math.hypot(n.x - p.x, n.z - p.z); if (!(d > 20 && d < bd)) continue;
+      if (n.edges.some(ei => { const e = edges[ei]; return !e.drive && e.name && (!e.ow || e.a === n.id); })) { bd = d; best = n; }
+    }
+    return best;
+  }
+  // the driveway planner: a 3.5 m grid over the area between the gate and the street, blocked where a car cannot be (the site's
+  // buildings with a car's margin, the lake, the river), A* from the gate to the street node, then the path is pulled straight
+  // over every clear line of sight → corners [[x, z], …] from the gate to the street (null when there is no way out)
+  function routeExit(p0, p1, riverPts, rHW) {
+    const M = 3.5, pad = 120, car = 5.0;   // centre line ≥ 5 m from any facade: the lane's right-hand offset (1.4 m) keeps the car clear
+    const x0 = Math.min(p0.x, p1.x) - pad, z0 = Math.min(p0.z, p1.z) - pad;
+    const W = Math.ceil((Math.max(p0.x, p1.x) + pad - x0) / M), H = Math.ceil((Math.max(p0.z, p1.z) + pad - z0) / M);
+    const hit = (x, z) => {
+      for (const b of site.boxes) { const dx = x - b.x, dz = z - b.z, a = dx * b.ux + dz * b.uz, c = dz * b.ux - dx * b.uz; if (Math.abs(a) < b.hw + car && Math.abs(c) < b.hd + car) return true; }
+      if (inPoly(lake, x, z)) return true;
+      for (let k = 0; k < riverPts.length - 1; k++) if (segDist(x, z, riverPts[k], riverPts[k + 1]) < rHW + car) return true;
+      return false;
+    };
+    const blk = new Uint8Array(W * H);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) blk[j * W + i] = hit(x0 + (i + 0.5) * M, z0 + (j + 0.5) * M) ? 1 : 0;
+    const cellOf = (x, z) => [Math.max(0, Math.min(W - 1, Math.floor((x - x0) / M))), Math.max(0, Math.min(H - 1, Math.floor((z - z0) / M)))];
+    const [si, sj] = cellOf(p0.x, p0.z), [ti, tj] = cellOf(p1.x, p1.z);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const cx = x0 + (i + 0.5) * M, cz = z0 + (j + 0.5) * M; if (Math.hypot(cx - p0.x, cz - p0.z) <= 9) blk[j * W + i] = 0; }
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = ti + di, b2 = tj + dj; if (a >= 0 && b2 >= 0 && a < W && b2 < H) blk[b2 * W + a] = 0; }
+    const g = new Float64Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1), done = new Uint8Array(W * H);
+    const hF = k => Math.hypot((k % W) - ti, Math.floor(k / W) - tj) * M;
+    const heap = [];
+    const push = (f, k) => { heap.push([f, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    const s = sj * W + si, t = tj * W + ti; g[s] = 0; push(hF(s), s);
+    while (heap.length) {
+      const [, k] = pop(); if (done[k]) continue; if (k === t) break; done[k] = 1;
+      const i = k % W, j = (k - i) / W;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue; const a = i + di, b2 = j + dj; if (a < 0 || b2 < 0 || a >= W || b2 >= H) continue;
+        const q = b2 * W + a; if (blk[q] || done[q]) continue;
+        const c = g[k] + (di && dj ? 1.4142 : 1); if (c < g[q]) { g[q] = c; prev[q] = k; push(c + hF(q), q); }
+      }
+    }
+    if (prev[t] < 0 && t !== s) return null;
+    const ks = [t]; while (ks[0] !== s) ks.unshift(prev[ks[0]]);
+    const pts = ks.map(k => [x0 + ((k % W) + 0.5) * M, z0 + (Math.floor(k / W) + 0.5) * M]);
+    pts[0] = [p0.x, p0.z]; pts[pts.length - 1] = [p1.x, p1.z];
+    const clear = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L)); for (let q = 1; q < n; q++) if (hit(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false; return true; };
+    const out = [pts[0]]; let i = 0;
+    while (i < pts.length - 1) { let j = pts.length - 1; while (j > i + 1 && !clear(pts[i], pts[j])) j--; out.push(pts[j]); i = j; }
+    return out;
+  }
+  // The straight line from the gate to the nearest street crosses the site's own buildings (the car could never leave), so the
+  // driveway is routed round them (routeExit) and built as a chain of straight pieces, all marked exit: true (gold on the minimap).
+  { const g0 = mkNode(site.garage.x, site.garage.z); g0.special = true;
+    const T = nearestStreetNode({ x: gB[0], z: gB[1] });   // the nearest named street to the gate of the courtyard
+    const riverPts = []; for (let k = 0; k < D.river.length; k += 2) riverPts.push([D.river[k] / 10, D.river[k + 1] / 10]);
+    const corners = T ? routeExit({ x: site.garage.x, z: site.garage.z }, T, riverPts, D.riverHW) : null;
+    const OPT = { cls: 0, name: 'Acces VILNYI RIVER CITY', hw: 3.0, lanes: 1, drive: true, exit: true };
+    site.lane = []; site.gate = null;
+    if (!corners) console.warn('[city] no driveway from the garage to the street — straight line kept');
+    let prev = g0;
+    if (corners) for (let k = 1; k < corners.length - 1; k++) {
+      const c = mkNode(corners[k][0], corners[k][1]); c.special = true;
+      const e = addEdge(prev, c, OPT); if (e) site.lane.push(e);
+      if (site.gate == null && !inPoly(plot, c.x, c.z)) site.gate = c.id;   // the gate: where the driveway leaves the courtyard
+      prev = c;
+    }
+    if (T) { const e = addEdge(prev, T, OPT); if (e) site.lane.push(e); }
+    site.exitNode = T ? T.id : null;
+    site.garage.node = g0.id; if (site.gate == null) site.gate = prev.id; }
   // ---- junctions: trims, signal groups (arms grouped by direction), signals in phase within ~60 m
   for (const n of nodes) {
     if (!n.edges.length) continue;
@@ -263,8 +330,30 @@ export async function buildRealMap() {
     const { e, t, dir } = best, a = nodes[e.a], hx = e.ux * dir, hz = e.uz * dir, lat = e.ow ? e.hw - 1.8 : (ROAD[e.cls].med / 2 + 1.7);
     return { x: a.x + e.ux * t - hz * lat, z: a.z + e.uz * t + hx * lat, yaw: Math.atan2(hx, hz), edge: e, look: S.look ? llToG(S.look) : null };
   }
+  // "Start from my location": the nearest drivable named road to a point (no driveways, no tram-only tracks), or null
+  function nearestRoad(x, z, maxD = 300) {
+    let best = null; const r = Math.ceil(maxD / CELL), ci = Math.floor(x / CELL), cj = Math.floor(z / CELL), seen = new Set();
+    for (let i = ci - r; i <= ci + r; i++) for (let j = cj - r; j <= cj + r; j++) {
+      const c = cells.get(i + ',' + j); if (!c) continue;
+      for (const e of c.edges) {
+        if (seen.has(e.id) || e.drive || e.tram || e.len < 12) continue; seen.add(e.id);
+        const a = nodes[e.a], t = Math.max(e.ta + 4, Math.min(e.len - e.tb - 4, (x - a.x) * e.ux + (z - a.z) * e.uz)), px = a.x + e.ux * t, pz = a.z + e.uz * t, d = Math.hypot(x - px, z - pz);
+        if (d < maxD && (!best || d < best.d)) best = { e, t, d, px, pz };
+      }
+    }
+    return best;
+  }
+  // the car on the right-hand lane of that road, facing along it (the way a one-way street runs); outside the mapped area or
+  // with no road close by the reason is returned instead
+  function snapToRoad(lat, lon) {
+    const [x, z] = llToG([lat, lon]);
+    if (!(x >= BOUNDS.x0 && x <= BOUNDS.x1 && z >= BOUNDS.z0 && z <= BOUNDS.z1)) return { reason: 'outside' };
+    const r = nearestRoad(x, z, 300); if (!r) return { reason: 'noroad' };
+    const e = r.e, hx = e.ux, hz = e.uz, lat2 = e.ow ? e.hw - 1.8 : (ROAD[e.cls].med / 2 + 1.7);
+    return { pose: { x: r.px - hz * lat2, z: r.pz + hx * lat2, yaw: Math.atan2(hx, hz), edge: e, street: e.name || '', garage: false, snapped: true } };
+  }
   const MAP = { real: true, nodes, edges, blocks, pois, lake, island, fountain, site, cells, chunks, cellAt, nearestEdge, nearestNode, route, edgeBetween, inLake, S: 128, wax, bounds: BOUNDS,
-    axisAt, chunkReady, prefetch, tram, tramByChunk, river, riverHW, riverByChunk, inRiver, inWater: (x, z) => inLake(x, z) || inRiver(x, z), startPose, starts: STARTS, attribution: OSM_ATTRIBUTION,
+    axisAt, chunkReady, prefetch, tram, tramByChunk, river, riverHW, riverByChunk, inRiver, inWater: (x, z) => inLake(x, z) || inRiver(x, z), startPose, snapToRoad, starts: STARTS, attribution: OSM_ATTRIBUTION,
     landmark: id => pois.find(p => p.id === id) };
   return MAP;
 }

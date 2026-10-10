@@ -2,19 +2,19 @@
 // The rules live in the engines; these classes only place bets, call the engine, show what it returns and move the
 // play chips between the visitor's bankroll (bank.js) and the felt.
 import * as THREE from 'three';
-import { cards as parseCards } from './rng.js?v=3.9';
-import { fmt } from './bank.js?v=3.9';
-import { Blackjack, handTotal, basicStrategy } from './blackjack.js?v=3.9';
-import { Roulette, WHEEL, colorOf } from './roulette.js?v=3.9';
-import { RL, rlCell, betAt } from './roulette-layout.js?v=3.9';
-import { Baccarat, total as bacTotal } from './baccarat.js?v=3.9';
-import { Slots, RULES as SLOT_RULES, LINES, STRIPS, SYMBOLS } from './slots.js?v=3.9';
-import { VideoPoker, PAYTABLE, RULES as VP_RULES, category } from './videopoker.js?v=3.9';
-import { CasinoHoldem } from './holdem.js?v=3.9';
-import { best } from './poker.js?v=3.9';
-import { Craps } from './craps.js?v=3.9';
-import * as ART from './art.js?v=3.9';
-import { TOP, BJ_BOX, BAC_AREA, BAC, HLD, RL_TABLE, MACHINE } from './layout.js?v=3.9';
+import { cards as parseCards } from './rng.js?v=3.10';
+import { fmt } from './bank.js?v=3.10';
+import { Blackjack, handTotal, basicStrategy } from './blackjack.js?v=3.10';
+import { Roulette, WHEEL, colorOf } from './roulette.js?v=3.10';
+import { RL, rlCell, betAt } from './roulette-layout.js?v=3.10';
+import { Baccarat, total as bacTotal } from './baccarat.js?v=3.10';
+import { Slots, RULES as SLOT_RULES, LINES, STRIPS, SYMBOLS } from './slots.js?v=3.10';
+import { VideoPoker, PAYTABLE, RULES as VP_RULES, category } from './videopoker.js?v=3.10';
+import { CasinoHoldem } from './holdem.js?v=3.10';
+import { best } from './poker.js?v=3.10';
+import { Craps } from './craps.js?v=3.10';
+import * as ART from './art.js?v=3.10';
+import { TOP, BJ_BOX, BAC_AREA, BAC, HLD, RL_TABLE, MACHINE } from './layout.js?v=3.10';
 
 const sum = (a) => a.reduce((s, x) => s + x, 0), clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const esc = (s) => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));

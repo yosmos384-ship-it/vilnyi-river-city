@@ -2,10 +2,10 @@
 // loose bodies after a crash, wrecks, police and the ambulance. All drawn as instances: one mesh per car design
 // (cars.js far model, tinted per car) + one each for contact shadows, roof light bars and night lights.
 import * as THREE from 'three';
-import { carGeometryXForward, CAR_KINDS, CAR_COLOURS, carSpec } from '../cars.js?v=3.9';
-import { ROAD, hash2 } from './map.js?v=3.9';
-import { genEdge, genBlock } from './gen.js?v=3.9';
-import { makeBody, stepBody, bodyBox, obbMTV, collide, collideStatic, CLASS } from './vehicle.js?v=3.9';
+import { carGeometryXForward, CAR_KINDS, CAR_COLOURS, carSpec } from '../cars.js?v=3.10';
+import { ROAD, hash2 } from './map.js?v=3.10';
+import { genEdge, genBlock } from './gen.js?v=3.10';
+import { makeBody, stepBody, bodyBox, obbMTV, collide, collideStatic, CLASS } from './vehicle.js?v=3.10';
 
 const COLS = ['black', 'graphite', 'pearl', 'blue', 'champagne', 'green', 'silver', 'silver', 'burgundy', 'bronze', 'ice', 'red', 'pearl', 'graphite'];
 const KINDS = ['sedan', 'sedan', 'suv', 'suv', 'ev', 'ev', 'gt', 'coupe', 'sedan', 'super'];
