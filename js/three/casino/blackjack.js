@@ -12,7 +12,7 @@
 //    Split aces receive one card each and stand; aces cannot be re-split. 21 after a split is 21, not a blackjack (1:1).
 //  · No surrender. Insurance (half the box's bet) offered on a dealer ace, pays 2:1, settled when the dealer draws.
 //  · A push returns the bet. Table limits €5 – €500 per box, up to 3 boxes.
-import { Shoe, rankOf } from './rng.js?v=3.11';
+import { Shoe, rankOf } from './rng.js?v=3.12';
 
 export const RULES = Object.freeze({
   decks: 6, penetration: 0.75, burn: 0,

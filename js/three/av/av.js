@@ -8,10 +8,10 @@
 //  · the car radio: a car in the car park has its own radio (stereo), playing a random station on entry;
 //  · one mute for all of it, kept between visits.
 // Browsers play no sound before a gesture: whatever is due waits for the next tap (sync() runs again then).
-import { createAudio } from '../city/audio.js?v=3.11';
-import { STATIONS } from '../city/radio.js?v=3.11';
-import { createSurround } from './surround.js?v=3.11';
-import { createLiftMusic } from './music.js?v=3.11';
+import { createAudio } from '../city/audio.js?v=3.12';
+import { STATIONS } from '../city/radio.js?v=3.12';
+import { createSurround } from './surround.js?v=3.12';
+import { createLiftMusic } from './music.js?v=3.12';
 
 const VOL = 0.62;
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };

@@ -7,14 +7,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
-} from '../data.js?v=3.11';
-import { I18N } from '../i18n.js?v=3.11';
-import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.11';   // post-processing + adaptive quality (Graphics setting)
-import { PbrAssets } from './pbr.js?v=3.11';                     // CC0 HDRI lighting + detail maps (Medium / High only)
-import './bake.js?v=3.11';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.11';
-import { createAV } from './av/av.js?v=3.11';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
-import { mountAvBar } from './av/bar.js?v=3.11';     // the always-visible sound bar (mute + scanner)
+} from '../data.js?v=3.12';
+import { I18N } from '../i18n.js?v=3.12';
+import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.12';   // post-processing + adaptive quality (Graphics setting)
+import { PbrAssets } from './pbr.js?v=3.12';                     // CC0 HDRI lighting + detail maps (Medium / High only)
+import './bake.js?v=3.12';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.12';
+import { createAV } from './av/av.js?v=3.12';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
+import { mountAvBar } from './av/bar.js?v=3.12';     // the always-visible sound bar (mute + scanner)
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -255,8 +255,8 @@ async function loadModules(injected = {}) {
     try { out[key] = await import(path); } catch (e) { console.warn(`[walk] ${path} unavailable — continuing without it`, e); out[key] = null; }
   };
   await Promise.all([
-    tryImport('environment', './environment.js?v=3.11'), tryImport('exterior', './exterior.js?v=3.11'),
-    tryImport('apartment', './apartment.js?v=3.11'), tryImport('commons', './commons.js?v=3.11'), tryImport('materials', './materials.js?v=3.11'),
+    tryImport('environment', './environment.js?v=3.12'), tryImport('exterior', './exterior.js?v=3.12'),
+    tryImport('apartment', './apartment.js?v=3.12'), tryImport('commons', './commons.js?v=3.12'), tryImport('materials', './materials.js?v=3.12'),
   ]);
   return out;
 }
@@ -355,7 +355,8 @@ let SPARE = null;                   // { renderer, roomEnv } — compiled progra
 const PREBUILT = new Map();         // `${unitId}|${styleId}` → apartment built during pre-warm (taken by _loadApt)
 let _modsP = null, _warmTok = 0;
 const idle = (timeout = 400) => new Promise(r => (typeof requestIdleCallback === 'function' ? requestIdleCallback(r, { timeout }) : setTimeout(r, 30)));
-function makeRenderer() { return new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }); }
+// safe: the plain renderer (no MSAA, default power) used by the walkthrough's second attempt on a phone
+function makeRenderer(safe = false) { return new THREE.WebGLRenderer({ antialias: !safe, powerPreference: safe ? 'default' : 'high-performance' }); }
 function roomEnvFor(renderer) {
   const pm = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment(renderer);
@@ -743,6 +744,7 @@ export class Walkthrough {
   static get startsFromPano() { return true; }   // enter({ from: <pano-tour state> }) places the camera itself
   constructor(container, opts = {}) {
     this.container = container;
+    this.safe = !!opts.safe; this.step = 'construct'; this.contextLost = false; this._frames = 0;   // safe: second attempt (app.js)
     this.opts = opts;
     this.i18n = opts.i18n || null;
     this.styleId = opts.styleId || 'milano';
@@ -778,10 +780,11 @@ export class Walkthrough {
 
     // renderer / scene / camera
     // A renderer pre-warmed in idle time (prewarmWalk) already holds this apartment's compiled shader programs.
-    const spare = SPARE; SPARE = null; cancelPrewarm();
-    this.renderer = spare ? spare.renderer : makeRenderer();
+    let spare = SPARE; SPARE = null; cancelPrewarm();
+    if (this.safe && spare) { try { spare.renderer.dispose(); spare.renderer.forceContextLoss(); } catch (e) { /* */ } spare = null; }   // safe: no shared context
+    this.renderer = spare ? spare.renderer : makeRenderer(this.safe);
     this._spareEnv = spare ? spare.roomEnv : null;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.safe ? 1 : MAX_DPR));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -789,9 +792,13 @@ export class Walkthrough {
     // Sharper floors/walls at grazing angles; phones get a lighter 8× cap.
     this._aniso = Math.min(this.renderer.capabilities.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 1, isTouchDevice() ? 8 : 16);
     this.canvas = this.renderer.domElement; this.canvas.className = 'vw-gl'; this.canvas.tabIndex = 0;
+    // WebGL context loss (iOS under memory pressure): stop drawing, keep the page; app.js reports it only if no frame was drawn
+    this.canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.contextLost = true; console.info('[walk] WebGL context lost; step:', this.step); }, false);
+    this.canvas.addEventListener('webglcontextrestored', () => { this.contextLost = false; console.info('[walk] WebGL context restored'); }, false);
     this.postfx = new PostFX(this.renderer, { touch: isTouchDevice() });   // Graphics: auto / low / medium / high
     this.pbr = new PbrAssets(this.renderer, { touch: isTouchDevice() });
     this.postfx.onChange = () => this._gfxSync();
+    if (this.safe) this.postfx.setTier('low', false);   // safe: plain renderer.render(), no post-processing
     this.root.appendChild(this.canvas);
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.08, 6000);   // near 8 cm: 60 % more depth precision than 5 cm (no far-wall z-fight)
@@ -826,7 +833,7 @@ export class Walkthrough {
     mark('modules');
     if (this.disposed) return;
     const M = this.mods;
-    this.pbr.watch(M.materials);
+    if (!this.safe) this.pbr.watch(M.materials);
     this.styles = (M.materials && Array.isArray(M.materials.STYLES) && M.materials.STYLES.length) ? M.materials.STYLES : FALLBACK_STYLES;
     if (!this.styles.some(s => s.id === this.styleId)) this.styleId = this.styles[0].id;
 
@@ -919,9 +926,9 @@ export class Walkthrough {
   // walkthrough. On timeout the apartment generates its textures inline, the same path as a browser without workers.
   async _texReady(styleId = this.styleId) {
     const Mm = this.mods && this.mods.materials;
-    if (!Mm || !Mm.prewarmTextures) return;
+    if (this.safe || !Mm || !Mm.prewarmTextures) return;   // safe: generated on the page (no worker)
     let tm = null;
-    const limit = new Promise(r => { tm = setTimeout(() => { console.warn('[walk] textures slow — generating inline'); r(); }, this._isTouch ? 30000 : 20000); });
+    const limit = new Promise(r => { tm = setTimeout(() => { console.warn('[walk] textures slow — generating inline'); r(); }, this._isTouch ? 25000 : 20000); });
     try { await Promise.race([Promise.resolve(Mm.prewarmTextures(styleId)), limit]); } catch { /* generate inline */ }
     clearTimeout(tm);
   }
@@ -932,7 +939,7 @@ export class Walkthrough {
     // With KHR_parallel_shader_compile the programs link in the background (the still keeps animating); without it
     // a plain render compiles only what the camera sees, which is less work than compiling the whole apartment.
     let par = false; try { par = !!this.renderer.getContext().getExtension('KHR_parallel_shader_compile'); } catch { /* */ }
-    try { if (par && this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera); } catch (e) { /* render compiles */ }
+    try { if (par && this.renderer.compileAsync) await Promise.race([this.renderer.compileAsync(this.scene, this.camera), new Promise(r => setTimeout(r, 12000))]); } catch (e) { /* render compiles */ }   // bounded: a lost or slow GL context must not hold the first frame
     mark('compiled');
     if (this.disposed) return;
     try { this.renderer.render(this.scene, this.camera); } catch (e) { console.warn(e); }
@@ -956,15 +963,16 @@ export class Walkthrough {
   async enter({ unitId, start = 'apartment', mode = 'walk', from = null } = {}) {
     const token = (this._enterToken = (this._enterToken || 0) + 1);
     this._showLoading(true);
+    this.step = 'init';
     await this._ready;
     if (this.disposed || token !== this._enterToken) return;
     const unit = unitById(unitId) || this.unit || UNITS.find(u => u.building === 'C3' && u.floor === 5) || UNITS[0];
     if (unit !== this.unit || !this.apt) {
       this.unit = unit; this.bId = unit.building;
       this._hideUnitCard();
-      await this._texReady(); mark('textures');
+      this.step = 'textures'; await this._texReady(); mark('textures');
       if (this.disposed || token !== this._enterToken) return;
-      await this._buildApartment(); mark('apartment');
+      this.step = 'apartment'; await this._buildApartment(); mark('apartment');
       if (this.disposed || token !== this._enterToken) return;
     }
     this._updateTitle();
@@ -977,11 +985,13 @@ export class Walkthrough {
       if (aptFirst) { this.floor = this.unit.floor; this.bId = this.unit.building; }
       await this._placeFromPano(from);
       this._updateHud(true);
-    } else await this._goto(start, { instant: true, skipFloor: aptFirst });
+    } else { this.step = 'place'; await this._goto(start, { instant: true, skipFloor: aptFirst }); }
     if (this.disposed || token !== this._enterToken) return;
     this._applyMode();
+    this.step = 'first-frame';
     await this._firstFrame(); mark('first-frame');
     if (this.disposed || token !== this._enterToken) return;
+    if (this.contextLost) throw new Error('WebGL context lost before the first frame');
     this.booted = true;   // a frame is on screen: from now on a failing optional step must not show "unavailable" (app.js)
     this._showLoading(false);
     this._streamWorld();
@@ -1085,6 +1095,8 @@ export class Walkthrough {
     return url;
   }
 
+  // true once the first frame of the scene is drawn on a live GL context: nothing may show the failure text over it
+  get live() { return !this.disposed && !this.contextLost && !!this.booted; }
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
@@ -2000,7 +2012,7 @@ export class Walkthrough {
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
-        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.11');
+        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.12');
         const reg = window.VRC_PANO;
         if (reg && reg.ready && typeof reg.ready.then === 'function') await reg.ready;
       } catch (e) { console.info('[walk] photoreal tour not deployed yet', e && e.message); this._panoFailed = true; }
@@ -2011,7 +2023,7 @@ export class Walkthrough {
   // The pano manifest (same file pano-tour.js reads) — fetched only once a type/style is known to exist.
   async _panoManifest() {
     if (!this._panoMan) {
-      const url = new URL('../../assets/pano/index.json?v=3.11', import.meta.url);
+      const url = new URL('../../assets/pano/index.json?v=3.12', import.meta.url);
       this._panoMan = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return this._panoMan;
@@ -2046,7 +2058,7 @@ export class Walkthrough {
     this._panoBusy = true;
     let mod = this.mods.panoTour;
     try {
-      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.11');
+      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.12');
     } catch (e) {
       console.warn('[walk] pano-tour.js unavailable', e);
       this._panoFailed = true; this._panoBusy = false; this._renderModes(); this._soonTip(); return;
@@ -3184,7 +3196,7 @@ export class Walkthrough {
   _loop() {
     if (this.disposed) return;
     this._raf = requestAnimationFrame(this._loop);
-    if (this._paused || this._pano || this._photoPaused) return;   // hidden tab, or a photoreal tour owns the screen
+    if (this._paused || this._pano || this._photoPaused || this.contextLost) return;   // hidden tab, a photoreal tour, or a lost GL context
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (this._cityHook && this._cityHook.frame(dt)) return;   // City Drive game mode (city/hook.js, opt-in) owns the frame; otherwise this runs the car-park gate
     if (this._ghosts && this._ghosts.length) this._reconcileGhosts();
@@ -3193,6 +3205,7 @@ export class Walkthrough {
     try { this.env && this.env.update && this.env.update(dt, this.camera); } catch (e) { if (!this._envErr) { console.warn(e); this._envErr = true; } }
     this.postfx.setContext(this.drive ? 'drive' : this.yacht && this.yacht.active ? 'yacht' : this._placeKind === 'outdoor' ? 'outdoor' : 'indoor', this.envMode);
     this.postfx.render(this.scene, this.camera, dt);   // Low: renderer.render(); Medium / High: postfx.js
+    this._frames++;
   }
 
   _update(dt) {
@@ -3734,7 +3747,7 @@ export class Walkthrough {
 
   // GT VILNYI (app.js): City Drive from the walkthrough. opts.startId: where the car starts (osm.js STARTS); no chooser then.
   async startCity(opts = {}) {
-    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.11'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
+    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.12'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
     for (let k = 0; k < 50 && !this._cityHook && !this.disposed; k++) await new Promise(r => setTimeout(r, 100));
     return this._cityHook ? this._cityHook.start(opts) : undefined;
   }
@@ -3934,7 +3947,7 @@ export class Walkthrough {
 
   _resize() {
     const w = this.container.clientWidth || window.innerWidth, h = this.container.clientHeight || window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.safe ? 1 : MAX_DPR));
     this.renderer.setSize(w, h, false);
     const a = w / Math.max(1, h);
     this.camera.aspect = a;
@@ -4174,7 +4187,7 @@ export class Walkthrough {
     // 'parking' source as taken, so the real cars were refused later and their instances hidden — an empty car park.)
     if (!c || !Array.isArray(c.parkedCars) || !c.parkedCars.length) return;
     // the car park's exit gate + the opt-in "City Drive" game mode: fetched the first time the −1 level is on screen
-    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.11').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
+    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.12').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
     if (!this.fleet && !this._carsTried) { this._carsTried = true; this._initCars(); }   // in the car park before the world finished streaming
     if (!this.fleet) return;
     if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
@@ -4810,7 +4823,7 @@ Object.assign(Walkthrough.prototype, {
       if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
       this._yachtP = (async () => {
         await this._ready; await (this._worldP || this._streamWorld());
-        const mod = await import('./yacht.js?v=3.11');
+        const mod = await import('./yacht.js?v=3.12');
         if (this.disposed) return null;
         return (this.yacht = mod.createYacht(this));
       })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
@@ -4859,7 +4872,7 @@ Object.assign(Walkthrough.prototype, {
   async _initLimo() {
     if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
     try {
-      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.11'));
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.12'));
       if (this.disposed || this.limo) return;
       this.limo = new mod.LimoExperience(this);
       (window.VRC = window.VRC || {}).PIER = mod.PIER;

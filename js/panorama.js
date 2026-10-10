@@ -4,9 +4,9 @@
 // a north-up "radar" mini-map synced to the heading, category filters, and Google-Maps routes from the project.
 // Self-contained: bootstraps itself on #around; the DOM (header, radar, list) renders at load, WebGL starts lazily
 // when the section approaches the viewport. three.js is imported only then.
-import { bearingOf, dirOfBearing, LAKE, BUILDINGS, GEOM, ROOF_Y, footprintOf, localToWorld } from './data.js?v=3.11';
-import { lang, onLangChange } from './i18n.js?v=3.11';
-import { pt, poiName, dirName, CARD } from './i18n-panorama.js?v=3.11';
+import { bearingOf, dirOfBearing, LAKE, BUILDINGS, GEOM, ROOF_Y, footprintOf, localToWorld } from './data.js?v=3.12';
+import { lang, onLangChange } from './i18n.js?v=3.12';
+import { pt, poiName, dirName, CARD } from './i18n-panorama.js?v=3.12';
 
 // ---------------------------------------------------------------- geometry of the capture (shared with the capture page)
 export const PANO_EYE_H = 120;

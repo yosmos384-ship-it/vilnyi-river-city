@@ -2,10 +2,10 @@
 // a depth alarm, the autopilot (scenic loop with the slow pass in front of VILNYI RIVER CITY → back to the pier), the
 // stern-to docking manoeuvre and the wake.
 import * as THREE from 'three';
-import { PIER, DOCK, WATER_Y } from './yacht-pier.js?v=3.11';
-import { clearance, awayDir, LOOP, route, clearLine, PASS_END, PROJECT } from './yacht-nav.js?v=3.11';
-import { HT } from './yacht-heli-i18n.js?v=3.11';
-import { bearingOf } from '../data.js?v=3.11';
+import { PIER, DOCK, WATER_Y } from './yacht-pier.js?v=3.12';
+import { clearance, awayDir, LOOP, route, clearLine, PASS_END, PROJECT } from './yacht-nav.js?v=3.12';
+import { HT } from './yacht-heli-i18n.js?v=3.12';
+import { bearingOf } from '../data.js?v=3.12';
 
 const VMAX = 11, VCRUISE = 9.5, VAST = 3.2, RTURN = 115;   // m/s, m/s, m/s astern, turning radius at full rudder (m)
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));

@@ -6,7 +6,7 @@
 // Anagram brewery on the east shore, and the Bucharest blocks / towers / masts around the far shore.
 // All in world coordinates (data.js LAKE / geoToWorld). ≤ 14 draw calls.
 //
-//   import { createLake } from './lake.js?v=3.11';
+//   import { createLake } from './lake.js?v=3.12';
 //   const lake = createLake({ lowDetail });  scene.add(lake.group);
 //   lake.setMode('day'|'dusk'|'night' [, sunDir:THREE.Vector3]);  lake.update(dt, camera);  lake.dispose();
 //
@@ -15,8 +15,8 @@
 // and a lake mask texture keeps them off the land and the island.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { LAKE, COMPASS, geoToWorld } from '../data.js?v=3.11';
-import { PIER, DOCK, buildPierGeo, buildPierColliders, buildProxyGeo } from './yacht-pier.js?v=3.11';
+import { LAKE, COMPASS, geoToWorld } from '../data.js?v=3.12';
+import { PIER, DOCK, buildPierGeo, buildPierColliders, buildProxyGeo } from './yacht-pier.js?v=3.12';
 
 const TAU = Math.PI * 2;
 export const WATER_Y = -0.45;             // water level (the promenade / ground is at y ≈ 0)

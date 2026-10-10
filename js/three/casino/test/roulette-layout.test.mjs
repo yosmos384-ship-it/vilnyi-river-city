@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RL, rlCell, betAt } from '../roulette-layout.js?v=3.11';
+import { RL, rlCell, betAt } from '../roulette-layout.js?v=3.12';
 
 const K = (u, v) => { const b = betAt(u, v); return b ? b.bet.key : null; };
 const [cw, ch] = RL.cell;

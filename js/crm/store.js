@@ -16,8 +16,8 @@
 //   settings/main            entities, numbering, signature, defaults
 //   settings/counters        document number counters (lease-protected)
 //   audit/{YYYY-MM-DD}       daily audit log (entries[])
-import { PROJECT, UNITS, unitById, TYPES } from '../data.js?v=3.11';
-import { uid, hash, today, clone, addMonths, round2 } from './util.js?v=3.11';
+import { PROJECT, UNITS, unitById, TYPES } from '../data.js?v=3.12';
+import { uid, hash, today, clone, addMonths, round2 } from './util.js?v=3.12';
 
 export const COLS = ['units', 'reservations', 'leads', 'clients', 'deals', 'tasks', 'documents', 'emails', 'templates', 'settings', 'audit'];
 export const STAGES = ['lead', 'contacted', 'viewing', 'reserved', 'deposit', 'signed', 'paid60', 'delivered'];

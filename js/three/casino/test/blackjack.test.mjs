@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng, cards, card } from '../rng.js?v=3.11';
-import { Blackjack, RULES, handTotal, basicStrategy, isNatural } from '../blackjack.js?v=3.11';
+import { seededRng, cards, card } from '../rng.js?v=3.12';
+import { Blackjack, RULES, handTotal, basicStrategy, isNatural } from '../blackjack.js?v=3.12';
 
 const E = 100;                                     // one euro in cents
 const game = (stack, rules) => { const g = new Blackjack({ rng: seededRng(11), rules }); if (stack) g.shoe.stack(stack); return g; };
