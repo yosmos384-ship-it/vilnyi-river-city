@@ -1,9 +1,9 @@
 // VILNYI Lifestyle casino — generated artwork (canvas → textures): playing cards, chips, table layouts, the roulette
 // wheel, slot symbols, carpet, dice, signs. Everything is original and drawn in code; no external images, no brands.
 import * as THREE from 'three';
-import { WHEEL, colorOf } from './roulette.js?v=3.10';
-import { RL, rlCell } from './roulette-layout.js?v=3.10';
-import { RANKS } from './rng.js?v=3.10';
+import { WHEEL, colorOf } from './roulette.js?v=3.11';
+import { RL, rlCell } from './roulette-layout.js?v=3.11';
+import { RANKS } from './rng.js?v=3.11';
 
 const TAU = Math.PI * 2;
 const GOLD = '#d2a95a', GOLD2 = '#f0d79a', FELT = '#0d5c3f', FELT2 = '#0a4a33', INK = '#14161a', REDC = '#c8102e';

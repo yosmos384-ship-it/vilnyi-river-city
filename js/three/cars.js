@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.10';
+import { BUILDINGS, FOOTPRINT, CONTEXT_BLOCKS, CORES, LAKE, SPIRAL, RAMP, PLOT, footprintOf, coresOf } from '../data.js?v=3.11';
 
 export const CAR_KINDS = ['sedan', 'coupe', 'suv', 'gt', 'ev', 'super'];
 export const CAR_COLOURS = {

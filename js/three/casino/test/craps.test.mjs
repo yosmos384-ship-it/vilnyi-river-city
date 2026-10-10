@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng } from '../rng.js?v=3.10';
-import { Craps, resolve, ODDS_PAY, RULES } from '../craps.js?v=3.10';
+import { seededRng } from '../rng.js?v=3.11';
+import { Craps, resolve, ODDS_PAY, RULES } from '../craps.js?v=3.11';
 
 test('come-out and point rules', () => {
   assert.equal(resolve(0, 3, 4).outcome, 'win'); assert.equal(resolve(0, 5, 6).outcome, 'win');

@@ -2,7 +2,7 @@
 // mouth of the ramp tunnel, a barrier arm, a plate-reader pillar with a display, and a red/green signal. It opens as a
 // car or a walker approaches from either side (or on a tap) and closes behind. World coordinates; y = 0 is the car-park floor.
 import * as THREE from 'three';
-import { RAMP, LEVELS, floorY } from '../../data.js?v=3.10';
+import { RAMP, LEVELS, floorY } from '../../data.js?v=3.11';
 
 export function createParkingGate({ height = 3.1, onSound = null } = {}) {
   const group = new THREE.Group(); group.name = 'vrc-parking-gate'; group.position.y = floorY(-1);

@@ -2,7 +2,7 @@
 // Project facts (prices, areas, permit numbers) are NOT duplicated here — they come from data.js.
 // Texts that data.js only holds in he/en/ru (tagline, payment plans, contract, partner role) live here as terms.*.
 
-import { TOP_FLOOR } from './data.js?v=3.10';
+import { TOP_FLOOR } from './data.js?v=3.11';
 
 // Flags are inline SVG (Windows has no emoji flags). viewBox 3:2, drawn edge to edge.
 const F = (body) => `<svg class="flag" viewBox="0 0 30 20" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid slice">${body}</svg>`;

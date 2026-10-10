@@ -1,8 +1,8 @@
 // Reserve flow (modal): 1 details → 2 payment plan → 3 deposit instructions → 4 confirmation.
 // Persistence order: artifact runtime db → PROJECT.leadsEndpoint (POST) → localStorage + copyable summary.
 // Never invents bank data: if PROJECT.bank is empty, a clear "details come from your advisor" notice is shown.
-import { PROJECT, TYPES, money, moneyRate } from './data.js?v=3.10';
-import { t, pick, planText, lang, onLangChange, LANG_CODES, unitLabelL } from './i18n.js?v=3.10';
+import { PROJECT, TYPES, money, moneyRate } from './data.js?v=3.11';
+import { t, pick, planText, lang, onLangChange, LANG_CODES, unitLabelL } from './i18n.js?v=3.11';
 
 // ---------- small utils shared with app.js ----------
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.10';
-import { buildMap, BOUNDS } from './map.js?v=3.10';
-import { buildRealMap } from './osm.js?v=3.10';
-import { createWorld } from './world.js?v=3.10';
-import { createTraffic } from './traffic.js?v=3.10';
-import { createPeds } from './peds.js?v=3.10';
-import { createFx } from './fx.js?v=3.10';
-import { createAudio } from './audio.js?v=3.10';
-import { createRadio } from './radio.js?v=3.10';
-import { createHud } from './hud.js?v=3.10';
-import { cityT, cityDir } from './i18n.js?v=3.10';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.10';
-import { poiSign } from './gen.js?v=3.10';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.11';
+import { buildMap, BOUNDS } from './map.js?v=3.11';
+import { buildRealMap } from './osm.js?v=3.11';
+import { createWorld } from './world.js?v=3.11';
+import { createTraffic } from './traffic.js?v=3.11';
+import { createPeds } from './peds.js?v=3.11';
+import { createFx } from './fx.js?v=3.11';
+import { createAudio } from './audio.js?v=3.11';
+import { createRadio } from './radio.js?v=3.11';
+import { createHud } from './hud.js?v=3.11';
+import { cityT, cityDir } from './i18n.js?v=3.11';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.11';
+import { poiSign } from './gen.js?v=3.11';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);

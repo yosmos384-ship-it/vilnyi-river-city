@@ -2,10 +2,10 @@
 // instanced pools for everything that can be knocked over (lamps, bins, traffic lights, fences), sky, lake, the site
 // massing, time of day, and the static collision queries. No scene lights are added per lamp: night is emissive.
 import * as THREE from 'three';
-import { ROAD, CHUNK, hash2, inPoly } from './map.js?v=3.10';
-import { Geo, HEX, createMaterials, createSignAtlas } from './geo.js?v=3.10';
-import { genBlock, genEdge, genNode, obbCorners, poiSign, SHOPS } from './gen.js?v=3.10';
-import { buildLandmarks } from './landmarks.js?v=3.10';
+import { ROAD, CHUNK, hash2, inPoly } from './map.js?v=3.11';
+import { Geo, HEX, createMaterials, createSignAtlas } from './geo.js?v=3.11';
+import { genBlock, genEdge, genNode, obbCorners, poiSign, SHOPS } from './gen.js?v=3.11';
+import { buildLandmarks } from './landmarks.js?v=3.11';
 
 const TIMES = {
   day: { top: '#3f7fd0', hor: '#c9dcec', fog: '#bfd2e2', near: 160, far: 560, hemi: ['#dfeaf6', '#6a6f66', 1.15], sun: ['#fff4de', 2.3, [0.5, 0.8, 0.3]], night: 0, lit: 0.0, exp: 0.95 },

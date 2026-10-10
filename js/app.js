@@ -1,12 +1,12 @@
 // VILNYI RIVER CITY — app shell: wires i18n, sections, finder (plan/list/filters), unit panel, booking,
 // hero 3D (lazy) and the walkthrough overlay (lazy import of ./three/walk.js).
 import { PROJECT, TYPES, UNITS, LEVELS, TOP_FLOOR, ROOF_Y, BUILDINGS, CONTEXT_BLOCKS, LAKE, FOOTPRINT, PRICING, PRICE_STATS, priceOf, moneyRate,
-  floorY, unitsOn, unitById, localToWorld, money, footprintOf } from './data.js?v=3.10';
-import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, applyDom, i18nApi, LANGS, langInfo, unitLabelL } from './i18n.js?v=3.10';
-import { createPlan, keyPlanSVG, statusClass } from './plan.js?v=3.10';
-import { openBooking, loadReservations, planBreakdown, bindCopy, esc } from './booking.js?v=3.10';
-import { createHero3D } from './hero3d.js?v=3.10';
-import { tt as tourT } from './i18n-tour.js?v=3.10';
+  floorY, unitsOn, unitById, localToWorld, money, footprintOf } from './data.js?v=3.11';
+import { t, pick, planText, num, setLang, lang, dir, onLangChange, initialLang, applyDom, i18nApi, LANGS, langInfo, unitLabelL } from './i18n.js?v=3.11';
+import { createPlan, keyPlanSVG, statusClass } from './plan.js?v=3.11';
+import { openBooking, loadReservations, planBreakdown, bindCopy, esc } from './booking.js?v=3.11';
+import { createHero3D } from './hero3d.js?v=3.11';
+import { tt as tourT } from './i18n-tour.js?v=3.11';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -502,7 +502,7 @@ function bindUnit() {
     else if (a === 'reserve') reserve(u);
     else if (a === 'share') {
       const btn = e.target.closest('[data-act]'); let url = location.href.split('#')[0] + '#u=' + u.id;
-      const { copyText } = await import('./booking.js?v=3.10'); const ok = await copyText(url);
+      const { copyText } = await import('./booking.js?v=3.11'); const ok = await copyText(url);
       const l = btn.querySelector('.copy-l'); const old = l.textContent; l.textContent = ok ? t('unit.copied') : url; setTimeout(() => (l.textContent = old), 1800);
     }
   });
@@ -525,11 +525,13 @@ function reserve(u) {
 // panel) while the live 3D builds behind it; walk.js then streams apartment → corridor → surroundings. In idle time
 // the page pre-warms: module preload, textures (worker + IndexedDB), and for the open unit panel the apartment and
 // its shaders (walk.js prewarmWalk).
-const WALK_MODS = ['js/three/walk.js?v=3.10', 'js/three/materials.js?v=3.10', 'js/three/apartment.js?v=3.10', 'js/three/furniture.js?v=3.10', 'js/three/commons.js?v=3.10',
-  'js/three/cars.js?v=3.10', 'js/three/environment.js?v=3.10', 'js/three/context.js?v=3.10', 'js/three/lake.js?v=3.10', 'js/three/exterior.js?v=3.10',
+const WALK_MODS = ['js/three/walk.js?v=3.11', 'js/three/materials.js?v=3.11', 'js/three/apartment.js?v=3.11', 'js/three/furniture.js?v=3.11', 'js/three/commons.js?v=3.11',
+  'js/three/cars.js?v=3.11', 'js/three/environment.js?v=3.11', 'js/three/context.js?v=3.11', 'js/three/lake.js?v=3.11', 'js/three/exterior.js?v=3.11',
   'vendor/addons/environments/RoomEnvironment.js', 'vendor/addons/utils/BufferGeometryUtils.js', 'vendor/addons/geometries/RoundedBoxGeometry.js'];
-let walkModP = null;
-const walkModule = () => (walkModP ||= import('./three/walk.js?v=3.10').catch(e => { walkModP = null; throw e; }));
+// A failed import is forgotten, and the next attempt (the retry button) asks for a new URL: the browser caches a failed
+// module record by its URL, so the same URL could never succeed again.
+let walkModP = null, walkModTry = 0;
+const walkModule = () => (walkModP ||= import('./three/walk.js?v=3.11' + (walkModTry ? '&r=' + walkModTry : '')).catch(e => { walkModP = null; walkModTry++; throw e; }));
 const lowData = () => { try { const c = navigator.connection; return !!(c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ''))); } catch (e) { return false; } };
 const onIdle = (fn, timeout = 2500) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout }) : setTimeout(fn, 300));
 function preloadWalkModules() {
@@ -617,7 +619,7 @@ function hideVeil() {
 let walk = null; let walkArgs = null; let walkFromUnit = false;
 async function openWalk(unitId, start, mode, room, from, after) {
   closePhoto(true);
-  walkArgs = { unitId, start, mode };
+  walkArgs = { unitId, start, mode, room, from, after };
   const W = $('#walk'); W.hidden = false; W.classList.remove('is-ready'); document.documentElement.classList.add('walk-open');
   // A modal <dialog> sits in the top layer above any z-index, so step out of the unit sheet while walking
   if (dlgU().open) { walkFromUnit = true; dlgU().close(); }
@@ -629,6 +631,7 @@ async function openWalk(unitId, start, mode, room, from, after) {
   clearTimeout(warmT);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0))));   // the still is on screen before the 3D work starts
   if (W.hidden) return;
+  let placed = false;
   try {
     const mod = await walkModule();
     if (W.hidden) return;
@@ -638,17 +641,28 @@ async function openWalk(unitId, start, mode, room, from, after) {
       onExit: () => closeWalk(),
       onReserve: id => { closeWalk(); const u = unitById(id || unitId); if (u) { openUnit(u); reserve(u); } },
     });
-    const placed = !!(from && mod.Walkthrough.startsFromPano && from.frame !== 'building' && isFinite(from.u));
+    placed = !!(from && mod.Walkthrough.startsFromPano && from.frame !== 'building' && isFinite(from.u));
     await walk.enter({ unitId, start, mode, from: placed ? from : null });
-    if (after) { try { await after(walk); } catch (e) { console.warn('[walk] after enter', e); } }
-    if (!placed && room && start === 'apartment' && room.kind && room.kind !== 'living' && walk.jumpToRoom) await walk.jumpToRoom(room.kind, room.index | 0);
-    hideVeil(); W.classList.add('is-ready'); // the HUD has its own Exit button
   } catch (e) {
-    console.warn('[walk] unavailable:', e);
-    $('#walkVeil').classList.add('failed'); $('#walkVeil').classList.remove('has-still', 'is-out'); $('#walkVeil .walk-still')?.classList.remove('on');
-    $('#walkT').textContent = t('walk.unavailable'); $('#walkS').textContent = '';
-    const r = $('#walkRetry'); r.hidden = false; r.textContent = t('walk.retry');
+    // The view already renders (first frame drawn): a late failure must not replace it with "unavailable"
+    if (W.hidden) return;
+    if (!(walk && walk.booted)) return walkFailed(e);
+    console.warn('[walk] late step failed; the view stays up', e);
   }
+  if (W.hidden) return;
+  // Optional steps (a start in the car park, a room) are bounded: they can never keep the view behind the veil.
+  const bounded = (p, ms) => Promise.race([Promise.resolve(p), new Promise(r => setTimeout(r, ms))]);
+  if (after) { try { await bounded(after(walk), 12000); } catch (e) { console.warn('[walk] after enter', e); } }
+  if (!placed && room && start === 'apartment' && room.kind && room.kind !== 'living' && walk && walk.jumpToRoom) {
+    try { await bounded(walk.jumpToRoom(room.kind, room.index | 0), 8000); } catch (e) { console.warn('[walk] jumpToRoom', e); }
+  }
+  hideVeil(); W.classList.add('is-ready'); // the HUD has its own Exit button
+}
+function walkFailed(e) {
+  console.warn('[walk] unavailable:', e);
+  $('#walkVeil').classList.add('failed'); $('#walkVeil').classList.remove('has-still', 'is-out'); $('#walkVeil .walk-still')?.classList.remove('on');
+  $('#walkT').textContent = t('walk.unavailable'); $('#walkS').textContent = '';
+  const r = $('#walkRetry'); r.hidden = false; r.textContent = t('walk.retry');
 }
 function closeWalk() {
   const W = $('#walk'); closePhoto(true); if (W.hidden) return;
@@ -662,7 +676,7 @@ function closeWalk() {
 }
 function bindWalk() {
   $('#walkX').addEventListener('click', closeWalk);
-  $('#walkRetry').addEventListener('click', () => walkArgs && openWalk(walkArgs.unitId, walkArgs.start, walkArgs.mode));
+  $('#walkRetry').addEventListener('click', () => walkArgs && openWalk(walkArgs.unitId, walkArgs.start, walkArgs.mode, walkArgs.room, walkArgs.from, walkArgs.after));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#walk').hidden && !$('#walkVeil').hidden) closeWalk(); });
   bindPick();
 }
@@ -689,7 +703,7 @@ function bindPick() {
 // either on its own (unit panel button) or on top of a running Walkthrough (walk.js calls window.VRC.openPhotoTour);
 // its "Live 3D" toggle goes back to / opens the Walkthrough at the same room.
 let TOUR = null; let photo = null;
-const tourReady = fetch('assets/tour/tour.json?v=3.10', { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+const tourReady = fetch('assets/tour/tour.json?v=3.11', { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
   .then(m => { TOUR = m && m.types ? m : { types: {} }; refreshPhotoBtn(); return TOUR; });
 const hasPhoto = u => !!(u && TOUR && TOUR.types[u.type] && Object.keys(TOUR.types[u.type].styles || {}).length);
 const PHOTO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.4"/></svg>';
@@ -751,7 +765,7 @@ async function openPhoto({ unitId, styleId, room, onBack, live, onFail } = {}) {
   }
 }
 let panoModP = null;
-const panoMod = () => (panoModP ||= import('./pano-tour.js?v=3.10').catch(e => { panoModP = null; throw e; }));
+const panoMod = () => (panoModP ||= import('./pano-tour.js?v=3.11').catch(e => { panoModP = null; throw e; }));
 let panoModV = null;
 function closePhoto(silent) {
   const P = photo; if (!P) return; photo = null;
@@ -779,7 +793,7 @@ const capOf = it => (it.caption ? (typeof it.caption === 'string' ? it.caption :
 const safeSrc = s => typeof s === 'string' && s && !/^[a-z][\w+.-]*:|^\/\//i.test(s) && !s.includes('..'); // local, relative only
 
 async function loadGallery() {
-  let url = 'assets/gallery/manifest.json?v=3.10';
+  let url = 'assets/gallery/manifest.json?v=3.11';
   try { const q = new URLSearchParams(location.search).get('gallery'); if (q && safeSrc(q)) url = q; } catch (e) { /* ignore */ }
   let list = [];
   try {

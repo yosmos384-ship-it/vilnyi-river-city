@@ -11,11 +11,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.10';
+import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.11';
 import {
   CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, BASEMENT, RAMP as RAMP_D, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
   coresOf, isMirrored,
-} from '../data.js?v=3.10';
+} from '../data.js?v=3.11';
 
 const TAU = Math.PI * 2;
 const DOOR_W = 0.95, DOOR_H = 2.2;          // apartment entrance opening
