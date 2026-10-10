@@ -17,7 +17,8 @@ export function createRadio({ audio, onChange = () => {} } = {}) {
   const list = (Array.isArray(globalThis.VRC_RADIO) && globalThis.VRC_RADIO.length ? [...globalThis.VRC_RADIO.filter(s => s && s.name && Array.isArray(s.urls)), STATIONS[STATIONS.length - 1]] : STATIONS).map(s => ({ ...s, dead: false }));
   let idx = 0, on = false, vol = 0.6, el = null, status = 'off', tok = 0, timer = 0, dirn = 1;
   try { const v = +localStorage.getItem('vrc.city.radioVol'); if (v > 0 && v <= 1) vol = v; const k = +localStorage.getItem('vrc.city.radio'); if (k >= 0 && k < list.length) idx = k; } catch { /* private mode */ }
-  const state = () => ({ on, index: idx, name: list[idx].name, freq: list[idx].freq, status, volume: vol, synth: !!list[idx].synth, count: list.length });
+  const names = list.map(s => ({ name: s.name, freq: s.freq || '' }));   // the station list (the car radio's menu)
+  const state = () => ({ on, index: idx, name: list[idx].name, freq: list[idx].freq, status, volume: vol, synth: !!list[idx].synth, count: list.length, stations: names });
   const set = s => { status = s; onChange(state()); };
   function stopEl() { clearTimeout(timer); if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } el.onplaying = el.onerror = el.onstalled = el.onended = null; } }
   function synthOn(v) { try { audio && audio.radioSynth(v, vol); } catch (e) { console.warn('[city] radio synth', e); } }
@@ -50,6 +51,8 @@ export function createRadio({ audio, onChange = () => {} } = {}) {
     state, stations: list,
     // call from a user gesture (the ignition button): browsers only start audio then
     power(v) { on = v == null ? !on : !!v; if (!on) { tok++; stopEl(); synthOn(false); return set('off'); } tune(); },
+    // a station picked from the list: tune it at once (the radio turns on)
+    pick(i) { if (!list.length) return; dirn = 1; idx = ((+i % list.length) + list.length) % list.length; list[idx].dead = false; on = true; tune(); },
     next(d = 1) { dirn = d >= 0 ? 1 : -1; idx = (idx + dirn + list.length) % list.length; list[idx].dead = false; if (on) tune(); else onChange(state()); },
     setVolume(v) { vol = Math.max(0, Math.min(1, v)); if (el) el.volume = vol; if (on && list[idx].synth) synthOn(true); try { localStorage.setItem('vrc.city.radioVol', String(vol)); } catch { /* */ } onChange(state()); },
     duck(k) { if (el) el.volume = vol * k; },

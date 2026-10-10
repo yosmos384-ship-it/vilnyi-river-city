@@ -2,8 +2,8 @@
 // same orientation as the permit CAD plans: bar horizontal, wing at the right — C3's wing up, C4's (mirror image) down.
 // The north arrow points to true north.
 import { UNITS, TYPES, GEOM, BUILDINGS, LAKE, TOP_FLOOR, COMPASS,
-  unitsOn, blocksOn, unitToLocal, localToWorld, money, moneyRate, footprintOf, corridorsOf, coresOf, isMirrored } from './data.js?v=3.8';
-import { t } from './i18n.js?v=3.8';
+  unitsOn, blocksOn, unitToLocal, localToWorld, money, moneyRate, footprintOf, corridorsOf, coresOf, isMirrored } from './data.js?v=3.9';
+import { t } from './i18n.js?v=3.9';
 
 const NS = 'http://www.w3.org/2000/svg';
 // full-floor view box per block (136 × 85 = the CSS 1.6 aspect): the free side of the bar carries title, north, scale, lake

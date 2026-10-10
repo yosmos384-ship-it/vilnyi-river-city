@@ -8,12 +8,12 @@
 // The helicopter is a child of the yacht's root (airborne: of the scene, only while the visitor is aboard it), so it
 // follows the yacht's visibility rule: never in the hero or the apartment views.
 import * as THREE from 'three';
-import { Y, WATER_Y } from './yacht-pier.js?v=3.8';
-import { buildHeli, HELI } from './yacht-heli-model.js?v=3.8';
-import { HT } from './yacht-heli-i18n.js?v=3.8';
-import { clearance } from './yacht-nav.js?v=3.8';
-import { BUILDINGS, GEOM, ROOF_Y, localToWorld, footprintOf, dirOfBearing, LAKE } from '../data.js?v=3.8';
-import { DEFAULT_VIEW } from './exterior.js?v=3.8';
+import { Y, WATER_Y } from './yacht-pier.js?v=3.9';
+import { buildHeli, HELI } from './yacht-heli-model.js?v=3.9';
+import { HT } from './yacht-heli-i18n.js?v=3.9';
+import { clearance } from './yacht-nav.js?v=3.9';
+import { BUILDINGS, GEOM, ROOF_Y, localToWorld, footprintOf, dirOfBearing, LAKE } from '../data.js?v=3.9';
+import { DEFAULT_VIEW } from './exterior.js?v=3.9';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -189,8 +189,8 @@ export function createHeli(yacht) {
     mkLabel('fountain', [LAKE.fountain[0], 30, LAKE.fountain[1]], () => T('fountain'), { pri: 5, max: 900 });
     mkLabel('yacht', [0, 0, 0], () => T('yacht'), { pri: 3, min: 90, dyn: (p) => p.copy(yacht.root.position).setY(22) });
     // the landmarks of the site's 360° map (panorama.js POIS — real bearings and distances from the project)
-    import('../panorama.js?v=3.8').then(async (pm) => {
-      let nameOf = (p) => p.name; try { const im = await import('../i18n-panorama.js?v=3.8'); if (im.poiName) nameOf = (p) => { try { return im.poiName(p) || p.name; } catch { return p.name; } }; } catch { /* plain names */ }
+    import('../panorama.js?v=3.9').then(async (pm) => {
+      let nameOf = (p) => p.name; try { const im = await import('../i18n-panorama.js?v=3.9'); if (im.poiName) nameOf = (p) => { try { return im.poiName(p) || p.name; } catch { return p.name; } }; } catch { /* plain names */ }
       const list = pm.POIS.filter(p => !p.onSite && p.id !== 'lake' && p.dist > 150 && p.dist < 4600 && (p.key || p.dist < 900)).sort((a, b) => a.dist - b.dist).slice(0, 12);
       for (const p of list) { const [dx, dz] = dirOfBearing(p.bearing); mkLabel('poi-' + p.id, [cx + dx * p.dist, 14, cz + dz * p.dist], () => nameOf(p), { pri: p.dist < 1500 ? 4 : 6, far: true, dist: p.dist }).dist = p.dist; }
       labelTexts(); H.pois = list.length;

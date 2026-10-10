@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.8';
-import { buildMap, BOUNDS } from './map.js?v=3.8';
-import { buildRealMap } from './osm.js?v=3.8';
-import { createWorld } from './world.js?v=3.8';
-import { createTraffic } from './traffic.js?v=3.8';
-import { createPeds } from './peds.js?v=3.8';
-import { createFx } from './fx.js?v=3.8';
-import { createAudio } from './audio.js?v=3.8';
-import { createRadio } from './radio.js?v=3.8';
-import { createHud } from './hud.js?v=3.8';
-import { cityT, cityDir } from './i18n.js?v=3.8';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.8';
-import { poiSign } from './gen.js?v=3.8';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.9';
+import { buildMap, BOUNDS } from './map.js?v=3.9';
+import { buildRealMap } from './osm.js?v=3.9';
+import { createWorld } from './world.js?v=3.9';
+import { createTraffic } from './traffic.js?v=3.9';
+import { createPeds } from './peds.js?v=3.9';
+import { createFx } from './fx.js?v=3.9';
+import { createAudio } from './audio.js?v=3.9';
+import { createRadio } from './radio.js?v=3.9';
+import { createHud } from './hud.js?v=3.9';
+import { cityT, cityDir } from './i18n.js?v=3.9';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.9';
+import { poiSign } from './gen.js?v=3.9';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -42,7 +42,7 @@ export async function startCityDrive(host) {
   // a mute that is always on screen: the whole game's sound (engine, traffic, radio) goes quiet, and stays so
   let muted = ls.get('vrc.city.mute', '0') === '1';
   const muteB = document.createElement('button'); muteB.type = 'button'; muteB.className = 'cg-mute';
-  muteB.style.cssText = 'position:absolute;top:10px;left:10px;z-index:40;width:42px;height:42px;border-radius:50%;border:1px solid rgba(201,164,92,.55);background:rgba(10,9,7,.82);color:#e6cc92;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;padding:0';
+  muteB.style.cssText = 'position:absolute;top:10px;' + (dir === 'rtl' ? 'right' : 'left') + ':10px;z-index:40;width:42px;height:42px;border-radius:50%;border:1px solid rgba(201,164,92,.55);background:rgba(10,9,7,.82);color:#e6cc92;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;padding:0';
   const setMute = v => { muted = !!v; ls.set('vrc.city.mute', muted ? '1' : '0'); audio.setEnabled(!muted && settings.sound); radio.duck(muted ? 0 : 1); paintMute(); };
   const paintMute = () => { const lbl = muted ? t('sound') + ' · ' + t('off') : t('sound') + ' · ' + t('on'); muteB.setAttribute('aria-label', lbl); muteB.title = lbl; muteB.setAttribute('aria-pressed', String(muted));
     muteB.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/>${muted ? '<path d="M16 9.5l5 5M21 9.5l-5 5"/>' : '<path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'}</svg>`; };
@@ -227,6 +227,7 @@ export async function startCityDrive(host) {
     if (a === 'hand') { P.hb = !P.hb; audio.ratchet(); return; }
     if (a === 'start') return ignition();
     if (a === 'rpower') return radio.power(); if (a === 'rnext') return radio.next(1); if (a === 'rprev') return radio.next(-1);
+    if (a === 'rpick') return radio.pick(+v); if (a === 'roff') return radio.power(false);
     if (a === 'rvol+') return radio.setVolume(radioState.volume + 0.1); if (a === 'rvol-') return radio.setVolume(radioState.volume - 0.1);
     if (a === 'out') return getOut(); if (a === 'enter' || a === 'take') return getIn();
     if (a === 'door') { P.doorT = P.doorT ? 0 : 1; audio.door(); return; } if (a === 'window') { P.winT = P.winT ? 0 : 1; return; }

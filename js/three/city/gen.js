@@ -1,7 +1,7 @@
 // City Drive — what stands on a block, along a street and at a junction (deterministic, generated on demand and cached).
 // Typical Bucharest fabric: communist-era slab blocks with ground-floor shops on the boulevards, interwar villas with
 // tiled roofs and front fences on the side streets, new glass offices, markets, parks. Shop brands are invented.
-import { ROAD, rng, hash2, inPoly, segD } from './map.js?v=3.8';
+import { ROAD, rng, hash2, inPoly, segD } from './map.js?v=3.9';
 export const SHOPS = ['Brutăria Luna', 'Cafeneaua Albastră', 'Florăria Mara', 'Librăria Pagina', 'Patiseria Dor', 'Covrigăria Rond', 'Farmacia Verde', 'Optica Clar',
   'Croitoria Ac și Ață', 'Frizeria Tuns', 'Minimarket Colț', 'Fructe & Legume', 'Cofetăria Zmeura', 'Pizzeria Forno Mic', 'Gelateria Nea', 'Ceainăria Frunză',
   'Bistro Morii', 'Anticariat Filă', 'Papetăria Creion', 'Ceasornicărie', 'Încălțăminte Pas', 'Telefoane Fix', 'Bijuteria Aur Vechi', 'Mezeluri de Casă',

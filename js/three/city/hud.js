@@ -2,8 +2,9 @@
 // at the edges and on the lower band of the screen (over the dashboard): thin steering and pedal pads in the bottom
 // corners, a small speed readout between them, one narrow column of view / light buttons at the inline-end edge (folds
 // away while driving, back on a tap), the parked-car menu as one button at the inline-start edge (only when stopped),
-// a hold-to-look-back button, a small translucent minimap in the top corner. The radio has its own slim strip that opens
-// from the car's centre screen (tap it) or the radio button. Black and gold like the rest of the site, RTL-aware.
+// a hold-to-look-back button, a small translucent minimap in the top corner. The radio is a box in the other top corner
+// (station down / up, the station name opens a short list, a swipe on the name changes station); the car's centre screen
+// opens the same list. Black and gold like the rest of the site, RTL-aware.
 const CSS = `
 .cg{position:absolute;inset:0;z-index:40;font:500 13px/1.2 Manrope,Heebo,system-ui,sans-serif;color:#f3efe6;user-select:none;-webkit-user-select:none;touch-action:none;overflow:hidden}
 .cg *{box-sizing:border-box}
@@ -13,7 +14,7 @@ const CSS = `
 .cg-b.on{background:linear-gradient(180deg,#f0d596,#b88a3c);color:#14100a;border-color:#f0d596!important}
 .cg-b.red.on{background:linear-gradient(180deg,#ff6a55,#b3261e);color:#fff;border-color:#ff8a78!important}
 .cg-b svg{width:19px;height:19px}
-.cg-tl{position:absolute;top:calc(8px + env(safe-area-inset-top,0px));inset-inline-start:8px;max-width:64px;pointer-events:none}
+.cg-tl{position:absolute;top:calc(60px + env(safe-area-inset-top,0px));inset-inline-start:8px;max-width:64px;pointer-events:none}
 .cg-brand{background:rgba(10,10,12,.42);border:1px solid rgba(226,192,120,.3);border-radius:9px;padding:4px 6px}
 .cg-brand b{display:block;font:700 9px/1.15 Manrope,Heebo,sans-serif;color:#e2c078;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cg-brand span{display:block;font:600 8.5px/1.15 Manrope,Heebo,sans-serif;color:#cdbb8f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -26,7 +27,7 @@ const CSS = `
 .cg-map.big{position:fixed;inset:auto;top:calc(56px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(92vw,420px);height:min(92vw,420px);z-index:5;opacity:1}
 .cg-map canvas{width:100%;height:100%;display:block}
 .cg-colE{position:absolute;inset-inline-end:8px;top:calc(86px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:5px;pointer-events:none}
-.cg-colS{position:absolute;inset-inline-start:8px;top:calc(64px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:5px;pointer-events:none}
+.cg-colS{position:absolute;inset-inline-start:8px;top:calc(118px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:5px;pointer-events:none}
 .cg-sec{opacity:1}
 .cg.drive:not(.reveal) .cg-sec{opacity:0;transform:scale(.6);pointer-events:none!important}
 .cg-more{display:none!important}.cg.drive:not(.reveal) .cg-more{display:flex!important}
@@ -51,12 +52,22 @@ const CSS = `
 .cg-ped .cg-b{width:50px;border-radius:13px;background:rgba(10,10,12,.28)}.cg-gas{height:80px!important;background:rgba(20,40,24,.32)!important}.cg-brk{height:58px!important;background:rgba(48,16,14,.32)!important}
 .cg-ped .cg-b.on{background:linear-gradient(180deg,#f0d596,#b88a3c)!important}
 .cg-foot-act{display:flex;gap:6px;pointer-events:none}.cg-foot-act .cg-b{width:auto;padding:0 14px!important;height:38px;background:linear-gradient(180deg,#f0d596,#b88a3c);color:#14100a;white-space:nowrap}
-.cg-radio{position:absolute;inset-inline:8px;bottom:calc(98px + env(safe-area-inset-bottom,0px));display:none;align-items:center;gap:5px;background:rgba(10,10,12,.7);border:1px solid rgba(226,192,120,.38);border-radius:12px;padding:4px 5px;pointer-events:auto;direction:ltr}
-.cg-radio.show{display:flex}
-.cg-radio .cg-b{height:32px;width:34px;border-radius:9px}
-.cg-rn{flex:1;min-width:0;text-align:center;line-height:1.15}
-.cg-rn b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;font-size:12px}
-.cg-rn span{font-size:10px;color:#cdbb8f;white-space:nowrap}
+.cg-rbox{position:absolute;top:calc(8px + env(safe-area-inset-top,0px));left:60px;right:auto;width:min(176px,44vw);display:flex;align-items:stretch;gap:3px;padding:3px;background:rgba(10,10,12,.66);border:1px solid rgba(226,192,120,.42);border-radius:12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);pointer-events:auto;direction:ltr;touch-action:none}
+.cg-rbox .cg-rb{width:26px;min-width:26px;height:44px;border-radius:9px;font-size:18px;line-height:1;color:#e2c078;background:rgba(226,192,120,.1)}
+.cg-rmid{flex:1;min-width:0;height:44px;border-radius:9px;padding:2px 3px;text-align:center;display:flex;flex-direction:column;justify-content:center;line-height:1.15}
+.cg-rmid .cg-rf{display:block;font:700 13px/1.1 Manrope,system-ui,sans-serif;color:#f3efe6;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cg-rmid .cg-rnm{display:block;font:600 10px/1.2 Manrope,Heebo,system-ui,sans-serif;color:#cdbb8f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cg[dir=rtl] .cg-rbox{left:auto;right:60px}
+.cg[dir=rtl] .cg-rlist{left:auto;right:76px}
+.cg-rlist{position:absolute;top:calc(60px + env(safe-area-inset-top,0px));left:76px;right:auto;width:min(176px,44vw);max-height:44vh;overflow-y:auto;display:none;flex-direction:column;gap:3px;padding:4px;background:rgba(10,10,12,.92);border:1px solid rgba(226,192,120,.5);border-radius:12px;pointer-events:auto;direction:ltr;touch-action:pan-y}
+.cg-rlist.show{display:flex}
+.cg-rlist button{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;min-height:34px;padding:5px 8px;border-radius:8px;font-size:11.5px;text-align:start;color:#f3efe6}
+.cg-rlist button b{font-variant-numeric:tabular-nums;color:#e2c078;flex-shrink:0}
+.cg-rlist button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cg-rlist button.on{background:linear-gradient(180deg,#f0d596,#b88a3c);color:#14100a}
+.cg-rlist button.on b{color:#14100a}
+.cg-rlist .cg-rvol{display:flex;gap:4px;justify-content:space-between;align-items:center;padding-top:2px;border-top:1px solid rgba(226,192,120,.25)}
+.cg-rlist .cg-rvol button{width:auto;min-width:40px;justify-content:center;min-height:30px;background:rgba(226,192,120,.12);border:1px solid rgba(226,192,120,.34)}
 .cg-toast{position:absolute;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:rgba(10,10,12,.8);border:1px solid rgba(226,192,120,.5);border-radius:12px;padding:8px 13px;max-width:78%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;font-weight:600;font-size:12.5px}
 .cg-toast.show{opacity:1}
 .cg-ban{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.35);pointer-events:none;text-align:center;padding:20px}
@@ -81,7 +92,7 @@ const CSS = `
 .cg-map.big+.cg-osm{display:none}
 @media (min-width:760px){.cg-map{width:120px;height:120px}.cg-tl{max-width:150px}.cg-brand b{font-size:11px}.cg-brand span{font-size:10px}.cg-colE{top:calc(140px + env(safe-area-inset-top,0px))}}
 @media (max-width:380px){.cg-map{width:62px;height:62px}.cg-colE{top:calc(78px + env(safe-area-inset-top,0px))}}
-@media (max-height:520px){.cg-map{width:76px;height:76px}.cg-colE{display:grid;grid-template-columns:repeat(2,38px);top:calc(84px + env(safe-area-inset-top,0px))}.cg-colE .cg-b{width:38px;height:36px}.cg-radio{bottom:calc(76px + env(safe-area-inset-bottom,0px));inset-inline:22%}.cg-steer{height:54px}.cg-gas{height:68px!important}.cg-brk{height:52px!important}.cg-toast{bottom:90px}}
+@media (max-height:520px){.cg-map{width:76px;height:76px}.cg-colE{display:grid;grid-template-columns:repeat(2,38px);top:calc(84px + env(safe-area-inset-top,0px))}.cg-colE .cg-b{width:38px;height:36px}.cg-rbox{width:min(190px,30vw)}.cg-rlist{width:min(190px,30vw)}.cg-tl{top:calc(60px + env(safe-area-inset-top,0px))}.cg-steer{height:54px}.cg-gas{height:68px!important}.cg-brk{height:52px!important}.cg-toast{bottom:90px}}
 `;
 const IC = {
   view: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -106,6 +117,8 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
   root.innerHTML = `
   <div class="cg-look"></div>
   <div class="cg-tl"><div class="cg-brand"><b>VILNYI</b><span>City Drive</span><div class="cg-stars" role="img" aria-label="${t('wanted')}"><i></i><i></i><i></i><i></i><i></i></div></div></div>
+  <div class="cg-rbox cg-car" role="group" aria-label="${t('radio')}"><button class="cg-rb" data-a="rprev" aria-label="${t('prev')}" title="${t('prev')}">‹</button><button class="cg-rmid" data-a="rlist" aria-expanded="false" aria-label="${t('radio')}"><b class="cg-rf">—</b><span class="cg-rnm">${t('rOff')}</span></button><button class="cg-rb" data-a="rnext" aria-label="${t('next')}" title="${t('next')}">›</button></div>
+  <div class="cg-rlist cg-car" role="listbox"></div>
   <div class="cg-tr"><button class="cg-map" data-a="map" aria-label="${t('map')}"><canvas width="160" height="160"></canvas></button><span class="cg-osm">© OpenStreetMap</span></div>
   <div class="cg-colS">
     <button class="cg-b cg-car" data-p="back" aria-label="${t('lookBack')}" title="${t('lookBack')}">${IC.back}</button>
@@ -114,9 +127,8 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
   <div class="cg-colE">
     ${B('more', IC.more, t('more'), 'cg-more cg-car')}
     ${B('view', IC.view, t('view'), 'cg-sec cg-car')}${B('lights', IC.lights, t('lights'), 'cg-sec cg-car')}${B('high', IC.high, t('high'), 'cg-sec cg-car')}${B('wipers', IC.wipers, t('wipers'), 'cg-sec cg-car')}
-    ${B('radioUi', IC.radio, t('radio'), 'cg-sec cg-car')}${B('starts', IC.flag, t('startFrom'), 'cg-sec')}${B('time', IC.sun, t('day'), 'cg-sec')}${B('settings', IC.gear, t('settings'), 'cg-sec')}${B('exit', IC.home, t('garage'), 'cg-sec')}
+    ${B('starts', IC.flag, t('startFrom'), 'cg-sec')}${B('time', IC.sun, t('day'), 'cg-sec')}${B('settings', IC.gear, t('settings'), 'cg-sec')}${B('exit', IC.home, t('garage'), 'cg-sec')}
   </div>
-  <div class="cg-radio"><button class="cg-b" data-a="rprev" aria-label="${t('prev')}">⏮</button><div class="cg-rn"><b></b><span></span></div><button class="cg-b" data-a="rnext" aria-label="${t('next')}">⏭</button><button class="cg-b" data-a="rvol-" aria-label="${t('vol')} −">−</button><button class="cg-b" data-a="rvol+" aria-label="${t('vol')} +">+</button><button class="cg-b" data-a="rpower" aria-label="${t('radio')}">${IC.pw}</button></div>
   <div class="cg-toast" role="status"></div>
   <div class="cg-bottom">
     <div class="cg-steer" data-p="steer" aria-label="${t('steer')}"><span class="l">◀</span><i class="cg-knob"></i><span class="r">▶</span></div>
@@ -132,7 +144,7 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
   <div class="cg-pan"><div class="cg-card"></div></div>
   <div class="cg-fade"></div>`;
   container.appendChild(root);
-  const q = s => root.querySelector(s), el = { stars: q('.cg-stars'), spd: q('.cg-spd'), gear: q('.cg-gear'), dmg: q('.cg-bar.dmg i'), fuel: q('.cg-bar.fuel i'), menu: q('.cg-menu'), cm: q('.cg-cm'), footAct: q('.cg-foot-act'), toast: q('.cg-toast'), ban: q('.cg-ban'), pan: q('.cg-pan'), card: q('.cg-card'), fade: q('.cg-fade'), map: q('.cg-map'), cv: q('.cg-map canvas'), radio: q('.cg-radio'), rn: q('.cg-rn b'), rs: q('.cg-rn span'), knob: q('.cg-knob'), look: q('.cg-look') };
+  const q = s => root.querySelector(s), el = { stars: q('.cg-stars'), spd: q('.cg-spd'), gear: q('.cg-gear'), dmg: q('.cg-bar.dmg i'), fuel: q('.cg-bar.fuel i'), menu: q('.cg-menu'), cm: q('.cg-cm'), footAct: q('.cg-foot-act'), toast: q('.cg-toast'), ban: q('.cg-ban'), pan: q('.cg-pan'), card: q('.cg-card'), fade: q('.cg-fade'), map: q('.cg-map'), cv: q('.cg-map canvas'), rbox: q('.cg-rbox'), rlist: q('.cg-rlist'), rf: q('.cg-rf'), rnm: q('.cg-rnm'), rmid: q('.cg-rmid'), knob: q('.cg-knob'), look: q('.cg-look') };
   const pad = { gas: 0, brake: 0, steer: 0, horn: 0, back: 0 }, look = { dx: 0, dy: 0, drag: false };
   const stop = e => { e.preventDefault(); e.stopPropagation(); };
   root.querySelectorAll('button[data-p]').forEach(b => {
@@ -150,15 +162,26 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     el.look.addEventListener('pointermove', e => { if (e.pointerId !== id) return; look.dx += e.clientX - lx; look.dy += e.clientY - ly; moved += Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly); lx = e.clientX; ly = e.clientY; stop(e); });
     const end = e => { if (e.pointerId !== id) return; id = null; look.drag = false; if (moved < 8 && performance.now() - t0 < 350) { const r = root.getBoundingClientRect(); onAction('tap', { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }); } }; el.look.addEventListener('pointerup', end); el.look.addEventListener('pointercancel', end); }
   root.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b || !root.contains(b)) return; e.stopPropagation(); const a = b.dataset.a;
-    if (a === 'more') { reveal(5000); return; } if (a === 'carmenu') { menuOpen = !menuOpen; renderMenu(); reveal(6000); return; } if (a === 'radioUi') { showRadio(); return; }
+    if (a === 'more') { reveal(5000); return; } if (a === 'carmenu') { menuOpen = !menuOpen; renderMenu(); reveal(6000); return; } if (a === 'rlist') { if (performance.now() - swipeAt < 350) return; toggleList(); return; }
     if (b.closest('.cg-menu')) { menuOpen = false; renderMenu(); }
+    if (a !== 'rvol-' && a !== 'rvol+') closeList();   // a pick (or any other control) closes the list
     reveal(4000); onAction(a, b.dataset.v); });
   for (const ev of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick', 'wheel', 'contextmenu']) root.addEventListener(ev, e => { e.stopPropagation(); if (ev === 'contextmenu') e.preventDefault(); });
   // ---- auto-hide while driving: the column folds to one ⋯ button, a tap anywhere brings it back for a few seconds
-  let revealT = 0, radioT = 0, toastT = 0, last = {}, acts = '', menuOpen = false;
+  let revealT = 0, toastT = 0, last = {}, acts = '', menuOpen = false;
   function reveal(ms = 4000) { root.classList.add('reveal'); clearTimeout(revealT); revealT = setTimeout(() => root.classList.remove('reveal'), ms); }
-  function showRadio(ms = 6000) { el.radio.classList.add('show'); clearTimeout(radioT); radioT = setTimeout(() => el.radio.classList.remove('show'), ms); }
-  el.radio.addEventListener('pointerdown', () => showRadio());
+  // the radio list: tap the station name (or the centre screen of the car); it closes itself after a while or on a pick
+  let listT = 0, swipeAt = 0, listKey = '';
+  function toggleList() { if (el.rlist.classList.contains('show')) closeList(); else openList(); }
+  function openList(ms = 9000) { el.rlist.classList.add('show'); el.rmid.setAttribute('aria-expanded', 'true'); clearTimeout(listT); listT = setTimeout(closeList, ms); }
+  function closeList() { clearTimeout(listT); el.rlist.classList.remove('show'); el.rmid.setAttribute('aria-expanded', 'false'); }
+  function showRadio() { openList(); }
+  // a horizontal swipe on the station name changes the station (one step per ~44 px); a tap only opens the list
+  { let id = null, x0 = 0, steps = 0;
+    el.rmid.addEventListener('pointerdown', e => { id = e.pointerId; x0 = e.clientX; steps = 0; try { el.rmid.setPointerCapture(id); } catch { /* */ } });
+    el.rmid.addEventListener('pointermove', e => { if (e.pointerId !== id) return; const dx = e.clientX - x0; const want = Math.trunc(dx / 44); if (want !== steps) { const d = want > steps ? 1 : -1; steps += d; swipeAt = performance.now(); onAction(d > 0 ? 'rprev' : 'rnext'); } });
+    const end = e => { if (e.pointerId !== id) return; id = null; if (steps) swipeAt = performance.now(); };
+    el.rmid.addEventListener('pointerup', end); el.rmid.addEventListener('pointercancel', end); }
   const setCls = (sel, on) => { const b = q(sel); if (b) b.classList.toggle('on', !!on); };
   function renderMenu() {
     const list = last.actions || [], car = list.filter(k => k !== 'enter' && k !== 'take');
@@ -166,6 +189,12 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     el.menu.classList.toggle('show', menuOpen && car.length > 0);
     el.menu.innerHTML = menuOpen ? car.map(k => `<button class="cg-b${k === 'out' || k === 'garage' ? ' gold' : ''}" data-a="${k}">${t(k)}</button>`).join('') : '';
     el.cm.classList.toggle('on', menuOpen);
+  }
+  const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function renderList(r) {
+    const li = r.stations.map((st, i) => `<button type="button" data-a="rpick" data-v="${i}" class="${i === r.index && r.on ? 'on' : ''}" role="option" aria-selected="${i === r.index && r.on}"><span>${esc(st.name)}</span><b>${esc(st.freq || '')}</b></button>`).join('');
+    el.rlist.innerHTML = li + `<button type="button" data-a="roff" class="${r.on ? '' : 'on'}" role="option"><span>${esc(t('rOff'))}</span></button>` +
+      `<div class="cg-rvol"><button type="button" data-a="rvol-" aria-label="${esc(t('vol'))} −">−</button><span style="font-size:10px;color:#cdbb8f">${esc(t('vol'))} ${Math.round(r.volume * 100)}%</span><button type="button" data-a="rvol+" aria-label="${esc(t('vol'))} +">+</button></div>`;
   }
   function set(s) {
     if (s.kmh !== last.kmh) el.spd.textContent = String(s.kmh);
@@ -175,9 +204,15 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     el.stars.classList.toggle('flash', !!s.hiding);
     if (s.onFoot !== last.onFoot) { root.classList.toggle('foot', !!s.onFoot); root.classList.toggle('car', !s.onFoot); }
     root.classList.toggle('drive', !!s.moving && !s.onFoot);
-    setCls('[data-a=lights]', s.lights); setCls('[data-a=high]', s.high); setCls('[data-a=wipers]', s.wipers); setCls('[data-a=indL]', s.indL); setCls('[data-a=indR]', s.indR); setCls('[data-a=hand]', s.hb); setCls('[data-a=rpower]', s.radio && s.radio.on); setCls('[data-a=start]', s.engine); setCls('[data-a=radioUi]', s.radio && s.radio.on);
+    setCls('[data-a=lights]', s.lights); setCls('[data-a=high]', s.high); setCls('[data-a=wipers]', s.wipers); setCls('[data-a=indL]', s.indL); setCls('[data-a=indR]', s.indR); setCls('[data-a=hand]', s.hb);  setCls('[data-a=start]', s.engine);
     const st = q('[data-a=start]'); if (st && s.engine !== last.engine) st.textContent = s.engine ? t('stop') : t('start');
-    if (s.radio) { const r = s.radio, nm = r.on ? r.name : t('rOff'), sb = r.on ? r.freq + ' FM · ' + (r.status === 'live' ? t('rLive') : r.status === 'synth' ? t('rSynth') : t('rTune')) : '—'; if (el.rn.textContent !== nm) el.rn.textContent = nm; if (el.rs.textContent !== sb) el.rs.textContent = sb; }
+    if (s.radio) {
+      const r = s.radio, nm = r.on ? r.name : t('rOff'), fq = r.on ? (r.freq ? r.freq + ' FM' : '') + (r.status === 'tuning' ? ' …' : '') : '—';
+      if (el.rnm.textContent !== nm) el.rnm.textContent = nm; if (el.rf.textContent !== fq) el.rf.textContent = fq;
+      el.rbox.classList.toggle('on', !!r.on);
+      const key = (r.on ? r.index : -1) + '|' + (r.stations || []).length + '|' + r.volume.toFixed(1);
+      if (key !== listKey && r.stations) { listKey = key; renderList(r); }
+    }
     const a = (s.actions || []).join('|');
     last = { kmh: s.kmh, gear: s.gear, stars: s.stars, onFoot: s.onFoot, engine: s.engine, actions: s.actions };
     if (a !== acts) { acts = a; renderMenu(); const fa = (s.actions || []).filter(k => k === 'enter' || k === 'take' || (s.onFoot && k === 'tow')); el.footAct.innerHTML = fa.map(k => `<button class="cg-b" data-a="${k}">${t(k)}</button>`).join(''); }
@@ -232,6 +267,6 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     miniMap(D) { const W = el.cv.width, H = el.cv.height; D.range = big ? 620 : 170; mctx.setTransform(1, 0, 0, 1, 0, 0); drawMap(mctx, W, H, D); },
     toggleMap() { big = !big; el.map.classList.toggle('big', big); const px = big ? 720 : 160; el.cv.width = el.cv.height = px; return big; },
     get panelOpen() { return el.pan.classList.contains('show'); },
-    dispose() { clearTimeout(toastT); clearTimeout(revealT); clearTimeout(radioT); root.remove(); },
+    dispose() { clearTimeout(toastT); clearTimeout(revealT); clearTimeout(listT); root.remove(); },
   };
 }

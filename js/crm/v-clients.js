@@ -1,9 +1,9 @@
 // Leads & clients: list (search/filter/bulk), client card with full timeline, kanban pipeline (drag & drop).
-import { unitById } from '../data.js?v=3.8';
-import { tc } from './i18n-crm.js?v=3.8';
-import { S, entries, get, setDoc, delDoc, addTimeline, setStage, clientName, STAGES, dealFinance, splitName, clientIdForEmail } from './store.js?v=3.8';
-import { countryName, esc, icon, eur, fmtDate, fmtDateTime, relDays, initials, uid, openModal, confirmUI, formData, toast, $, $$, isEmail } from './util.js?v=3.8';
-import { pageHead, stageChip, flag, empty, stageOptions, langOptions, fld, allStages, tabs } from './ui.js?v=3.8';
+import { unitById } from '../data.js?v=3.9';
+import { tc } from './i18n-crm.js?v=3.9';
+import { S, entries, get, setDoc, delDoc, addTimeline, setStage, clientName, STAGES, dealFinance, splitName, clientIdForEmail } from './store.js?v=3.9';
+import { countryName, esc, icon, eur, fmtDate, fmtDateTime, relDays, initials, uid, openModal, confirmUI, formData, toast, $, $$, isEmail } from './util.js?v=3.9';
+import { pageHead, stageChip, flag, empty, stageOptions, langOptions, fld, allStages, tabs } from './ui.js?v=3.9';
 
 const F = { q: '', stage: '', lang: '', source: '', sort: 'recent' };
 const SOURCES = ['website', 'referral', 'agent', 'event', 'social', 'phone', 'other'];
@@ -44,7 +44,7 @@ function renderList(root) {
 
   root.querySelectorAll('.filters [name]').forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', () => { F[el.name] = el.value; const pos = el.selectionStart; renderList(root); const n = root.querySelector(`.filters [name=${el.name}]`); n.focus(); if (pos != null && n.setSelectionRange) n.setSelectionRange(pos, pos); }));
   $('[data-act=new]', root).onclick = () => editClient();
-  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.8')).exportClients(rows);
+  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.9')).exportClients(rows);
   const bulk = $('.bulk', root);
   const sel = () => $$('[data-sel]:checked', root).map(x => x.dataset.sel);
   const upd = () => { const n = sel().length; bulk.hidden = !n; $('.bulk-n', root).textContent = tc('nSelected', { n }); };
@@ -138,9 +138,9 @@ function renderCard(root, id) {
 
   root.querySelectorAll('[data-stage]').forEach(b => b.onclick = () => setStage(id, b.dataset.stage).then(() => toast(tc('saved'))));
   $('[data-act=edit]', root).onclick = () => editClient({ id, ...c });
-  $('[data-act=deal]', root).onclick = async () => (await import('./v-deals.js?v=3.8')).newDeal({ clientId: id, unitId: (c.unitIds || [])[0] });
-  $('[data-act=doc]', root).onclick = async () => (await import('./v-documents.js?v=3.8')).newDocument({ clientId: id, dealId: deals[0]?.id });
-  $('[data-act=task]', root).onclick = async () => (await import('./v-tasks.js?v=3.8')).editTask({ clientId: id });
+  $('[data-act=deal]', root).onclick = async () => (await import('./v-deals.js?v=3.9')).newDeal({ clientId: id, unitId: (c.unitIds || [])[0] });
+  $('[data-act=doc]', root).onclick = async () => (await import('./v-documents.js?v=3.9')).newDocument({ clientId: id, dealId: deals[0]?.id });
+  $('[data-act=task]', root).onclick = async () => (await import('./v-tasks.js?v=3.9')).editTask({ clientId: id });
   $('[data-act=log]', root).onclick = async () => {
     const txt = $('[name=evText]', root).value.trim(); if (!txt) { $('[name=evText]', root).focus(); return; }
     const at = $('[name=evAt]', root).value; const type = $('[name=evType]:checked', root).value;

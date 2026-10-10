@@ -11,11 +11,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.8';
+import { createCarInstances, carSpec, pickCar, carRng } from './cars.js?v=3.9';
 import {
   CORRIDORS, CORES, BUILDINGS, LEVELS, TOP_FLOOR, BASEMENT, RAMP as RAMP_D, floorY, unitsOn, blocksOn, unitToLocal, unitYaw,
   coresOf, isMirrored,
-} from '../data.js?v=3.8';
+} from '../data.js?v=3.9';
 
 const TAU = Math.PI * 2;
 const DOOR_W = 0.95, DOOR_H = 2.2;          // apartment entrance opening
@@ -1530,7 +1530,8 @@ export class Lift {
     // operating panel (COP) on the front return wall beside the doors (−x side), facing the back of the car:
     // a tall black-glass column in a brass frame. zs = its face; the visitor reads it from `this.stand` at the back.
     const P = this.panel = { xc: -0.652, zs: zf - 0.028, y0: 0.7, y1: 1.885, hw: 0.138 };
-    this.stand = { x: 0.14, z: zb + 0.42, look: [-0.24, 1.5, zf] };   // car-local standing spot + look-at point
+    // standing spot: the visitor stands at the back of the cabin and looks forward over the whole car (walk.js frames it)
+    this.stand = { x: 0.0, z: zb + 0.2, look: [-0.2, 1.38, (zf + zb) / 2 + 0.2] };   // car-local standing spot + look-at point
     b.box('blackGlass', P.xc - P.hw, P.xc + P.hw, P.y0, P.y1, P.zs, zf - 0.012);
     for (const [y0, y1, x0, x1] of [[P.y0 - 0.008, P.y0, -P.hw - 0.008, P.hw + 0.008], [P.y1, P.y1 + 0.008, -P.hw - 0.008, P.hw + 0.008],
       [P.y0, P.y1, -P.hw - 0.008, -P.hw], [P.y0, P.y1, P.hw, P.hw + 0.008]]) b.box('brass', P.xc + x0, P.xc + x1, y0, y1, P.zs - 0.003, zf - 0.012);

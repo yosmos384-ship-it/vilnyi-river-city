@@ -1,5 +1,5 @@
 // VILNYI Lifestyle casino — poker hand evaluation shared by video poker and Casino Hold'em (pure logic).
-import { rankOf, suitOf } from './rng.js?v=3.8';
+import { rankOf, suitOf } from './rng.js?v=3.9';
 
 export const CAT = ['High card', 'Pair', 'Two pair', 'Three of a kind', 'Straight', 'Flush', 'Full house', 'Four of a kind', 'Straight flush', 'Royal flush'];
 const hi = (c) => { const r = rankOf(c); return r === 0 ? 14 : r + 1; };          // ace high = 14, 2…13

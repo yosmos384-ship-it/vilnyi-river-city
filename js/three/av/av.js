@@ -3,15 +3,15 @@
 //    is the last one and the fallback). Each time a flat is entered it tunes to a random station;
 //  · the apartment's 5.1 surround (surround.js) for everything the radio plays through the synth (the stream elements are
 //    stereo: a browser routes a cross-origin stream through Web Audio only when the stream allows it, which is not assumed);
-//  · the lift music (music.js): it starts with a lift ride and carries through the corridors until the visitor enters a
-//    flat, leaves the building or gets into a car;
+//  · the lift music (music.js): it starts with the first tap inside the building and carries through the lobby, the lifts
+//    and the corridors; it stops when the visitor enters a flat, leaves the building or gets into a car;
 //  · the car radio: a car in the car park has its own radio (stereo), playing a random station on entry;
 //  · one mute for all of it, kept between visits.
 // Browsers play no sound before a gesture: whatever is due waits for the next tap (sync() runs again then).
-import { createAudio } from '../city/audio.js?v=3.8';
-import { STATIONS } from '../city/radio.js?v=3.8';
-import { createSurround } from './surround.js?v=3.8';
-import { createLiftMusic } from './music.js?v=3.8';
+import { createAudio } from '../city/audio.js?v=3.9';
+import { STATIONS } from '../city/radio.js?v=3.9';
+import { createSurround } from './surround.js?v=3.9';
+import { createLiftMusic } from './music.js?v=3.9';
 
 const VOL = 0.62;
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -19,7 +19,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private
 
 export function createAV({ getCtx, onChange = () => {} } = {}) {
   const stations = STATIONS;
-  const S = { muted: lsGet('vrc.av.mute') === '1', place: 'none', placeKey: 'none', armed: false, liftOn: false, radio: null, radioKey: null,
+  const S = { muted: lsGet('vrc.av.mute') === '1', place: 'none', placeKey: 'none', liftOn: false, waitTap: false, radio: null, radioKey: null,
     station: -1, last: -1, status: 'off', pendingSync: false };
   const dead = new Set();
   let ac = null, final = null, sur = null, carBus = null, radioBus = null, synth = null, lift = null, el = null, tm = 0, tok = 0, noise = null, disposed = false;
@@ -103,7 +103,7 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
   function sync() {
     if (disposed) return;
     const want = S.place === 'apartment' ? 'apartment' : S.place === 'car' ? 'car' : null;
-    const wantLift = S.armed && (S.place === 'lift' || S.place === 'common');
+    const wantLift = (S.place === 'lift' || S.place === 'common') && !S.waitTap;   // inside the building, after a tap there
     if (!graph()) { S.pendingSync = true; emit(); return; }   // no sound before a gesture
     S.pendingSync = false;
     if (S.radioKey !== (want ? S.placeKey : null)) {
@@ -118,9 +118,9 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
     if (disposed) return;
     const pk = kind + (key ? '|' + key : '');
     if (pk === S.placeKey) return;
+    // coming in from the street: the lift music waits for the first tap inside the building (browsers want a gesture too)
+    if ((kind === 'lift' || kind === 'common') && (S.place === 'none' || S.place === 'outside')) S.waitTap = true;
     S.place = kind; S.placeKey = pk;
-    if (kind === 'lift') S.armed = true;                                                    // a ride starts the lift music
-    if (kind === 'apartment' || kind === 'car' || kind === 'outside' || kind === 'none') S.armed = false;
     sync();
   }
   function setMute(v) {
@@ -145,9 +145,10 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
   // a tap anywhere (the first one included) unlocks the sound: the waiting sync runs, a blocked station plays
   const onGesture = () => {
     if (disposed) return;
+    const waited = S.waitTap || S.pendingSync; S.waitTap = false;
     if (!graph()) return;
     if (ac.state === 'suspended') ac.resume().catch(() => {});
-    if (S.pendingSync) sync();
+    if (waited) sync();
     if (S.status === 'tap' && S.station >= 0) play(S.station);
   };
   const GEST = ['pointerdown', 'keydown', 'touchend'];
@@ -159,7 +160,7 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
     toggleMute() { setMute(!S.muted); },
     dispose() {
       if (disposed) return;
-      disposed = true; S.placeKey = 'none'; S.place = 'none'; S.armed = false;
+      disposed = true; S.placeKey = 'none'; S.place = 'none'; S.waitTap = false;
       for (const n of GEST) document.removeEventListener(n, onGesture, true);
       tok++; stopStream();
       try { if (synth) synth.dispose(); } catch { /* */ }

@@ -2,8 +2,8 @@
 // −1 car park is on screen; the game itself (city/index.js and friends) is only fetched after the visitor opts in.
 // Without that opt-in nothing here changes the tour except the working exit gate of the car park.
 import * as THREE from 'three';
-import { createParkingGate } from './gate.js?v=3.8';
-import { cityT, cityDir } from './i18n.js?v=3.8';
+import { createParkingGate } from './gate.js?v=3.9';
+import { cityT, cityDir } from './i18n.js?v=3.9';
 
 const CSS = `.cgh-chip{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(214px + env(safe-area-inset-bottom,0px));z-index:6;display:none;align-items:center;gap:8px;padding:0 16px;height:44px;border-radius:22px;border:1px solid #f0d596;background:linear-gradient(180deg,#f0d596,#b88a3c);color:#14100a;font:700 13.5px/1 Manrope,Heebo,system-ui,sans-serif;white-space:nowrap;cursor:pointer;pointer-events:auto;box-shadow:0 4px 18px rgba(0,0,0,.5)}
 .cgh-chip.show{display:flex}.cgh-chip.near{animation:cghp 1.4s ease-in-out infinite}@keyframes cghp{50%{box-shadow:0 0 0 7px rgba(240,213,150,.28),0 4px 18px rgba(0,0,0,.5)}}
@@ -56,7 +56,7 @@ export function createCityHook(walk) {
       try {
         const D = walk.drive, rec = D && D.rec;
         try { walk._engineStop && walk._engineStop(); if (D) D.pad.gas = D.pad.brake = D.pad.steer = 0; walk.keys && walk.keys.clear(); } catch { /* */ }
-        const m = await import('./index.js?v=3.8');
+        const m = await import('./index.js?v=3.9');
         const g = await m.startCityDrive({
           renderer: walk.renderer, container: root, lang: walk.lang, envMap: walk.scene.environment || null, timeMode: walk.envMode || 'day',
           car: rec ? { kind: rec.kind, colour: rec.colour, seed: (String(rec.id).split(':').pop() | 0) % 53 + 3 } : {},

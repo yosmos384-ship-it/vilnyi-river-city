@@ -1,12 +1,12 @@
 // Units inventory: all UNITS from data.js, effective status (CRM units/{id} doc > active web reservation > available),
 // floor-matrix and table views, bulk status changes. Writes units/{unitId} = {status, clientId, dealId, updatedAt}.
-import { UNITS, TYPES, unitById, money } from '../data.js?v=3.8';
-import { unitLabelL } from '../i18n.js?v=3.8';
-import { tc } from './i18n-crm.js?v=3.8';
-import { unitState, setUnitStatus, get, entries, clientName, UNIT_STATUSES, all, patchDoc } from './store.js?v=3.8';
-import { esc, icon, eur, fmtDate, openModal, toast, $, $$, formData } from './util.js?v=3.8';
-import { pageHead, statusChip, statusOptions, clientOptions, fld, empty } from './ui.js?v=3.8';
-import { STATUS_COLORS, legend } from './charts.js?v=3.8';
+import { UNITS, TYPES, unitById, money } from '../data.js?v=3.9';
+import { unitLabelL } from '../i18n.js?v=3.9';
+import { tc } from './i18n-crm.js?v=3.9';
+import { unitState, setUnitStatus, get, entries, clientName, UNIT_STATUSES, all, patchDoc } from './store.js?v=3.9';
+import { esc, icon, eur, fmtDate, openModal, toast, $, $$, formData } from './util.js?v=3.9';
+import { pageHead, statusChip, statusOptions, clientOptions, fld, empty } from './ui.js?v=3.9';
+import { STATUS_COLORS, legend } from './charts.js?v=3.9';
 
 const F = { view: 'grid', b: '', floor: '', rooms: '', status: '', q: '' };
 try { F.view = localStorage.getItem('vrc.crm.unitView') || 'grid'; } catch (e) { /* ignore */ }
@@ -35,7 +35,7 @@ export function render(root, name, params) {
   root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { F.view = b.dataset.view; try { localStorage.setItem('vrc.crm.unitView', F.view); } catch (e) { /* ignore */ } render(root, name, []); });
   root.querySelectorAll('[data-status]').forEach(b => b.onclick = () => { F.status = F.status === b.dataset.status ? '' : b.dataset.status; render(root, name, []); });
   root.querySelectorAll('[data-unit]').forEach(b => b.onclick = e => { if (e.target.closest('input')) return; editUnit(b.dataset.unit); });
-  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.8')).exportUnits(rows);
+  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.9')).exportUnits(rows);
   // bulk
   const bulk = $('.bulk', root);
   if (bulk) {
@@ -84,7 +84,7 @@ export function editUnit(id) {
         if (f.status === 'available') for (const r of res.filter(r => r.status !== 'cancelled')) await patchDoc('reservations', r.resNo, { status: 'cancelled', cancelledAt: new Date().toISOString() }, `web reservation ${r.resNo} cancelled`);
         toast(tc('saved')); close();
       };
-      d.querySelector('[data-deal]')?.addEventListener('click', async () => { close(); (await import('./v-deals.js?v=3.8')).newDeal({ unitId: id, clientId: d.querySelector('[name=clientId]').value || undefined }); });
+      d.querySelector('[data-deal]')?.addEventListener('click', async () => { close(); (await import('./v-deals.js?v=3.9')).newDeal({ unitId: id, clientId: d.querySelector('[name=clientId]').value || undefined }); });
       d.querySelector('[href^="#/deal"]')?.addEventListener('click', close);
     },
   });

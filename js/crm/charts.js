@@ -1,5 +1,5 @@
 // Plain-SVG charts with a shared hover/focus tooltip. Single y-axis only; thin marks; recessive grid.
-import { esc } from './util.js?v=3.8';
+import { esc } from './util.js?v=3.9';
 
 export const STATUS_COLORS = { available: '#2f9e74', reserved: '#b68a24', sold: '#7a84d8', blocked: '#d45a3c' };  // validated (dark surface)
 export const SERIES = ['#c9a96a', '#7a84d8'];

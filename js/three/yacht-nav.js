@@ -1,5 +1,5 @@
 // VILNYI Lifestyle yacht — navigable water of Lacul Morii and the autopilot's route (pure maths, world coordinates).
-import { LAKE } from '../data.js?v=3.8';
+import { LAKE } from '../data.js?v=3.9';
 
 // shore polygon: data.js LAKE.shore smoothed exactly like lake.js SHORE (closed Catmull-Rom)
 const SHORE = (() => {

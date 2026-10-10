@@ -1,7 +1,7 @@
 // VILNYI Lifestyle casino — video poker, Jacks or Better with the full-pay 9/6 table (pure logic, money in cents).
 // One 52-card pack shuffled for every hand; five cards dealt, any of them held, the rest replaced once.
-import { shuffle } from './rng.js?v=3.8';
-import { eval5 } from './poker.js?v=3.8';
+import { shuffle } from './rng.js?v=3.9';
+import { eval5 } from './poker.js?v=3.9';
 
 // payout per coin for 1…5 coins bet (the royal flush pays 800 per coin at five coins: 4000)
 export const PAYTABLE = [

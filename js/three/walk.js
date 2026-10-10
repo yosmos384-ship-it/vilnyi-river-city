@@ -7,14 +7,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
-} from '../data.js?v=3.8';
-import { I18N } from '../i18n.js?v=3.8';
-import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.8';   // post-processing + adaptive quality (Graphics setting)
-import { PbrAssets } from './pbr.js?v=3.8';                     // CC0 HDRI lighting + detail maps (Medium / High only)
-import './bake.js?v=3.8';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.8';
-import { createAV } from './av/av.js?v=3.8';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
-import { mountAvBar } from './av/bar.js?v=3.8';     // the always-visible sound bar (mute + scanner)
+} from '../data.js?v=3.9';
+import { I18N } from '../i18n.js?v=3.9';
+import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.9';   // post-processing + adaptive quality (Graphics setting)
+import { PbrAssets } from './pbr.js?v=3.9';                     // CC0 HDRI lighting + detail maps (Medium / High only)
+import './bake.js?v=3.9';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.9';
+import { createAV } from './av/av.js?v=3.9';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
+import { mountAvBar } from './av/bar.js?v=3.9';     // the always-visible sound bar (mute + scanner)
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -255,8 +255,8 @@ async function loadModules(injected = {}) {
     try { out[key] = await import(path); } catch (e) { console.warn(`[walk] ${path} unavailable — continuing without it`, e); out[key] = null; }
   };
   await Promise.all([
-    tryImport('environment', './environment.js?v=3.8'), tryImport('exterior', './exterior.js?v=3.8'),
-    tryImport('apartment', './apartment.js?v=3.8'), tryImport('commons', './commons.js?v=3.8'), tryImport('materials', './materials.js?v=3.8'),
+    tryImport('environment', './environment.js?v=3.9'), tryImport('exterior', './exterior.js?v=3.9'),
+    tryImport('apartment', './apartment.js?v=3.9'), tryImport('commons', './commons.js?v=3.9'), tryImport('materials', './materials.js?v=3.9'),
   ]);
   return out;
 }
@@ -1993,7 +1993,7 @@ export class Walkthrough {
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
-        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.8');
+        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.9');
         const reg = window.VRC_PANO;
         if (reg && reg.ready && typeof reg.ready.then === 'function') await reg.ready;
       } catch (e) { console.info('[walk] photoreal tour not deployed yet', e && e.message); this._panoFailed = true; }
@@ -2004,7 +2004,7 @@ export class Walkthrough {
   // The pano manifest (same file pano-tour.js reads) — fetched only once a type/style is known to exist.
   async _panoManifest() {
     if (!this._panoMan) {
-      const url = new URL('../../assets/pano/index.json?v=3.8', import.meta.url);
+      const url = new URL('../../assets/pano/index.json?v=3.9', import.meta.url);
       this._panoMan = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return this._panoMan;
@@ -2039,7 +2039,7 @@ export class Walkthrough {
     this._panoBusy = true;
     let mod = this.mods.panoTour;
     try {
-      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.8');
+      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.9');
     } catch (e) {
       console.warn('[walk] pano-tour.js unavailable', e);
       this._panoFailed = true; this._panoBusy = false; this._renderModes(); this._soonTip(); return;
@@ -2686,7 +2686,7 @@ export class Walkthrough {
     if (!s) return;
     const P = this.player, fx = P.pos.x, fz = P.pos.z, fy = P.yaw, fp = P.pitch;
     const ty = fy + wrapPi(s.yaw - fy);
-    this._zoomForPanel(true, dur);
+    this._zoomForPanel(true, dur, inf, s);
     await tween(dur, k => { P.pos.x = fx + (s.x - fx) * k; P.pos.z = fz + (s.z - fz) * k; P.yaw = P.tYaw = fy + (ty - fy) * k; P.pitch = P.tPitch = fp + (s.pitch - fp) * k; P.vel.set(0, 0, 0); });
     if (!this._keyHint) { this._keyHint = true; this._toast(this.t('walk.tapKey'), 2600); }
   }
@@ -2695,16 +2695,37 @@ export class Walkthrough {
     this._inCarInf = inf || null;
     if (inf) inf.lift.occupied = true;
   }
-  _zoomForPanel(on, dur = 700) {
+  // Inside the car the view is pulled back to take in the whole cabin (walls, ceiling, doors, panel), not zoomed in on it.
+  _zoomForPanel(on, dur = 700, inf = null, s = null) {
     if (on) {
       if (this._zoomSaved == null) this._zoomSaved = this._zoomS;
-      const a = this.camera.aspect || 1;
-      const want = (0.875 * a) / this._baseTanH;             // portrait phones: ≈ 44° across → the car front fills the width, keys finger-sized
-      if (want < this._zoomS) this._tweenZoom(want, dur);
+      const want = inf && s ? this._cabinZoom(inf, s) : (0.875 * (this.camera.aspect || 1)) / this._baseTanH;
+      if (want > 0 && isFinite(want)) this._tweenZoom(want, dur);
     } else if (this._zoomSaved != null) {
       const to = this._zoomSaved; this._zoomSaved = null;
       this._tweenZoom(to, dur);
     }
+  }
+  // The zoom at which the cabin's far corners (those in front of the visitor) fall inside the frame: the vertical field
+  // is widened as far as needed, up to 100° (a wider lens on portrait phones: the side walls may run off the edges there).
+  _cabinZoom(inf, s) {
+    const L = inf.lift, car = L.car, sd = L.stand, eye = this.player.eye;
+    car.updateMatrixWorld(true);
+    const E = car.localToWorld(new THREE.Vector3(sd.x, eye, sd.z)), T = car.localToWorld(new THREE.Vector3(sd.look[0], sd.look[1], sd.look[2]));
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(E, T, new THREE.Vector3(0, 1, 0)));
+    const inv = new THREE.Matrix4().compose(E, q, new THREE.Vector3(1, 1, 1)).invert();
+    let mx = 0, my = 0;
+    const pts = [];
+    for (const x of [-0.84, 0.84]) for (const y of [0, 2.5]) for (const z of [-1.95, -0.05, -0.9]) pts.push([x, y, z]);
+    pts.push([-0.652, 0.7, -0.2], [-0.652, 1.9, -0.2]);   // the operating panel
+    for (const [x, y, z] of pts) {
+      const p = new THREE.Vector3(x, y, z).applyMatrix4(car.matrixWorld).applyMatrix4(inv), d = -p.z;
+      if (d < 0.3) continue;                               // behind the visitor's own plane: the walls run off the sides there
+      mx = Math.max(mx, Math.abs(p.x / d)); my = Math.max(my, Math.abs(p.y / d));
+    }
+    const a = this.camera.aspect || 1;
+    const tanV = Math.min(Math.tan(50 * D2R), Math.max(my, mx / a) / 0.94);
+    return (tanV * a) / this._baseTanH;
   }
   _tweenZoom(to, dur) {
     const from = this._zoomS, tok = (this._zoomTok = (this._zoomTok || 0) + 1);
@@ -2763,7 +2784,7 @@ export class Walkthrough {
     if (st) {
       const sx = P.pos.x, sz = P.pos.z, sy = P.yaw, sp = P.pitch, ty = sy + wrapPi(st.yaw - sy);
       const far = Math.hypot(st.x - sx, st.z - sz) > 0.05 || Math.abs(ty - sy) > 0.05;
-      if (far) { this._zoomForPanel(true, 500); await tween(500, k => { P.pos.x = sx + (st.x - sx) * k; P.pos.z = sz + (st.z - sz) * k; P.yaw = P.tYaw = sy + (ty - sy) * k; P.pitch = P.tPitch = sp + (st.pitch - sp) * k; }); }
+      if (far) { this._zoomForPanel(true, 500, inf, st); await tween(500, k => { P.pos.x = sx + (st.x - sx) * k; P.pos.z = sz + (st.z - sz) * k; P.yaw = P.tYaw = sy + (ty - sy) * k; P.pitch = P.tPitch = sp + (st.pitch - sp) * k; }); }
     } else {
       const [cx, cz] = this._carWorld(inf), sx = P.pos.x, sz = P.pos.z;
       await tween(350, k => { P.pos.x = sx + (cx - sx) * k; P.pos.z = sz + (cz - sz) * k; });
@@ -3706,7 +3727,7 @@ export class Walkthrough {
 
   // GT VILNYI (app.js): City Drive from the walkthrough. opts.startId: where the car starts (osm.js STARTS); no chooser then.
   async startCity(opts = {}) {
-    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.8'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
+    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.9'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
     for (let k = 0; k < 50 && !this._cityHook && !this.disposed; k++) await new Promise(r => setTimeout(r, 100));
     return this._cityHook ? this._cityHook.start(opts) : undefined;
   }
@@ -4141,7 +4162,7 @@ export class Walkthrough {
     // 'parking' source as taken, so the real cars were refused later and their instances hidden — an empty car park.)
     if (!c || !Array.isArray(c.parkedCars) || !c.parkedCars.length) return;
     // the car park's exit gate + the opt-in "City Drive" game mode: fetched the first time the −1 level is on screen
-    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.8').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
+    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.9').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
     if (!this.fleet && !this._carsTried) { this._carsTried = true; this._initCars(); }   // in the car park before the world finished streaming
     if (!this.fleet) return;
     if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
@@ -4777,7 +4798,7 @@ Object.assign(Walkthrough.prototype, {
       if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
       this._yachtP = (async () => {
         await this._ready; await (this._worldP || this._streamWorld());
-        const mod = await import('./yacht.js?v=3.8');
+        const mod = await import('./yacht.js?v=3.9');
         if (this.disposed) return null;
         return (this.yacht = mod.createYacht(this));
       })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
@@ -4826,7 +4847,7 @@ Object.assign(Walkthrough.prototype, {
   async _initLimo() {
     if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
     try {
-      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.8'));
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.9'));
       if (this.disposed || this.limo) return;
       this.limo = new mod.LimoExperience(this);
       (window.VRC = window.VRC || {}).PIER = mod.PIER;

@@ -13,7 +13,7 @@
 // Atlas: 3 × 2 cells (+X −X +Y −Y +Z −Z in unit-local axes x = u, y up, z = v), each rendered with a small overscan
 // (OVERSCAN) so bilinear taps never cross into a neighbouring cell; values are display-referred sRGB (ACES filmic).
 import * as THREE from 'three';
-import { BUILDINGS, TYPES, floorY, unitToWorld, unitYaw } from './data.js?v=3.8';
+import { BUILDINGS, TYPES, floorY, unitToWorld, unitYaw } from './data.js?v=3.9';
 
 export const OVERSCAN = 1.03;
 
@@ -35,7 +35,7 @@ const FACES = [   // forward, up (unit-local); right = forward × up — must ma
 ];
 
 export async function createOutside(renderer, { face = 1024 } = {}) {
-  const [envMod, extMod] = await Promise.all([import('./three/environment.js?v=3.8'), import('./three/exterior.js?v=3.8')]);
+  const [envMod, extMod] = await Promise.all([import('./three/environment.js?v=3.9'), import('./three/exterior.js?v=3.9')]);
   // environment.js keeps module-level state shared by every instance on the page (hero, walkthrough): remember it and
   // put it back on dispose, so the paused live 3D underneath finds its own mode / sky map again.
   const SH = envMod.SHARED;
