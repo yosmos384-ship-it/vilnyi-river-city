@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng, cards } from '../rng.js?v=3.7';
-import { eval5, best, CAT } from '../poker.js?v=3.7';
-import { VideoPoker, PAYTABLE, category, payFor } from '../videopoker.js?v=3.7';
-import { CasinoHoldem, settle, qualifies, antePays } from '../holdem.js?v=3.7';
+import { seededRng, cards } from '../rng.js?v=3.8';
+import { eval5, best, CAT } from '../poker.js?v=3.8';
+import { VideoPoker, PAYTABLE, category, payFor } from '../videopoker.js?v=3.8';
+import { CasinoHoldem, settle, qualifies, antePays } from '../holdem.js?v=3.8';
 
 const E5 = (s) => eval5(cards(s));
 test('five-card ranking: categories and tie-breaks', () => {

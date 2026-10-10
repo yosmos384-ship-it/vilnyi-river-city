@@ -1,9 +1,9 @@
 // Tasks & reminders: due dates, linked client/deal, recurring (weekly/monthly) — completing a recurring task
 // schedules the next one. Instalments due soon appear as automatic payment reminders.
-import { tc } from './i18n-crm.js?v=3.7';
-import { entries, get, setDoc, patchDoc, delDoc, clientName, activeDeals, dealFinance } from './store.js?v=3.7';
-import { esc, icon, eur, fmtDate, relDays, today, addDays, addMonths, uid, openModal, formData, toast, $ } from './util.js?v=3.7';
-import { pageHead, clientOptions, fld, empty, tabs } from './ui.js?v=3.7';
+import { tc } from './i18n-crm.js?v=3.8';
+import { entries, get, setDoc, patchDoc, delDoc, clientName, activeDeals, dealFinance } from './store.js?v=3.8';
+import { esc, icon, eur, fmtDate, relDays, today, addDays, addMonths, uid, openModal, formData, toast, $ } from './util.js?v=3.8';
+import { pageHead, clientOptions, fld, empty, tabs } from './ui.js?v=3.8';
 
 const F = { tab: 'open' };
 const REPEAT = ['none', 'weekly', 'monthly'];

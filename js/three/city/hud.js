@@ -189,7 +189,6 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
   function showSettings(time, about = '') {
     const seg = (a, opts, cur) => `<div class="cg-seg">${opts.map(([v, l]) => `<button class="cg-b${String(cur) === String(v) ? ' on' : ''}" data-a="${a}" data-v="${v}">${l}</button>`).join('')}</div>`;
     panel(`<h3>${t('settings')}</h3>
-      <div class="cg-rw"><span>${t('violence')}</span>${seg('setViolence', [[1, t('on')], [0, t('off')]], settings.violence ? 1 : 0)}</div>
       <div class="cg-rw"><span>${t('traffic')}</span>${seg('setTraffic', [[1, t('low')], [2, t('med')], [3, t('hi')]], settings.traffic)}</div>
       <div class="cg-rw"><span>${t('sound')}</span>${seg('setSound', [[1, t('on')], [0, t('off')]], settings.sound ? 1 : 0)}</div>
       <div class="cg-rw"><span>${t('day')} / ${t('night')}</span>${seg('setTime', [['day', t('day')], ['dusk', t('dusk')], ['night', t('night')]], time)}</div>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng, cryptoRng, shuffle, Shoe, card, cards, cardName, rankOf, suitOf } from '../rng.js?v=3.7';
+import { seededRng, cryptoRng, shuffle, Shoe, card, cards, cardName, rankOf, suitOf } from '../rng.js?v=3.8';
 
 test('seeded rng is deterministic and in range', () => {
   const a = seededRng(42), b = seededRng(42), c = seededRng(43);

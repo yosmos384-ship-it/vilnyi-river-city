@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.7';
-import { buildMap, BOUNDS } from './map.js?v=3.7';
-import { buildRealMap } from './osm.js?v=3.7';
-import { createWorld } from './world.js?v=3.7';
-import { createTraffic } from './traffic.js?v=3.7';
-import { createPeds } from './peds.js?v=3.7';
-import { createFx } from './fx.js?v=3.7';
-import { createAudio } from './audio.js?v=3.7';
-import { createRadio } from './radio.js?v=3.7';
-import { createHud } from './hud.js?v=3.7';
-import { cityT, cityDir } from './i18n.js?v=3.7';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.7';
-import { poiSign } from './gen.js?v=3.7';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.8';
+import { buildMap, BOUNDS } from './map.js?v=3.8';
+import { buildRealMap } from './osm.js?v=3.8';
+import { createWorld } from './world.js?v=3.8';
+import { createTraffic } from './traffic.js?v=3.8';
+import { createPeds } from './peds.js?v=3.8';
+import { createFx } from './fx.js?v=3.8';
+import { createAudio } from './audio.js?v=3.8';
+import { createRadio } from './radio.js?v=3.8';
+import { createHud } from './hud.js?v=3.8';
+import { cityT, cityDir } from './i18n.js?v=3.8';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.8';
+import { poiSign } from './gen.js?v=3.8';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -23,7 +23,7 @@ const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v == nu
 
 export async function startCityDrive(host) {
   const { renderer, container } = host, t = cityT(host.lang), dir = cityDir(host.lang);
-  const settings = { violence: ls.get('vrc.city.violence', '1') !== '0', traffic: clamp(+ls.get('vrc.city.traffic', '2') || 2, 1, 3), sound: ls.get('vrc.city.sound', '1') !== '0' };
+  const settings = { violence: true, traffic: clamp(+ls.get('vrc.city.traffic', '2') || 2, 1, 3), sound: ls.get('vrc.city.sound', '1') !== '0' };
   // the real streets (OpenStreetMap) when they load, the procedural district otherwise
   let map; try { map = await buildRealMap(); } catch (e) { console.warn('[city] real street map unavailable — procedural district', e); map = buildMap(); }
   const scene = new THREE.Scene(); scene.environment = host.envMap || null;
@@ -39,19 +39,31 @@ export async function startCityDrive(host) {
   const keys = new Set();
   const hud = createHud(container, { t, dir, lang: host.lang, settings, onAction: (a, v) => act(a, v) });
   const game = { active: true, frame, dispose, api: null };
+  // a mute that is always on screen: the whole game's sound (engine, traffic, radio) goes quiet, and stays so
+  let muted = ls.get('vrc.city.mute', '0') === '1';
+  const muteB = document.createElement('button'); muteB.type = 'button'; muteB.className = 'cg-mute';
+  muteB.style.cssText = 'position:absolute;top:10px;left:10px;z-index:40;width:42px;height:42px;border-radius:50%;border:1px solid rgba(201,164,92,.55);background:rgba(10,9,7,.82);color:#e6cc92;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;padding:0';
+  const setMute = v => { muted = !!v; ls.set('vrc.city.mute', muted ? '1' : '0'); audio.setEnabled(!muted && settings.sound); radio.duck(muted ? 0 : 1); paintMute(); };
+  const paintMute = () => { const lbl = muted ? t('sound') + ' · ' + t('off') : t('sound') + ' · ' + t('on'); muteB.setAttribute('aria-label', lbl); muteB.title = lbl; muteB.setAttribute('aria-pressed', String(muted));
+    muteB.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/>${muted ? '<path d="M16 9.5l5 5M21 9.5l-5 5"/>' : '<path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'}</svg>`; };
+  muteB.addEventListener('click', ev => { ev.stopPropagation(); setMute(!muted); });
+  for (const n of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'dblclick']) muteB.addEventListener(n, ev => ev.stopPropagation());
+  container.appendChild(muteB); paintMute(); if (muted) setMute(true);
 
   // ------------------------------------------------------------------ player
   const P = { mode: 'car', car: null, body: null, extras: null, foot: { x: 0, z: 0, yaw: 0, pitch: 0, onFoot: true, vx: 0, vz: 0, isPlayer: true, mode: 'player' }, view: ls.get('vrc.city.view', 'fp') === 'chase' ? 'chase' : 'fp',
-    look: { yaw: 0, pitch: 0 }, back: 0, fpTune: { up: 0.0, fwd: 0.22, pitch: 0.0, hfov: 72, p: 0.4 }, start: 'garage', engine: false, lights: null, high: false, wipers: false, wipT: 0, ind: 0, indT: 0, hb: false, door: 0, doorT: 0, win: 0, winT: 0, cam: null, shake: 0, surf: { grip: 1, drag: 1 }, surfT: 0, stuck: 0, blood: 0 };
+    look: { yaw: 0, pitch: 0 }, back: 0, fpTune: { up: 0.0, fwd: 0.22, pitch: 0.0, hfov: 72, p: 0.4 }, start: 'garage', engine: false, lights: null, high: false, wipers: false, wipT: 0, ind: 0, indT: 0, hb: false, door: 0, doorT: 0, win: 0, winT: 0, cam: null, shake: 0, surf: { grip: 1, drag: 1 }, surfT: 0, stuck: 0 };
   let heat = 0, hideT = 0, bustT = 0, crimeT = -99, state = 'play', time = 0, frameN = 0, hudT = 0, mapT = 0, route = null, routeT = -9, ambT = -99, lastHit = -9, edgeT = -9, policeT = 0, dmgStage = 0;
   const G0 = map.site.garage;
+  // host.startId (GT VILNYI): the car starts on that street instead of the car park's garage, with no start chooser
+  const S0 = host.startId && map.real ? map.startPose(host.startId) : null, A0 = S0 && !S0.garage ? S0 : G0;
 
   function windscreenFrame(S) {   // a frame lying in the windscreen: x across, y up the glass, z out of it
     const by = S.bA + 0.02, bz = S.zA + 0.06, ty = S.roof - 0.05, tz = S.zT1 + 0.1, len = Math.hypot(ty - by, tz - bz);
     const Y = new THREE.Vector3(0, (ty - by) / len, (tz - bz) / len), X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3().crossVectors(X, Y);
     const g = new THREE.Group(); g.matrixAutoUpdate = false; g.matrix.makeBasis(X, Y, Z).setPosition(0, by, bz); g.userData.len = len; return g;
   }
-  let crackTex = null, bloodTex = null;
+  let crackTex = null;
   function crackTexture() {
     if (crackTex) return crackTex; const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d'); let s = 91; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
     g.strokeStyle = 'rgba(235,245,255,0.85)'; g.lineCap = 'round';
@@ -61,11 +73,6 @@ export async function startCityDrive(host) {
       const gr = g.createRadialGradient(cx, cy, 0, cx, cy, 26); gr.addColorStop(0, 'rgba(240,248,255,0.8)'); gr.addColorStop(1, 'rgba(240,248,255,0)'); g.fillStyle = gr; g.fillRect(cx - 26, cy - 26, 52, 52);
     }
     return (crackTex = new THREE.CanvasTexture(c));
-  }
-  function bloodTexture() {
-    if (bloodTex) return bloodTex; const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); let s = 17; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-    g.fillStyle = 'rgba(120,8,12,0.9)'; for (let k = 0; k < 46; k++) { const a = r() * 6.283, d = r() * r() * 56; g.beginPath(); g.ellipse(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 2 + r() * 9 * (1 - d / 70), 1.5 + r() * 5, a, 0, 7); g.fill(); }
-    return (bloodTex = new THREE.CanvasTexture(c));
   }
   function mountCar(kind, colour, x, z, yaw, dmg = 0, seed = 7) {
     const col = CAR_COLOURS[colour] ? colour : 'graphite';
@@ -77,21 +84,18 @@ export async function startCityDrive(host) {
     const bladeM = new THREE.MeshBasicMaterial({ color: 0x0a0a0b });
     const blades = [-1, 1].map((sd, i) => { const pv = new THREE.Group(); pv.position.set(sd > 0 ? 0.08 : -S.W / 2 + 0.34, 0.045, 0.014); const m = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.022, 0.02).translate(0.28, 0, 0), bladeM); pv.add(m); pv.rotation.z = 0.06; wf.add(pv); return pv; });
     const crack = new THREE.Mesh(new THREE.PlaneGeometry(S.W - 0.62, wf.userData.len * 0.9).translate(0, wf.userData.len * 0.47, 0.02), new THREE.MeshBasicMaterial({ map: crackTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0 })); crack.renderOrder = 4; crack.visible = false; wf.add(crack);
-    // a splat on the bonnet (stylised)
-    const zb = S.zA + 0.12, zf = S.zF - 0.75, top = z0 => { const T = S.top; for (let k = 1; k < T.length; k++) if (z0 <= T[k][0]) { const f = (z0 - T[k - 1][0]) / (T[k][0] - T[k - 1][0]); return T[k - 1][1] + (T[k][1] - T[k - 1][1]) * f; } return T[T.length - 1][1]; };
-    const yb = top(zb), yf = top(zf), bl = Math.hypot(zf - zb, yf - yb), bY = new THREE.Vector3(0, (yf - yb) / bl, (zf - zb) / bl), bX = new THREE.Vector3(1, 0, 0), bZ = new THREE.Vector3().crossVectors(bX, bY).negate();
-    const bf = new THREE.Group(); bf.matrixAutoUpdate = false; bf.matrix.makeBasis(bX, bY, bZ).setPosition(0, yb + 0.018, zb); ex.add(bf);
-    const blood = new THREE.Mesh(new THREE.PlaneGeometry(1.1, Math.min(1.1, bl * 0.9)).translate(0.1, bl * 0.5, 0), new THREE.MeshBasicMaterial({ map: bloodTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); blood.visible = false; bf.add(blood);
+    const zf = S.zF - 0.75, top = z0 => { const T = S.top; for (let k = 1; k < T.length; k++) if (z0 <= T[k][0]) { const f = (z0 - T[k - 1][0]) / (T[k][0] - T[k - 1][0]); return T[k - 1][1] + (T[k][1] - T[k - 1][1]) * f; } return T[T.length - 1][1]; };
+    const yf = top(zf);
     const body = makeBody(kind, x, z, yaw); body.isPlayer = true; body.mode = 'player'; body.colourName = col; body.seed = seed;
-    P.car = car; P.body = G.body = body; P.extras = { ex, blades, crack, blood, bladeM, smokeAt: new THREE.Vector3(0, yf + 0.15, zf - 0.2), deformed: [] };
-    P.blood = 0; P.door = P.doorT = 0; P.win = P.winT = 0; dmgStage = 0;
+    P.car = car; P.body = G.body = body; P.extras = { ex, blades, crack, bladeM, smokeAt: new THREE.Vector3(0, yf + 0.15, zf - 0.2), deformed: [] };
+    P.door = P.doorT = 0; P.win = P.winT = 0; dmgStage = 0;
     if (dmg > 0) { body.dmg = Math.min(88, dmg); const n = Math.ceil(dmg / 22); for (let k = 0; k < n; k++) { const a = k * 2.4 + seed; deform(new THREE.Vector3(Math.cos(a) * S.W / 2, 0.6, Math.sin(a) > 0 ? S.zF - 0.2 : S.zR + 0.2), new THREE.Vector3(-Math.cos(a), 0, Math.sin(a) > 0 ? -1 : 1).normalize(), 0.18); } applyDamageLook(); }
     return car;
   }
   function unmountCar() {
     if (!P.car) return; const X = P.extras;
     for (const d of X.deformed) { d.mesh.geometry = d.orig; d.geo.dispose(); }
-    X.ex.traverse(o => { if (o.geometry) o.geometry.dispose(); }); X.crack.material.dispose(); X.blood.material.dispose(); X.bladeM.dispose();
+    X.ex.traverse(o => { if (o.geometry) o.geometry.dispose(); }); X.crack.material.dispose(); X.bladeM.dispose();
     P.car.group.remove(X.ex); P.car.dispose(); P.car = null; P.extras = null;
   }
   // ---- visible damage: dents by moving the body's vertices (on private copies of the shared geometry)
@@ -129,7 +133,7 @@ export async function startCityDrive(host) {
   function repair(full = true) {
     const b = P.body; if (!b) return;
     const X = P.extras; for (const d of X.deformed) { d.mesh.geometry = d.orig; d.geo.dispose(); } X.deformed.length = 0;
-    b.dmg = 0; b.dead = false; b.pull = 0; b.fuel = 1; P.blood = 0; X.blood.visible = false; X.crack.visible = false; dmgStage = 0;
+    b.dmg = 0; b.dead = false; b.pull = 0; b.fuel = 1; X.crack.visible = false; dmgStage = 0;
     if (full) { world.repairAll(); fx.clear(); }
   }
   // ---- crashes
@@ -158,12 +162,11 @@ export async function startCityDrive(host) {
   function crime(h) { if (h <= 0) return; const was = Math.ceil(heat); heat = Math.min(5, heat + h); crimeT = time; hideT = 0; G.wanted = Math.ceil(heat); if (G.wanted > was && was === 0) hud.toast(t('police'), 1800); }
   G.onPedHit = (p, speed) => {
     audio.crash(clamp(0.2 + speed / 60), p.x, p.z); audio.voiceAt(p.x, p.z, 'cry', 0.9 + Math.random() * 0.3); P.shake = Math.max(P.shake, 0.35);
-    if (settings.violence) { fx.emit('drop', p.x, 1.0, p.z, P.body.vx * 0.4, 2.5, P.body.vz * 0.4, 16, 1.6); fx.splat(p.x, p.z, 1.1 + Math.random() * 0.6); P.blood = Math.min(1, P.blood + 0.5); P.extras.blood.visible = true; P.extras.blood.material.opacity = 0.5 + P.blood * 0.45; }
     P.body.dmg = Math.min(88, P.body.dmg + 2 + speed * 0.12); applyDamageLook();
     crime(1);
     if (time - ambT > 30 && !traffic.units.some(u => u.unit.kind === 'amb')) { ambT = time; const a = traffic.spawnUnit('amb', P.body.x, P.body.z, { x: p.x, z: p.z }); if (a) hud.toast(t('ambulance'), 2200); }
   };
-  G.onPedLand = p => { if (settings.violence) fx.splat(p.x, p.z, 1.5 + Math.random() * 0.9); audio.crash(0.12, p.x, p.z); };
+  G.onPedLand = p => { audio.crash(0.12, p.x, p.z); };
   G.onPedScare = () => { if (Math.random() < 0.15) crime(0.1); };
 
   // ------------------------------------------------------------------ actions
@@ -232,7 +235,6 @@ export async function startCityDrive(host) {
     if (a === 'closePanel') return hud.panel('');
     if (a === 'time') return setTime(world.time === 'day' ? 'dusk' : world.time === 'dusk' ? 'night' : 'day');
     if (a === 'setTime') { setTime(v); return hud.showSettings(world.time, about()); }
-    if (a === 'setViolence') { settings.violence = v === '1'; ls.set('vrc.city.violence', v); if (!settings.violence) { P.blood = 0; if (P.extras) P.extras.blood.visible = false; } return hud.showSettings(world.time, about()); }
     if (a === 'setTraffic') { settings.traffic = +v; ls.set('vrc.city.traffic', v); return hud.showSettings(world.time, about()); }
     if (a === 'setSound') { settings.sound = v === '1'; ls.set('vrc.city.sound', v); audio.setEnabled(settings.sound); radio.duck(settings.sound ? 1 : 0); return hud.showSettings(world.time, about()); }
     if (a === 'repair') { hud.panel(''); repair(true); if (P.mode === 'car' && (world.inSolid(P.body.x, P.body.z, 0.5) || P.stuck > 2)) respawnOnRoad(); hud.toast(t('repair'), 1400); return; }
@@ -518,22 +520,23 @@ export async function startCityDrive(host) {
   }
 
   function dispose() {
-    game.active = false; window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); document.removeEventListener('visibilitychange', onVis);
+    game.active = false; try { muteB.remove(); } catch { /* */ } window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); document.removeEventListener('visibilitychange', onVis);
     try { radio.dispose(); audio.dispose(); } catch (e) { console.warn(e); }
     unmountCar(); traffic.dispose(); peds.dispose(); fx.dispose(); world.dispose(); hud.dispose();
-    if (crackTex) crackTex.dispose(); if (bloodTex) bloodTex.dispose();
+    if (crackTex) crackTex.dispose();
     renderer.toneMappingExposure = saved.exposure; setCarEnvScale(1, null);
   }
 
   // ------------------------------------------------------------------ start: the car at the garage, the first chunks built
   const c0 = host.car || {};
-  mountCar(c0.kind || 'gt', c0.colour || 'graphite', G0.x, G0.z, G0.yaw, 0, c0.seed || 11);
+  mountCar(c0.kind || 'gt', c0.colour || 'graphite', A0.x, A0.z, A0.yaw, 0, c0.seed || 11);
   setTime(host.timeMode || 'day');
-  try { await map.prefetch(G0.x, G0.z); } catch { /* */ }
-  for (let k = 0; k < 600 && (k < 3 || world.pending); k++) { world.update(G0.x, G0.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
+  try { await map.prefetch(A0.x, A0.z); } catch { /* */ }
+  for (let k = 0; k < 600 && (k < 3 || world.pending); k++) { world.update(A0.x, A0.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
   for (let k = 0; k < 40; k++) { traffic.update(0.4, P.body, null, null); }   // seed some traffic before the first frame
   if (host.autoStart !== false && host.gesture) ignition(true);
-  if (map.real && host.chooser !== false) hud.showStarts(map.starts, 'garage', true);   // where to start: the Palace of the Parliament is the featured one
+  if (map.real && host.chooser !== false && A0 === G0) hud.showStarts(map.starts, 'garage', true);   // where to start: the Palace of the Parliament is the featured one
+  if (A0 !== G0) { P.start = host.startId; const SS = map.starts.find(x => x.id === host.startId); if (SS) hud.toast(t(SS.key), 2600); }
   game.api = {
     P, map, world, traffic, peds, fx, hud, radio, audio, scene, camera, settings, act, ignition, impact, crime, repair, toGarage, getOut, getIn, setTime, setView, respawnOnRoad, startFrom, tapScreen,
     autopilot(nodeId, v = 14) { const b0 = P.body, ne = map.nearestEdge(b0.x, b0.z, 40), fwd = ne ? (ne.e.ux * Math.sin(b0.yaw) + ne.e.uz * Math.cos(b0.yaw) >= 0 ? ne.e.b : ne.e.a) : null, a = fwd != null ? map.nodes[fwd] : map.nearestNode(b0.x, b0.z), path = a ? (map.route(a.id, nodeId, true) || map.route(a.id, nodeId)) : null; P.auto = path ? { path, i: 0, k: 0, v, poly: autoPath(path) } : null; return path ? path.length : 0; },

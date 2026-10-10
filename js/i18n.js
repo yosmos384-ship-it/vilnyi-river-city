@@ -2,7 +2,7 @@
 // Project facts (prices, areas, permit numbers) are NOT duplicated here — they come from data.js.
 // Texts that data.js only holds in he/en/ru (tagline, payment plans, contract, partner role) live here as terms.*.
 
-import { TOP_FLOOR } from './data.js?v=3.7';
+import { TOP_FLOOR } from './data.js?v=3.8';
 
 // Flags are inline SVG (Windows has no emoji flags). viewBox 3:2, drawn edge to edge.
 const F = (body) => `<svg class="flag" viewBox="0 0 30 20" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid slice">${body}</svg>`;
@@ -3367,3 +3367,15 @@ export function planText(p, field = 'label') {
   const k = `terms.plan.${p.id}.${field}`; const s = t(k);
   return s === k ? pick(p[field]) : s;
 }
+// v3.8: the 3D-tour building choice and the GT VILNYI button
+const PICK = {
+  en: { 'pick.title': 'Which building?', 'pick.sub': 'Choose the building for the 3D tour', 'pick.c3': 'Building C3', 'pick.c4': 'Building C4', 'pick.cancel': 'Cancel' },
+  ro: { 'pick.title': 'Ce clădire?', 'pick.sub': 'Alegeți clădirea pentru turul 3D', 'pick.c3': 'Clădirea C3', 'pick.c4': 'Clădirea C4', 'pick.cancel': 'Anulează' },
+  he: { 'pick.title': 'באיזה בניין נסייר?', 'pick.sub': 'בחרו את הבניין לסיור התלת‑ממדי', 'pick.c3': 'בניין C3', 'pick.c4': 'בניין C4', 'pick.cancel': 'ביטול' },
+  ru: { 'pick.title': 'Какой корпус?', 'pick.sub': 'Выберите корпус для 3D-тура', 'pick.c3': 'Корпус C3', 'pick.c4': 'Корпус C4', 'pick.cancel': 'Отмена' },
+  uk: { 'pick.title': 'Який корпус?', 'pick.sub': 'Оберіть корпус для 3D-туру', 'pick.c3': 'Корпус C3', 'pick.c4': 'Корпус C4', 'pick.cancel': 'Скасувати' },
+  fr: { 'pick.title': 'Quel bâtiment ?', 'pick.sub': 'Choisissez le bâtiment de la visite 3D', 'pick.c3': 'Bâtiment C3', 'pick.c4': 'Bâtiment C4', 'pick.cancel': 'Annuler' },
+  it: { 'pick.title': 'Quale edificio?', 'pick.sub': 'Scegliete l’edificio per il tour 3D', 'pick.c3': 'Edificio C3', 'pick.c4': 'Edificio C4', 'pick.cancel': 'Annulla' },
+  de: { 'pick.title': 'Welches Gebäude?', 'pick.sub': 'Wählen Sie das Gebäude für die 3D-Tour', 'pick.c3': 'Gebäude C3', 'pick.c4': 'Gebäude C4', 'pick.cancel': 'Abbrechen' },
+};
+for (const l in PICK) Object.assign(I18N[l], PICK[l]);

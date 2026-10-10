@@ -3,7 +3,7 @@
 // data is used: the arterial roads are drawn through the real points of interest of panorama.js (same coordinates) and
 // carry the real street names; the local street grid between them is generated (deterministic) and named after streets
 // of the district. Frame "G": x = metres east, z = metres south of the project pin (map north = −z), ground at y = 0.
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.7';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.8';
 
 export const PROJECT_LL = [44.4639, 26.0347];   // = panorama.js PROJECT_LL
 const M_LAT = 111195, M_LON = 111195 * Math.cos(PROJECT_LL[0] * Math.PI / 180);

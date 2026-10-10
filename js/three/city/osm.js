@@ -4,10 +4,10 @@
 // traced between its OSM bridges, parks are placed at their real positions with approximate outlines.
 // buildRealMap() returns the same map interface as the procedural map.js (nodes / edges / blocks / chunks / queries), so the
 // world, traffic, people and police run on it unchanged. Frame "G": x = metres east, z = metres south of the project pin.
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.7';
-import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG } from './map.js?v=3.7';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.8';
+import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG } from './map.js?v=3.8';
 
-const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.7', import.meta.url);
+const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.8', import.meta.url);
 const VER = GRAPH_URL.search;
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
 
@@ -31,6 +31,10 @@ const LANDMARKS = [
 export const STARTS = [
   { id: 'palace', key: 'stPalace', ll: [44.42768, 26.09290], street: 'Bulevardul Unirii', face: [-1, 0], look: [44.42750, 26.08750] },
   { id: 'garage', key: 'stGarage' },
+  // GT VILNYI: the Marriott hotel (Calea 13 Septembrie 90, Sector 5). The hotel's own coordinates could not be checked from the
+  // build sandbox (no OSM access): the point is the district centre on the avenue; startPose() snaps it to the nearest
+  // OSM segment named Calea 13 Septembrie (on its right-hand lane, along the way of the street).
+  { id: 'marriott', key: 'stMarriott', ll: [44.42056, 26.06944], street: 'Calea 13 Septembrie', face: null },
   { id: 'unirii', key: 'stUnirii', ll: [44.42760, 26.09900], street: 'Bulevardul Unirii', face: [1, 0] },
   { id: 'arc', key: 'stArc', ll: [44.46450, 26.07700], street: null, face: [0, -1], look: [44.46722, 26.07806] },
   { id: 'grozavesti', key: 'stGroz', ll: [44.44530, 26.06300], street: 'Splaiul Independenței', face: [1, 0] },

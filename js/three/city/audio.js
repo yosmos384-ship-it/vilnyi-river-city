@@ -2,14 +2,14 @@
 // indicator relay, wipers, crashes, sirens, other drivers' horns, people shouting, and "VRC FM", a generated music
 // programme for the radio (no recorded or copyrighted tracks). Nothing sounds before a user gesture.
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
-export function createAudio(getCtx) {
+export function createAudio(getCtx, opts = {}) {
   let ac = null, master = null, sfx = null, noiseBuf = null, enabled = true, lx = 0, lz = 0;
   let E = null, SQ = null, WN = null, HN = null, SI = null, R = null;
   function ctx() {
     if (ac) { if (ac.state === 'suspended') ac.resume().catch(() => {}); return ac; }
     try { ac = getCtx ? getCtx() : null; if (!ac) { const ua = navigator.userActivation; if (ua && !ua.hasBeenActive) return null; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; ac = new AC(); } } catch { ac = null; }
     if (!ac) return null;
-    master = ac.createGain(); master.gain.value = enabled ? 0.9 : 0; master.connect(ac.destination);
+    master = ac.createGain(); master.gain.value = enabled ? 0.9 : 0; master.connect(opts.out || ac.destination);   // opts.out: the apartment radio routes its synth elsewhere
     sfx = ac.createGain(); sfx.gain.value = 1; sfx.connect(master);
     const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     return ac;

@@ -1,8 +1,8 @@
 // Shared CRM UI fragments.
-import { LANGS, langInfo } from '../i18n.js?v=3.7';
-import { tc } from './i18n-crm.js?v=3.7';
-import { STAGES, STAGE_EXTRA, entries, clientName, UNIT_STATUSES } from './store.js?v=3.7';
-import { esc, icon } from './util.js?v=3.7';
+import { LANGS, langInfo } from '../i18n.js?v=3.8';
+import { tc } from './i18n-crm.js?v=3.8';
+import { STAGES, STAGE_EXTRA, entries, clientName, UNIT_STATUSES } from './store.js?v=3.8';
+import { esc, icon } from './util.js?v=3.8';
 
 export const pageHead = (title, sub = '', actions = '') => `<div class="ph"><div><h1>${esc(title)}</h1>${sub ? `<p class="ph-sub">${sub}</p>` : ''}</div>${actions ? `<div class="ph-act">${actions}</div>` : ''}</div>`;
 export const stageChip = s => `<span class="chip stage s-${esc(s)}">${esc(tc('stage.' + s))}</span>`;

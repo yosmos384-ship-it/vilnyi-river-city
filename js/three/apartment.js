@@ -4,11 +4,11 @@
 // Everything static is baked (merged by material) → roughly one draw call per material. Collisions use invisible boxes.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TYPES, GEOM, LEVELS } from '../data.js?v=3.7';
-import { getMaterials, tickTv } from './materials.js?v=3.7';
-import { F, FX } from './furniture.js?v=3.7';
-import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js?v=3.7';
-import { attachBake } from './bake.js?v=3.7';
+import { TYPES, GEOM, LEVELS } from '../data.js?v=3.8';
+import { getMaterials, tickTv } from './materials.js?v=3.8';
+import { F, FX } from './furniture.js?v=3.8';
+import { buildSnookerTable, buildCueRack, tableOuter } from './snooker.js?v=3.8';
+import { attachBake } from './bake.js?v=3.8';
 
 const CH = LEVELS.ceiling;            // clear ceiling height 2.7
 const LH = LEVELS.typicalH;           // storey height 3.0 (duplex upper floor at y = 3.0)
@@ -1553,6 +1553,42 @@ function furnishLiving(ctx, L, g, r) {
   if (!ctx.cut) motorCurtains(ctx, L, g, r, w - 0.2, (a0 + a1) / 2, b1 - 0.2, CH - 0.15, [P.doorU, P.duplex && L.lv === 0 ? P.stair.v1 : P.vb]);
   ctx.balconyU = clamp((a0 + a1) / 2, 1.2, P.W - 1.2);
 }
+// Surround system, built into the walls of the lounge: a 5.1 layout as flush wall grilles (dark perforated panels, almost
+// the colour of the wall): front left / centre / right on the TV wall (centre above the TV, the pair beside it), the two
+// surrounds high on the far wall (or the TV wall's ends when the far side is open), the subwoofer low at the end of the
+// TV wall. The sound itself is av/av.js (the apartment radio and TV sound are routed through the same 5.1 mix).
+let SPK_MAT = null;
+function speakerMaterial() {
+  if (SPK_MAT) return SPK_MAT;
+  let map = null;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = '#1a1b1f'; x.fillRect(0, 0, 64, 64);
+    x.fillStyle = '#34373d'; for (let i = 0; i < 16; i++) for (let j = 0; j < 16; j++) if ((i + j) % 2 === 0) x.fillRect(i * 4 + 1.2, j * 4 + 1.2, 1.7, 1.7);
+    map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+  } catch { map = null; }
+  SPK_MAT = new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: 0.5, metalness: 0.35, envMapIntensity: 0.6, name: 'speaker-grille' });
+  return SPK_MAT;
+}
+function speakers(ctx, g, tvWall, t, lc, zd, v0, v1, farWall, farIsWall, tvLen) {
+  const mat = speakerMaterial(), geo = new THREE.PlaneGeometry(1, 1), fromTV = t > 0 ? '-u' : '+u', toTV = t > 0 ? '+u' : '-u';
+  const add = (name, u, v, face, y, w, h) => {
+    const mesh = new THREE.Mesh(geo, mat); mesh.scale.set(w, h, 1); mesh.name = 'vrc-speaker-' + name;
+    mesh.userData.speaker = name; mesh.raycast = () => {};
+    put(g, mesh, u, v, face, y); return mesh;
+  };
+  const cl = x => Math.max(v0 + 0.22, Math.min(v1 - 0.22, x));
+  const wallU = tvWall - t * 0.006, roomU = farWall + t * 0.006;
+  // front: the pair beside the TV (about 0.3 m out from its edges), the centre above it
+  add('FL', wallU, cl(lc - 1.05), fromTV, 1.12, 0.2, 0.2);
+  add('FR', wallU, cl(lc + 1.05), fromTV, 1.12, 0.2, 0.2);
+  add('C', wallU, lc, fromTV, 2.12, 0.42, 0.11);
+  // surrounds: on the far wall (a real wall), else at the ends of the TV wall, high
+  if (farIsWall) { add('SL', roomU, cl(v0 + 0.55), toTV, 2.26, 0.16, 0.2); add('SR', roomU, cl(v1 - 0.55), toTV, 2.26, 0.16, 0.2); }
+  else { add('SL', wallU, cl(v0 + 0.2), fromTV, 2.36, 0.16, 0.2); add('SR', wallU, cl(v1 - 0.2), fromTV, 2.36, 0.16, 0.2); }
+  // subwoofer: low on the TV wall, past the end of the media console
+  add('SUB', wallU, cl(Math.min(v1 - 0.45, lc + tvLen / 2 + 0.42)), fromTV, 0.1, 0.3, 0.14);
+}
 // Lounge zone z = [u0, v0, u1, v1]; TV on side tvOn ('u0' | 'u1'); farIsWall: the opposite side is a real wall.
 function lounge(ctx, L, g, z, tvOn, farIsWall) {
   const { m } = ctx;
@@ -1580,6 +1616,7 @@ function lounge(ctx, L, g, z, tvOn, farIsWall) {
   if (m.styleId === 'paris' && !mantelFar) put(g, F.fireplace(m, { w: clamp(Math.min(3.2, zd + 0.3) - 1.25, 1.4, 1.7), tv: true }), tvWall - t * 0.232, lc, fromTV);
   else put(g, F.tvUnit(m, { len: tvLen }), tvWall - t * 0.3, lc, fromTV);
   if (!ctx.cut) { put(g, F.tv(m, { w: 1.45, live: true, glowZ: s === 'riviera' ? -0.012 : -0.043 }), tvWall - t * 0.1, lc, fromTV, 1.0); (ctx.tvRooms ||= []).push('living'); }
+  if (!ctx.cut) speakers(ctx, g, tvWall, t, lc, zd, v0, v1, farWall, farIsWall, tvLen);
   featureWall(ctx, g, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3));
   busy(ctx, L, tvWall, lc, fromTV, Math.min(3.2, zd + 0.3) / 2 + 0.05, 0, CH);
   // the lane between the coffee table and the TV leads to the sliding door
@@ -2321,4 +2358,4 @@ function cameraViews(ctx, P) {
 
 export function buildApartment(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, opts); }
 export function buildApartmentCutaway(unit, styleId = 'milano', opts = {}) { return build(unit, styleId, { ...opts, cutaway: true }); }
-export { STYLES } from './materials.js?v=3.7';
+export { STYLES } from './materials.js?v=3.8';

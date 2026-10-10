@@ -11,7 +11,7 @@
 // BUILDING-LOCAL coords (pos:[x, z, y]); see INTEGRATION.md.
 import * as THREE from 'three';
 
-const MANIFEST_URL = new URL('../../assets/pano/index.json?v=3.7', import.meta.url);
+const MANIFEST_URL = new URL('../../assets/pano/index.json?v=3.8', import.meta.url);
 const ASSET_BASE = new URL('../../assets/pano/', import.meta.url);
 const EYE = 1.6;                       // camera height the panoramas were rendered at (m)
 const FOV0 = 75, FOV_MIN = 30, FOV_MAX = 100;

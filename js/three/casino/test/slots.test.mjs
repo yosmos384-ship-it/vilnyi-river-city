@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seededRng } from '../rng.js?v=3.7';
-import { SYMBOLS, STRIPS, LINES, RULES, linePay, windowAt, evaluate, spin, theoreticalRTP, Slots } from '../slots.js?v=3.7';
+import { seededRng } from '../rng.js?v=3.8';
+import { SYMBOLS, STRIPS, LINES, RULES, linePay, windowAt, evaluate, spin, theoreticalRTP, Slots } from '../slots.js?v=3.8';
 
 test('machine definition: 5 reels, 3 rows, 20 distinct paylines, strips made of known symbols', () => {
   assert.equal(STRIPS.length, 5); assert.equal(LINES.length, 20); assert.equal(new Set(LINES.map(l => l.join(''))).size, 20);

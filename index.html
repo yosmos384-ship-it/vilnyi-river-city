@@ -5,24 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0B0A08">
-<script src="js/lang-boot.js?v=3.7"></script>
-<script>window.VRC_VERSION = '3.7';</script>
-<script src="js/version-check.js?v=3.7" defer></script>
+<script src="js/lang-boot.js?v=3.8"></script>
+<script>window.VRC_VERSION = '3.8';</script>
+<script src="js/version-check.js?v=3.8" defer></script>
 <title>VILNYI RIVER CITY — דירות יוקרה ליד אגם לקול מוריי, בוקרשט</title>
 <meta name="description" content="דירות 1–4 חדרים ופנטהאוזים דופלקס בבניינים C3 ו‑C4, ליד פארק לקול מוריי בבוקרשט.">
 <link rel="icon" type="image/png" href="assets/bird.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Frank+Ruhl+Libre:wght@300;400;500&family=Heebo:wght@300;400;500;600&family=Manrope:wght@300;400;500;600&display=swap">
-<link rel="stylesheet" href="css/site.css?v=3.7">
-<link rel="stylesheet" href="css/panorama.css?v=3.7">
+<link rel="stylesheet" href="css/site.css?v=3.8">
+<link rel="stylesheet" href="css/panorama.css?v=3.8">
 <link rel="preload" as="image" href="assets/hero-real-night.jpg" imagesrcset="assets/hero-real-night-1280.jpg 1280w, assets/hero-real-night.jpg 2056w" imagesizes="(max-width: 820px) 420px, 100vw" fetchpriority="high">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/addons/"}}</script>
 <link rel="modulepreload" href="vendor/three.module.min.js" fetchpriority="low">
-<link rel="modulepreload" href="js/data.js?v=3.7">
-<script type="module" src="js/app.js?v=3.7"></script>
-<script type="module" src="js/panorama.js?v=3.7"></script>
-<script type="module" src="js/hero-slides.js?v=3.7"></script>
+<link rel="modulepreload" href="js/data.js?v=3.8">
+<script type="module" src="js/app.js?v=3.8"></script>
+<script type="module" src="js/panorama.js?v=3.8"></script>
+<script type="module" src="js/hero-slides.js?v=3.8"></script>
 </head>
 <body>
 <a class="skip" href="#main" data-i18n="skip">דלגו לתוכן</a>
@@ -103,6 +103,7 @@
         <div class="hero-ctas">
           <a class="btn primary" href="#finder" data-i18n="hero.cta"></a>
           <button type="button" class="btn ghost" id="heroTour"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><span data-i18n="hero.cta2"></span></button>
+          <button type="button" class="btn ghost" id="heroGT" title="City Drive"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 15.5v-3l2.2-4.6A2 2 0 0 1 7.5 6.8h9a2 2 0 0 1 1.8 1.1l2.2 4.6v3"/><path d="M2.8 15.5h18.4v2.4H2.8z"/><circle cx="7" cy="18.3" r="1.6"/><circle cx="17" cy="18.3" r="1.6"/></svg><span>GT VILNYI</span></button>
         </div>
       </div>
       <div class="hero-side">
@@ -259,7 +260,7 @@
       <a href="#facts" data-i18n="nav.facts"></a>
     </nav>
   </div>
-  <div class="wrap foot-base"><span id="copyright"></span><span data-i18n="foot.illustrative"></span><span class="foot-ver" data-vrc-ver dir="ltr">v3.7</span></div>
+  <div class="wrap foot-base"><span id="copyright"></span><span data-i18n="foot.illustrative"></span><span class="foot-ver" data-vrc-ver dir="ltr">v3.8</span></div>
 </footer>
 
 <dialog class="sheet" id="unitDlg" aria-labelledby="ud-title"></dialog>
@@ -288,5 +289,16 @@
   <button type="button" class="icon-btn walk-x" id="walkX" data-i18n-attr="aria-label:walk.exit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
 </div>
 <p class="sr-only" id="announce" aria-live="polite"></p>
+  <div class="pickb" id="pickB" role="dialog" aria-modal="true" aria-labelledby="pickBT" hidden>
+    <div class="card">
+      <h3 id="pickBT" data-i18n="pick.title"></h3>
+      <p data-i18n="pick.sub"></p>
+      <div class="opts">
+        <button type="button" class="opt" data-b="C3" data-i18n="pick.c3"></button>
+        <button type="button" class="opt" data-b="C4" data-i18n="pick.c4"></button>
+      </div>
+      <button type="button" class="cancel" data-pick-x data-i18n="pick.cancel"></button>
+    </div>
+  </div>
 </body>
 </html>

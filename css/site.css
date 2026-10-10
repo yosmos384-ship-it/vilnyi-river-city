@@ -984,3 +984,13 @@ dialog.is-closing { animation: sheetOut .2s ease-in forwards; }
   :lang(he) .hs-home { font-size: 13px; }
 }
 .hs-caprow .hs-cap { max-width: none; }
+
+/* v3.8 — 3D-tour building choice (C3 / C4) */
+.pickb { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .72); }
+.pickb[hidden] { display: none; }
+.pickb .card { width: min(420px, 100%); background: #0c0b09; border: 1px solid rgba(201, 164, 92, .5); border-radius: 16px; padding: 22px; color: var(--ivory); }
+.pickb h3 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 500; font-size: 26px; margin: 0 0 6px; color: var(--gold-hi); }
+.pickb p { margin: 0 0 16px; color: rgba(243, 237, 225, .75); font-size: 14px; }
+.pickb .opts { display: grid; gap: 10px; }
+.pickb .opt { height: 52px; border-radius: 12px; border: 1px solid rgba(201, 164, 92, .6); background: linear-gradient(180deg, #f0d596, #b88a3c); color: #14100a; font-weight: 700; font-size: 15px; letter-spacing: .04em; cursor: pointer; }
+.pickb .cancel { margin-top: 10px; width: 100%; height: 42px; border-radius: 12px; background: none; border: 1px solid rgba(243, 237, 225, .22); color: var(--ivory); cursor: pointer; }

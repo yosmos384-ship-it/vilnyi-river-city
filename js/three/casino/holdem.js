@@ -2,8 +2,8 @@
 // Ante → two cards each and a three-card flop → fold (lose the ante) or call (twice the ante) → turn and river →
 // the dealer needs a pair of fours or better to qualify. Dealer does not qualify: the ante is paid by the table below
 // and the call is returned. Dealer qualifies: the better hand wins — the ante by the table, the call 1:1; a tie pushes.
-import { shuffle } from './rng.js?v=3.7';
-import { best, CAT } from './poker.js?v=3.7';
+import { shuffle } from './rng.js?v=3.8';
+import { best, CAT } from './poker.js?v=3.8';
 
 export const RULES = Object.freeze({ minAnte: 500, maxAnte: 25000, betStep: 100 });
 // ante pays by the player's final hand (x:1)

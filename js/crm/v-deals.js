@@ -1,10 +1,10 @@
 // Deals / reservations: unit sale per client, payment plan (PROJECT.terms), instalment schedule, payments register.
-import { UNITS, TYPES, unitById, PROJECT } from '../data.js?v=3.7';
-import { unitLabelL, planText } from '../i18n.js?v=3.7';
-import { tc } from './i18n-crm.js?v=3.7';
-import { S, entries, get, setDoc, patchDoc, all, dealFinance, buildSchedule, clientName, unitState, setUnitStatus, setStage, addTimeline, STAGES, settings, planOf } from './store.js?v=3.7';
-import { esc, icon, eur, fmtDate, relDays, uid, today, addMonths, openModal, confirmUI, formData, toast, $, round2 } from './util.js?v=3.7';
-import { pageHead, clientOptions, fld, empty, tabs, stageChip } from './ui.js?v=3.7';
+import { UNITS, TYPES, unitById, PROJECT } from '../data.js?v=3.8';
+import { unitLabelL, planText } from '../i18n.js?v=3.8';
+import { tc } from './i18n-crm.js?v=3.8';
+import { S, entries, get, setDoc, patchDoc, all, dealFinance, buildSchedule, clientName, unitState, setUnitStatus, setStage, addTimeline, STAGES, settings, planOf } from './store.js?v=3.8';
+import { esc, icon, eur, fmtDate, relDays, uid, today, addMonths, openModal, confirmUI, formData, toast, $, round2 } from './util.js?v=3.8';
+import { pageHead, clientOptions, fld, empty, tabs, stageChip } from './ui.js?v=3.8';
 
 const F = { status: 'active', q: '' };
 const METHODS = ['bank', 'card', 'cash', 'other'];
@@ -30,7 +30,7 @@ export function render(root, name, params) {
   root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { F.status = b.dataset.tab; render(root, name, []); });
   root.querySelectorAll('tr[data-href]').forEach(tr => tr.onclick = e => { if (!e.target.closest('a')) location.hash = tr.dataset.href; });
   $('[data-act=new]', root).onclick = () => newDeal({});
-  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.7')).exportDeals();
+  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.8')).exportDeals();
   root.querySelectorAll('[data-convert]').forEach(b => b.onclick = () => {
     const r = get('reservations', b.dataset.convert); const lead = all('leads').find(l => l.resNo === r.resNo);
     const cid = lead?.email ? entries('clients').find(c => (c.email || '').toLowerCase() === lead.email.toLowerCase())?.id : undefined;
@@ -146,9 +146,9 @@ function renderDeal(root, id) {
   };
   $('[data-act=addInst]', root).onclick = () => editInst(id, null);
   root.querySelectorAll('[data-inst]').forEach(b => b.onclick = () => editInst(id, b.dataset.inst));
-  root.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.7')).newDocument({ type: b.dataset.doc, dealId: id, clientId: d.clientId, instId: b.dataset.doc === 'proforma' ? f.next?.id : undefined }));
-  root.querySelectorAll('[data-pf]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.7')).newDocument({ type: 'proforma', dealId: id, clientId: d.clientId, instId: b.dataset.pf }));
-  root.querySelectorAll('[data-receipt]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.7')).newDocument({ type: 'receipt', dealId: id, clientId: d.clientId, paymentId: b.dataset.receipt }));
+  root.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.8')).newDocument({ type: b.dataset.doc, dealId: id, clientId: d.clientId, instId: b.dataset.doc === 'proforma' ? f.next?.id : undefined }));
+  root.querySelectorAll('[data-pf]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.8')).newDocument({ type: 'proforma', dealId: id, clientId: d.clientId, instId: b.dataset.pf }));
+  root.querySelectorAll('[data-receipt]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.8')).newDocument({ type: 'receipt', dealId: id, clientId: d.clientId, paymentId: b.dataset.receipt }));
   root.querySelectorAll('[data-delpay]').forEach(b => b.onclick = async () => {
     if (!await confirmUI({ title: tc('delete'), text: tc('dl.delPayQ'), danger: true, ok: tc('delete') })) return;
     await save({ payments: (d.payments || []).filter(p => p.id !== b.dataset.delpay) }, `payment removed on ${d.unitId}`); toast(tc('saved'));
@@ -192,7 +192,7 @@ export function addPayment(dealId) {
         if (target && STAGES.indexOf(c.stage) < STAGES.indexOf(target)) await setStage(d.clientId, target);
       }
       toast(tc('saved')); close();
-      if (x.receipt) (await import('./v-documents.js?v=3.7')).newDocument({ type: 'receipt', dealId, clientId: d.clientId, paymentId: p.id });
+      if (x.receipt) (await import('./v-documents.js?v=3.8')).newDocument({ type: 'receipt', dealId, clientId: d.clientId, paymentId: p.id });
     },
   });
 }

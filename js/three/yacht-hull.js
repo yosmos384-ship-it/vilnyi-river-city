@@ -2,8 +2,8 @@
 // stairs, hardtop with funnel / mast / radar, helipad, tenders, name and emblem, night lighting — and the static part of
 // the walking world (decks, stairs, exterior walls). Everything in yacht-local coordinates (see yacht-pier.js).
 import * as THREE from 'three';
-import { Y, planHalf, hullHalf, sheer, TIERS, tierHalf, PLATES } from './yacht-pier.js?v=3.7';
-import { GeoB, canvasTex, shellMaterials } from './yacht-kit.js?v=3.7';
+import { Y, planHalf, hullHalf, sheer, TIERS, tierHalf, PLATES } from './yacht-pier.js?v=3.8';
+import { GeoB, canvasTex, shellMaterials } from './yacht-kit.js?v=3.8';
 
 export const LOBBY = {
   x0: -4.2, x1: 3,
