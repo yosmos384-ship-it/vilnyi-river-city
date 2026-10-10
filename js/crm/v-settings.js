@@ -1,14 +1,14 @@
 // Settings: issuing entities (no invented tax/bank data — empty until the owner fills them), numbering series,
 // email signature & sending, users/roles, CSV import/export, audit log, local-demo reset.
-import { UNITS, TYPES, unitById } from '../data.js?v=3.12';
-import { unitLabelL } from '../i18n.js?v=3.12';
-import { tc } from './i18n-crm.js?v=3.12';
-import { S, entries, get, setDoc, settings, DOC_TYPES, clientName, clientIdForEmail, splitName, unitState, dealFinance, all, STAGES } from './store.js?v=3.12';
-import { esc, icon, fmtDateTime, toCSV, parseCSV, toast, $, formData, uid, isEmail, confirmUI, openModal } from './util.js?v=3.12';
-import { pageHead, fld, tabs, empty } from './ui.js?v=3.12';
-import { planText } from '../i18n.js?v=3.12';
-import { planOf } from './store.js?v=3.12';
-import { VAT_PRESETS } from './v-documents.js?v=3.12';
+import { UNITS, TYPES, unitById } from '../data.js?v=3.13';
+import { unitLabelL } from '../i18n.js?v=3.13';
+import { tc } from './i18n-crm.js?v=3.13';
+import { S, entries, get, setDoc, settings, DOC_TYPES, clientName, clientIdForEmail, splitName, unitState, dealFinance, all, STAGES } from './store.js?v=3.13';
+import { esc, icon, fmtDateTime, toCSV, parseCSV, toast, $, formData, uid, isEmail, confirmUI, openModal } from './util.js?v=3.13';
+import { pageHead, fld, tabs, empty } from './ui.js?v=3.13';
+import { planText } from '../i18n.js?v=3.13';
+import { planOf } from './store.js?v=3.13';
+import { VAT_PRESETS } from './v-documents.js?v=3.13';
 
 const F = { tab: 'company' };
 const ENT_FIELDS = ['name', 'address', 'city', 'country', 'regNo', 'taxId', 'vatNo', 'email', 'phone', 'beneficiary', 'iban', 'bic', 'bank', 'footer', 'prefix'];
@@ -113,7 +113,7 @@ async function importClients(file, out) {
     const notes = pick(r, 'notes'); if (notes && !cur) body.timeline.unshift({ id: uid('t'), type: 'note', at: new Date().toISOString(), text: notes });
     await setDoc('clients', id, body); cur ? updated++ : added++;
   }
-  (await import('./store.js?v=3.12')).audit(`CSV import: +${added}, ~${updated}, skipped ${skipped}`);
+  (await import('./store.js?v=3.13')).audit(`CSV import: +${added}, ~${updated}, skipped ${skipped}`);
   out.innerHTML = `<p class="ok">${icon('check')}${esc(tc('set.importDone', { a: added, u: updated, s: skipped }))}</p>`;
 }
 void unitById; void all; void openModal;

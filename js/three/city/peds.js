@@ -4,8 +4,8 @@
 // They walk the pavements, wait and cross at junctions, sit at café tables and on benches, go in and out of shops,
 // jump aside and shout when a car comes at them. Knock-downs are arcade-level: a tumble, no gore, bodies fade out.
 import * as THREE from 'three';
-import { genBlock } from './gen.js?v=3.12';
-import { bodyBox } from './vehicle.js?v=3.12';
+import { genBlock } from './gen.js?v=3.13';
+import { bodyBox } from './vehicle.js?v=3.13';
 
 const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#d9a066'];
 const HAIR = ['#1b1512', '#3b2a1e', '#6b4a2e', '#a8793e', '#8a8a8a', '#d9d2c4', '#2a2a2e'];

@@ -1,8 +1,8 @@
 // City Drive — the arcade vehicle model shared by the player's car, the police and anything knocked loose.
 // A body is {x, z, yaw, vx, vz, w, steer, …}; forward = (sin yaw, cos yaw), left = (cos yaw, −sin yaw) (cars.js frame:
 // +z forward, +x = driver's side / left). Ground is flat (y = 0).
-import { carSpec } from '../cars.js?v=3.12';
-import { BOUNDS } from './map.js?v=3.12';
+import { carSpec } from '../cars.js?v=3.13';
+import { BOUNDS } from './map.js?v=3.13';
 
 // believable figures by class: top speed km/h, launch acceleration m/s², braking m/s², lateral grip m/s², mass kg
 export const CLASS = {

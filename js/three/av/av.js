@@ -5,13 +5,15 @@
 //    stereo: a browser routes a cross-origin stream through Web Audio only when the stream allows it, which is not assumed);
 //  · the lift music (music.js): it starts with the first tap inside the building and carries through the lobby, the lifts
 //    and the corridors; it stops when the visitor enters a flat, leaves the building or gets into a car;
-//  · the car radio: a car in the car park has its own radio (stereo), playing a random station on entry;
+//  · the car radio: every car (parked, the limousine, City Drive's car) plays only this radio: a random station on each
+//    entry. When no live stream can be heard, the car gets the radio-style fallback (news kind: pips, a sting, speech-like
+//    phrases), never a melody; the flats keep the VRC FM music programme;
 //  · one mute for all of it, kept between visits.
 // Browsers play no sound before a gesture: whatever is due waits for the next tap (sync() runs again then).
-import { createAudio } from '../city/audio.js?v=3.12';
-import { STATIONS } from '../city/radio.js?v=3.12';
-import { createSurround } from './surround.js?v=3.12';
-import { createLiftMusic } from './music.js?v=3.12';
+import { createAudio } from '../city/audio.js?v=3.13';
+import { STATIONS } from '../city/radio.js?v=3.13';
+import { createSurround } from './surround.js?v=3.13';
+import { createLiftMusic } from './music.js?v=3.13';
 
 const VOL = 0.62;
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -61,11 +63,13 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
     clearTimeout(tm);
     if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } el.onplaying = el.onerror = null; }
   }
+  // the generated programme: the radio-style fallback in a car, the VRC FM music in a flat
+  const progKind = () => (S.radio === 'car' ? 'news' : 'music');
   // tune station i: a public stream, or the generated programme; a stream that cannot play moves on to the next one
   function play(i) {
     const my = ++tok, st = stations[i]; S.station = i; S.last = i;
-    if (st.synth) { stopStream(); synth.radioSynth(true, VOL); S.status = 'live'; return emit(); }
-    synth.radioSynth(true, VOL * 0.3);   // a quiet generated bed while the stream connects: never silence
+    if (st.synth) { stopStream(); synth.radioSynth(true, VOL, progKind()); S.status = 'live'; return emit(); }
+    synth.radioSynth(true, VOL * 0.3, progKind());   // a quiet generated bed while the stream connects: never silence
     S.status = 'tuning'; emit();
     try {
       if (!el) { el = new Audio(); el.preload = 'none'; el.setAttribute('playsinline', ''); }
@@ -110,7 +114,7 @@ export function createAV({ getCtx, onChange = () => {} } = {}) {
       if (S.radio) stopRadio();
       if (want) { S.radioKey = S.placeKey; startRadio(want); }
     }
-    if (S.liftOn !== wantLift) { S.liftOn = wantLift; if (wantLift) lift.start(); else lift.stop(); }
+    if (S.liftOn !== wantLift) { S.liftOn = wantLift; if (wantLift) lift.start(); else lift.stop(want === 'car' ? 0.04 : 0.35); }
     emit();
   }
   // called on every change of where the visitor is: 'lift' | 'common' | 'apartment' (key = the flat) | 'car' | 'outside' | 'none'

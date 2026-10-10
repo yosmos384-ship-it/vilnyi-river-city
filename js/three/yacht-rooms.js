@@ -2,12 +2,12 @@
 // from the apartment's furniture / fixture builders (furniture.js F.*), baked per material, with its openable fronts
 // in one dynamic batch. Coordinates: yacht-local (x → bow, z → starboard), y relative to the zone's deck in helpers.
 import * as THREE from 'three';
-import { F, FX } from './furniture.js?v=3.12';
-import { Y, TIERS, tierHalf, hullHalf, PLATES } from './yacht-pier.js?v=3.12';
-import { LOBBY, STERN_STAIR } from './yacht-hull.js?v=3.12';
-import { UBOX, colMat, shellMaterials } from './yacht-kit.js?v=3.12';
-import { CROWD } from './yacht-crowd-spots.js?v=3.12';
-import { buildDisco } from './yacht-disco.js?v=3.12';
+import { F, FX } from './furniture.js?v=3.13';
+import { Y, TIERS, tierHalf, hullHalf, PLATES } from './yacht-pier.js?v=3.13';
+import { LOBBY, STERN_STAIR } from './yacht-hull.js?v=3.13';
+import { UBOX, colMat, shellMaterials } from './yacht-kit.js?v=3.13';
+import { CROWD } from './yacht-crowd-spots.js?v=3.13';
+import { buildDisco } from './yacht-disco.js?v=3.13';
 
 const PI = Math.PI, HALF = PI / 2;
 // furniture faces +z at rotation 0; FACE.px = facing +x (towards the bow) …
@@ -551,7 +551,7 @@ Z({ id: 'lobby1', name: 'lobby', deck: 1, y: Y.D1, box: [-4.2, 20.5, -8.5, 8.5],
 // arrived the zone is the bare room (floor, ceiling, walls to walk against); it is rebuilt as soon as the module is there.
 const CASINO = { mod: null, p: null };
 Z({ id: 'casino', name: 'casino', deck: 1, y: Y.D1, box: [20.2, 42, -8.5, 8.5], near: ['lobby1'], spot: [21.9, 0, -HALF],
-  load() { return CASINO.p || (CASINO.p = import('./casino/room.js?v=3.12').then((mod) => { CASINO.mod = mod; return mod; }).catch((e) => { CASINO.p = null; console.warn('[yacht] casino', e); return null; })); },
+  load() { return CASINO.p || (CASINO.p = import('./casino/room.js?v=3.13').then((mod) => { CASINO.mod = mod; return mod; }).catch((e) => { CASINO.p = null; console.warn('[yacht] casino', e); return null; })); },
   build(c) {
     if (CASINO.mod) return CASINO.mod.buildCasino(c);
     { // the room's outline as in casino/layout.js (X0, X1, hw)

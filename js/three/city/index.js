@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.12';
-import { buildMap, BOUNDS } from './map.js?v=3.12';
-import { buildRealMap } from './osm.js?v=3.12';
-import { createWorld } from './world.js?v=3.12';
-import { createTraffic } from './traffic.js?v=3.12';
-import { createPeds } from './peds.js?v=3.12';
-import { createFx } from './fx.js?v=3.12';
-import { createAudio } from './audio.js?v=3.12';
-import { createRadio } from './radio.js?v=3.12';
-import { createHud } from './hud.js?v=3.12';
-import { cityT, cityDir } from './i18n.js?v=3.12';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.12';
-import { poiSign } from './gen.js?v=3.12';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.13';
+import { buildMap, BOUNDS } from './map.js?v=3.13';
+import { buildRealMap } from './osm.js?v=3.13';
+import { createWorld } from './world.js?v=3.13';
+import { createTraffic } from './traffic.js?v=3.13';
+import { createPeds } from './peds.js?v=3.13';
+import { createFx } from './fx.js?v=3.13';
+import { createAudio } from './audio.js?v=3.13';
+import { createRadio } from './radio.js?v=3.13';
+import { createHud } from './hud.js?v=3.13';
+import { cityT, cityDir } from './i18n.js?v=3.13';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.13';
+import { poiSign } from './gen.js?v=3.13';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -175,9 +175,10 @@ export async function startCityDrive(host) {
     if (P.mode !== 'car' || !P.body) return; const on = v == null ? !P.engine : !!v;
     if (on && P.body.dead) { hud.toast(t('wrecked') + ' — ' + t('wreckedSub'), 3200); return; }
     P.engine = on; audio.resume();
-    if (on) { audio.engine(true, P.body.kind, P.body.C.ev); if (!radioState.on) radio.power(true, true); }   // the radio comes on with the ignition
-    else { audio.engine(false); radio.power(false); }
+    if (on) audio.engine(true, P.body.kind, P.body.C.ev); else audio.engine(false);
   }
+  // the car's radio: it starts on every entry (a random station) and goes quiet when the visitor gets out; the engine is apart
+  function carRadio(on) { if (on) { if (!radioState.on) radio.start(); } else if (radioState.on) radio.power(false); }
   function respawnOnRoad(msg) {
     const E = active(), ne = map.nearestEdge(E.x, E.z, 400) || map.nearestEdge(G0.x, G0.z, 400); if (!ne) return;
     const e = ne.e, s = clamp(ne.t, e.ta + 6, e.len - e.tb - 6), a = map.nodes[e.a], lat = e.hw * 0.45;
@@ -188,6 +189,7 @@ export async function startCityDrive(host) {
   async function toGarage(reason) {   // tow / busted: fade, back at the garage with the car repaired
     state = 'fade'; await hud.fade(true);
     if (P.mode === 'foot') { P.mode = 'car'; P.car.group.visible = true; }
+    carRadio(true);
     repair(true); Object.assign(P.body, { x: G0.x, z: G0.z, yaw: G0.yaw, vx: 0, vz: 0, w: 0 }); heat = 0; G.wanted = 0; hideT = bustT = 0; traffic.clearUnits(); P.cam = null; hud.banner('');
     P.car.setInside(P.view === 'fp'); if (reason === 'busted') ignition(false);
     await hud.fade(false); state = 'play';
@@ -197,12 +199,12 @@ export async function startCityDrive(host) {
     b.vx = b.vz = b.w = 0; ignition(false); audio.door();
     const lx = Math.cos(b.yaw), lz = -Math.sin(b.yaw); let x = b.x + lx * (b.hw + 0.7), z = b.z + lz * (b.hw + 0.7);
     if (world.inSolid(x, z, 0.3)) { x = b.x - lx * (b.hw + 0.7); z = b.z - lz * (b.hw + 0.7); }
-    Object.assign(P.foot, { x, z, yaw: b.yaw, pitch: 0, vx: 0, vz: 0 }); P.mode = 'foot'; P.car.setInside(false); P.car.setLights(false); P.car.setIndicators(false, false); fx.setBeam(false); P.doorT = 0; P.look.yaw = P.look.pitch = 0;
+    Object.assign(P.foot, { x, z, yaw: b.yaw, pitch: 0, vx: 0, vz: 0 }); P.mode = 'foot'; carRadio(false); P.car.setInside(false); P.car.setLights(false); P.car.setIndicators(false, false); fx.setBeam(false); P.doorT = 0; P.look.yaw = P.look.pitch = 0;
   }
   function getIn() {
     if (P.mode !== 'foot') return; const f = P.foot, b = P.body;
     const own = b ? Math.hypot(f.x - b.x, f.z - b.z) : 99, n = traffic.nearest(f.x, f.z, 3.4);
-    if (b && own < 4.2 && (!n || own - 2 <= n.d + 1)) { P.mode = 'car'; P.car.setInside(P.view === 'fp'); P.cam = null; audio.door(); return; }
+    if (b && own < 4.2 && (!n || own - 2 <= n.d + 1)) { P.mode = 'car'; carRadio(true); P.car.setInside(P.view === 'fp'); P.cam = null; audio.door(); return; }
     if (!n) return;
     // take that car: the driver (if any) is pulled out and runs off; ours stays behind as it is
     const c = n.car; audio.door();
@@ -210,7 +212,7 @@ export async function startCityDrive(host) {
     const old = P.body, oc = old.colourName;
     unmountCar(); traffic.addParked(old.kind, oc, old.x, old.z, old.yaw, old.dmg);
     traffic.remove(c); mountCar(c.kind, c.colour, c.x, c.z, c.yaw, c.dmg, c.id % 61 + 3);
-    P.mode = 'car'; P.cam = null; P.engine = false; hud.toast(t('taken'), 1600);
+    P.mode = 'car'; carRadio(true); P.cam = null; P.engine = false; hud.toast(t('taken'), 1600);
   }
   function setTime(m) { world.setTime(m); setCarEnvScale(m === 'night' ? 0.32 : m === 'dusk' ? 0.7 : 1, scene.environment); if (host.onTime) host.onTime(m); }
   function act(a, v) {
@@ -256,7 +258,7 @@ export async function startCityDrive(host) {
   async function startFrom(id, pose) {
     if (state !== 'play' && state !== 'intro') return; state = 'fade'; hud.panel(''); await hud.fade(true);
     const p = pose || map.startPose(id), mine = !!pose;
-    if (P.mode === 'foot') { P.mode = 'car'; }
+    if (P.mode === 'foot') { P.mode = 'car'; carRadio(true); }
     P.car.group.visible = true; Object.assign(P.body, { x: p.x, z: p.z, yaw: p.yaw, vx: 0, vz: 0, w: 0 }); P.body.steer = 0;
     heat = 0; G.wanted = 0; hideT = bustT = 0; traffic.clearUnits(); hud.banner('');
     for (const c of [...traffic.cars]) if (c.mode !== 'parked' || Math.hypot(c.x - p.x, c.z - p.z) < 9) traffic.remove(c);
@@ -338,7 +340,7 @@ export async function startCityDrive(host) {
     } else { g.translate(0, Y0 + 40); hud.drawMap(g, W, H - 40, mapData(190)); g.translate(0, -(Y0 + 40)); }
     g.fillStyle = '#0a0d11'; g.fillRect(0, Y0, W, 40); g.fillStyle = GOLD; g.fillRect(0, Y0 + 39, W, 1.5);
     g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#f0f2f4'; g.font = '700 16px Arial, sans-serif';
-    g.fillText(reversing ? 'R  CAMERA' : radioState.on ? `${radioState.freq} FM  ${radioState.name}` : 'NAV', 14, Y0 + 21, W - 110);
+    g.fillText(reversing ? 'R  CAMERA' : radioState.on ? `${radioState.freq} FM  ${radioState.synth ? t('rFallback') : radioState.name}` : 'NAV', 14, Y0 + 21, W - 110);
     g.textAlign = 'right'; g.fillStyle = '#9aa5b1'; g.font = '600 13px Arial, sans-serif'; const d = new Date(); g.fillText(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), W - 14, Y0 + 21);
     g.restore(); C.tex.needsUpdate = true;
   }
@@ -549,7 +551,7 @@ export async function startCityDrive(host) {
   try { await map.prefetch(A0.x, A0.z); } catch { /* */ }
   for (let k = 0; k < 600 && (k < 3 || world.pending); k++) { world.update(A0.x, A0.z, 0, camera, 30); if (k % 6 === 5) await new Promise(r => setTimeout(r, 0)); }
   for (let k = 0; k < 40; k++) { traffic.update(0.4, P.body, null, null); }   // seed some traffic before the first frame
-  if (host.autoStart !== false && host.gesture) ignition(true);
+  if (host.autoStart !== false && host.gesture) { carRadio(true); ignition(true); }
   if (map.real && host.chooser !== false && A0 === G0) hud.showStarts(map.starts, 'garage', true);   // where to start: the Palace of the Parliament is the featured one
   if (A0 !== G0) { P.start = host.startId; const SS = map.starts.find(x => x.id === host.startId); if (SS) hud.toast(t(SS.key), 2600); }
   else if (map.site.exitNode != null) hud.toast(t('exitRoute'), 3600);

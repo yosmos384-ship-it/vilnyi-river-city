@@ -113,13 +113,51 @@ export function createAudio(getCtx, opts = {}) {
       if (P.lead === 'reed') tone(t, mtof(m), len, 'sawtooth', 0.055, 2600, 9, 0.02); else if (P.lead === 'soft') tone(t, mtof(m), len * 1.5, 'triangle', 0.09, 2200, 4, 0.05); else tone(t, mtof(m), len, 'square', 0.035, 1800, 0, 0.005);
     }
   }
-  function radioSynth(on, vol = 0.6) {
+  // ---- the radio-style programme (kind 'news'): what a car plays when no live station can be heard. No melody and no loop:
+  // time pips, a short station sting, then speech-like phrases (a formant voice on a buzzing source, syllable by syllable)
+  // with pauses between them. Nothing recorded; it only sounds like a bulletin.
+  const VOWELS = [[730, 1090], [270, 2290], [530, 1840], [660, 1720], [440, 1020], [600, 1400]];   // F1, F2 of vowels (Hz)
+  function burst(t, d) {   // a consonant: a short hiss
+    const s = noise(), f = ac.createBiquadFilter(), e = ac.createGain();
+    f.type = 'highpass'; f.frequency.value = 2600; env(e, t, 0.003, 0.08, d); s.connect(f).connect(e).connect(R.g); s.start(t); s.stop(t + d + 0.05);
+  }
+  function voice(t, dur, f0, F, v) {   // one syllable: a buzzing source, pitch falling a little, through two formant band-passes
+    const o = ac.createOscillator(), e = ac.createGain(), m = ac.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * 0.88, t + dur);
+    for (const [f, q, k] of [[F[0], 7, 1], [F[1], 10, 0.45]]) { const b = ac.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; const gg = ac.createGain(); gg.gain.value = k; o.connect(b).connect(gg).connect(m); }
+    m.connect(e).connect(R.g); env(e, t, 0.025, v, dur - 0.025); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function syllables(t, n) {   // a phrase: syllables with a speaking pitch that drifts from phrase to phrase
+    const base = 105 + rnd() * 55; let tt = t;
+    for (let i = 0; i < n; i++) {
+      const dur = 0.12 + rnd() * 0.1, F = VOWELS[Math.floor(rnd() * VOWELS.length)];
+      if (rnd() < 0.6) burst(tt - 0.02, 0.03);
+      voice(tt, dur, base * (0.94 + rnd() * 0.12), F, 0.35);
+      tt += dur + 0.015 + rnd() * 0.03;
+    }
+    return tt;
+  }
+  function sting(t) { tone(t, 659, 0.22, 'triangle', 0.2, 3000, 0, 0.01); tone(t + 0.22, 880, 0.5, 'triangle', 0.2, 3000, 0, 0.01); }
+  function bulletin(t) {   // one item, scheduled whole: pips, the sting, three to five phrases, a pause at the end
+    for (let k = 0; k < 4; k++) tone(t + k * 0.26, 1000, 0.09, 'sine', 0.18, 4000);
+    tone(t + 1.04, 1000, 0.5, 'sine', 0.2, 4000);
+    let tt = t + 1.7; sting(tt); tt += 0.9;
+    const n = 3 + Math.floor(rnd() * 3);
+    for (let p = 0; p < n; p++) { tt = syllables(tt, 2 + Math.floor(rnd() * 4)) + 0.25 + rnd() * 0.45; }
+    return tt + 0.6;
+  }
+  function radioSynth(on, vol = 0.6, kind = 'music') {
     if (!on) { if (R) { clearInterval(R.timer); R.g.gain.setTargetAtTime(0, ac.currentTime, 0.1); const g = R.g; setTimeout(() => { try { g.disconnect(); } catch { /* */ } }, 800); R = null; } return; }
     if (!ctx()) return;
+    if (R && R.kind !== kind) radioSynth(false);
     if (R) { R.g.gain.setTargetAtTime(vol * 0.55, ac.currentTime, 0.1); return; }
     const g = ac.createGain(); g.gain.value = vol * 0.55; g.connect(master);
-    R = { g, i: Math.floor(Math.random() * 4) * 512, next: ac.currentTime + 0.12, seed: 1 + Math.floor(Math.random() * 1e6), deg: 4, timer: 0 };
-    const sched = () => { if (!R || !ac) return; if (R.next < ac.currentTime - 1) R.next = ac.currentTime + 0.05; while (R.next < ac.currentTime + 0.4) { const P = PROGS[Math.floor(R.i / 512) % PROGS.length]; try { step(R.i, R.next); } catch (e) { console.warn('[city] VRC FM', e); } R.next += 60 / P.bpm / 4; R.i++; } };
+    R = { g, kind, i: Math.floor(Math.random() * 4) * 512, next: ac.currentTime + 0.12, seed: 1 + Math.floor(Math.random() * 1e6), deg: 4, timer: 0 };
+    const sched = () => {
+      if (!R || !ac) return; if (R.next < ac.currentTime - 1) R.next = ac.currentTime + 0.05;
+      if (R.kind === 'news') { while (R.next < ac.currentTime + 0.4) { try { R.next = bulletin(R.next); } catch (e) { console.warn('[city] news', e); R.next += 1; } } return; }
+      while (R.next < ac.currentTime + 0.4) { const P = PROGS[Math.floor(R.i / 512) % PROGS.length]; try { step(R.i, R.next); } catch (e) { console.warn('[city] VRC FM', e); } R.next += 60 / P.bpm / 4; R.i++; }
+    };
     R.timer = setInterval(sched, 110); sched();
   }
   return {

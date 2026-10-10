@@ -1,5 +1,5 @@
 // Strings for the hero slideshow (js/hero-slides.js). 8 languages, merged into the main I18N table so t() finds them.
-import { I18N } from './i18n.js?v=3.12';
+import { I18N } from './i18n.js?v=3.13';
 
 export const HERO_I18N = {
   he: { 'hs.main': 'תמונה ראשית', 'hs.mainAria': 'חזרה לתמונה הראשית', 'hs.live3d': 'תלת־ממד חי', 'hs.cap.real': 'VILNYI RIVER CITY', 'hs.cap.3d': 'תלת־ממד חי — גררו כדי לסובב, הקישו על קומה כדי לראות את התכנית', 'hs.loading3d': 'טוען תלת־ממד חי…', 'hs.prev': 'התמונה הקודמת', 'hs.next': 'התמונה הבאה', 'hs.pause': 'עצירת המצגת', 'hs.play': 'הפעלת המצגת', 'hs.region': 'תמונות הפרויקט', 'hs.slide': 'שקופית {n} מתוך {total}', 'hs.illus': 'הדמיה' },

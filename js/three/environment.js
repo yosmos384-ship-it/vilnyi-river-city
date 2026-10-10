@@ -6,7 +6,7 @@
 // and a distant Bucharest skyline ring. Everything is procedural; repeats are instanced or merged (~70 draw calls).
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, LEVELS, PLOT, COMPASS, SPIRAL as SPIRAL_D, RAMP, localToWorld, geoToWorld, footprintOf, coresOf } from '../data.js?v=3.12';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, LEVELS, PLOT, COMPASS, SPIRAL as SPIRAL_D, RAMP, localToWorld, geoToWorld, footprintOf, coresOf } from '../data.js?v=3.13';
 
 // Uniforms shared with exterior.js (window glow etc. follow the environment mode).
 export const SHARED = {
@@ -38,7 +38,7 @@ const LOW = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').
 let MODS = null;
 const MODS_P = (() => {
   const load = (p, fn) => import(p).then(m => (typeof m[fn] === 'function' ? m : null)).catch(e => { console.info(`[env] ${p} not used:`, e && e.message); return null; });
-  return Promise.all([load('./context.js?v=3.12', 'createContext'), load('./lake.js?v=3.12', 'createLake')])
+  return Promise.all([load('./context.js?v=3.13', 'createContext'), load('./lake.js?v=3.13', 'createLake')])
     .then(([context, lake]) => (MODS = { context, lake }));
 })();
 

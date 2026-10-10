@@ -3,8 +3,8 @@
 // (js/hero3d.js renders into #heroHost only while that slide is on — see the 'vrc:hero3d' event).
 // Auto-advances with cross-fades, pauses on hover / touch / when off screen, swipe on phones, dots with captions,
 // and a "↺ Main image" button (and the logo) that returns to slide 1 at any time.
-import { t, pick, onLangChange, dir } from './i18n.js?v=3.12';
-import './i18n-hero.js?v=3.12';
+import { t, pick, onLangChange, dir } from './i18n.js?v=3.13';
+import './i18n-hero.js?v=3.13';
 
 const $ = (s, r = document) => r.querySelector(s);
 const stage = $('#heroStage');
@@ -25,7 +25,7 @@ function init() {
   const isRtl = () => (document.documentElement.dir || dir) === 'rtl';
 
   // ---------- slides from the manifest (lazy: only slide 1 is in the page and preloaded) ----------
-  fetch('assets/hero-slides.json?v=3.12').then(r => (r.ok ? r.json() : null)).then(j => {
+  fetch('assets/hero-slides.json?v=3.13').then(r => (r.ok ? r.json() : null)).then(j => {
     const list = (j?.slides || []).filter(s => s && s.src);
     list.forEach((s, k) => {
       const fig = document.createElement('figure');

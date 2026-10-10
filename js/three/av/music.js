@@ -51,9 +51,10 @@ export function createLiftMusic(ac, out) {
       g.gain.cancelScheduledValues(now); g.gain.setTargetAtTime(0.8, now, 0.6);
       clearInterval(timer); timer = setInterval(sched, 200); sched();
     },
-    stop() {
+    // tc: the fade's time constant (seconds). A car stops it at once: the notes already queued must not be heard in the car
+    stop(tc = 0.35) {
       if (!on) return; on = false; clearInterval(timer);
-      const now = ac.currentTime; g.gain.cancelScheduledValues(now); g.gain.setTargetAtTime(0, now, 0.35);
+      const now = ac.currentTime; g.gain.cancelScheduledValues(now); g.gain.setTargetAtTime(0, now, tc);
     },
     get playing() { return on; },
     dispose() { this.stop(); clearInterval(timer); setTimeout(() => { try { g.disconnect(); } catch { /* */ } }, 1500); },

@@ -1,8 +1,9 @@
 // City Drive — the car radio.
 // Presets 1–4 are the public broadcaster's own internet streams (Societatea Română de Radiodifuziune, host srr.ro),
 // played through a plain <audio> element (no CORS needed as the sound is never routed through Web Audio). Preset 5,
-// "VRC FM", is a built-in generated music programme (audio.js) with no recorded tracks at all — it is also what plays
-// whenever a stream cannot be reached or is blocked. NOT VERIFIED against the live streams from the build sandbox
+// "VRC FM", is the built-in generated programme (audio.js): in the car it is the radio-style FALLBACK (pips, a sting,
+// speech-like phrases, never a melody), labelled as such on screen. It is what plays whenever no stream can be reached or
+// is blocked. The car's radio starts on a random preset each time the visitor gets in (index.js). NOT VERIFIED against the live streams from the build sandbox
 // (no outbound audio there): the Actualități address is the one a public station directory lists for it, the other
 // three follow the same naming on the same host and are assumptions. Replace or extend the list with window.VRC_RADIO = [{name, freq, urls:[…]}] if needed.
 // Rebroadcasting a station inside a commercial site may need the broadcaster's permission — the owner should check.
@@ -21,8 +22,8 @@ export function createRadio({ audio, onChange = () => {} } = {}) {
   const state = () => ({ on, index: idx, name: list[idx].name, freq: list[idx].freq, status, volume: vol, synth: !!list[idx].synth, count: list.length, stations: names });
   const set = s => { status = s; onChange(state()); };
   function stopEl() { clearTimeout(timer); if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } el.onplaying = el.onerror = el.onstalled = el.onended = null; } }
-  function synthOn(v) { try { audio && audio.radioSynth(v, vol); } catch (e) { console.warn('[city] radio synth', e); } }
-  function standby(v) { try { audio && audio.radioSynth(v, vol * 0.35); } catch { /* */ } }
+  function synthOn(v) { try { audio && audio.radioSynth(v, vol, 'news'); } catch (e) { console.warn('[city] radio synth', e); } }
+  function standby(v) { try { audio && audio.radioSynth(v, vol * 0.35, 'news'); } catch { /* */ } }
   function fail(my) {   // this station cannot be played now → the next preset, in the end VRC FM (never an error on screen)
     if (my !== tok) return; stopEl(); list[idx].dead = true;
     for (let k = 1; k <= list.length; k++) { const j = (idx + dirn * k + list.length * 4) % list.length; if (!list[j].dead || list[j].synth) { idx = j; break; } }
@@ -49,9 +50,10 @@ export function createRadio({ audio, onChange = () => {} } = {}) {
   }
   return {
     state, stations: list,
-    // call from a user gesture (the ignition button): browsers only start audio then
-    // quiet: the car's ignition — the generated programme (no network), so no live stream is held open by the game
-    power(v, quiet = false) { on = v == null ? !on : !!v; if (!on) { tok++; stopEl(); synthOn(false); return set('off'); } if (quiet) idx = list.length - 1; tune(); },
+    // call from a user gesture (getting in, the R key, the radio button): browsers only start audio then
+    power(v) { on = v == null ? !on : !!v; if (!on) { tok++; stopEl(); synthOn(false); return set('off'); } tune(); },
+    // the car's radio on entry: a random preset (the fallback included)
+    start() { idx = Math.floor(Math.random() * list.length); list[idx].dead = false; on = true; tune(); },
     // a station picked from the list: tune it at once (the radio turns on)
     pick(i) { if (!list.length) return; dirn = 1; idx = ((+i % list.length) + list.length) % list.length; list[idx].dead = false; on = true; tune(); },
     next(d = 1) { dirn = d >= 0 ? 1 : -1; idx = (idx + dirn + list.length) % list.length; list[idx].dead = false; if (on) tune(); else onChange(state()); },

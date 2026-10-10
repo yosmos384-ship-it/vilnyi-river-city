@@ -15,7 +15,7 @@
   var RUN = String(window.VRC_VERSION || '');
   if (!RUN) return;
   var me = document.currentScript;
-  var FILE = new URL('../version.json?v=3.12', (me && me.src) || location.href);
+  var FILE = new URL('../version.json?v=3.13', (me && me.src) || location.href);
   var AUTO_LATER = !(me && me.getAttribute('data-auto') === 'first');   // crm.html: auto-reload only right after load
   var KEY = 'vrc.ver.reload', PARAM = '_v';
   var TEXT = {

@@ -4,10 +4,10 @@
 // traced between its OSM bridges, parks are placed at their real positions with approximate outlines.
 // buildRealMap() returns the same map interface as the procedural map.js (nodes / edges / blocks / chunks / queries), so the
 // world, traffic, people and police run on it unchanged. Frame "G": x = metres east, z = metres south of the project pin.
-import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.12';
-import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG, segD as segDist } from './map.js?v=3.12';
+import { BUILDINGS, CONTEXT_BLOCKS, LAKE, PLOT, RAMP, footprintOf, worldToGeo } from '../../data.js?v=3.13';
+import { ROAD, CHUNK, BOUNDS, hash2, inPoly, polyD, llToG, segD as segDist } from './map.js?v=3.13';
 
-const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.12', import.meta.url);
+const GRAPH_URL = new URL('../../../assets/city/graph.json?v=3.13', import.meta.url);
 const VER = GRAPH_URL.search;
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
 

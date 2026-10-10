@@ -1,14 +1,14 @@
 // VILNYI River City — the sound bar of the walkthrough: mute (always on screen), and the radio scanner (previous station,
 // the station with its frequency, next). Plain DOM, the same in every place; the labels follow the page language.
 const T = {
-  en: { mute: 'Mute', on: 'Sound on', off: 'radio off', radioOff: 'Radio: enter a flat or a car', tap: 'Tap to start the radio', prev: 'Previous station', next: 'Next station', scan: 'Scan' },
-  ro: { mute: 'Mut', on: 'Sunet pornit', off: 'radio oprit', radioOff: 'Radio: intră într-un apartament sau o mașină', tap: 'Atinge pentru a porni radioul', prev: 'Postul anterior', next: 'Postul următor', scan: 'Caută' },
-  he: { mute: 'השתקה', on: 'הצליל פועל', off: 'הרדיו כבוי', radioOff: 'רדיו: היכנסו לדירה או לרכב', tap: 'לחצו כדי להפעיל את הרדיו', prev: 'התחנה הקודמת', next: 'התחנה הבאה', scan: 'סריקה' },
-  ru: { mute: 'Без звука', on: 'Звук включён', off: 'радио выключено', radioOff: 'Радио: войдите в квартиру или машину', tap: 'Нажмите, чтобы включить радио', prev: 'Предыдущая станция', next: 'Следующая станция', scan: 'Поиск' },
-  uk: { mute: 'Без звуку', on: 'Звук увімкнено', off: 'радіо вимкнено', radioOff: 'Радіо: увійдіть до квартири або авто', tap: 'Торкніться, щоб увімкнути радіо', prev: 'Попередня станція', next: 'Наступна станція', scan: 'Пошук' },
-  fr: { mute: 'Couper', on: 'Son activé', off: 'radio éteinte', radioOff: 'Radio : entrez dans un appartement ou une voiture', tap: 'Touchez pour lancer la radio', prev: 'Station précédente', next: 'Station suivante', scan: 'Recherche' },
-  it: { mute: 'Muto', on: 'Audio attivo', off: 'radio spenta', radioOff: 'Radio: entra in un appartamento o in un’auto', tap: 'Tocca per avviare la radio', prev: 'Stazione precedente', next: 'Stazione successiva', scan: 'Cerca' },
-  de: { mute: 'Stumm', on: 'Ton an', off: 'Radio aus', radioOff: 'Radio: Wohnung oder Auto betreten', tap: 'Tippen, um das Radio zu starten', prev: 'Vorheriger Sender', next: 'Nächster Sender', scan: 'Suchlauf' },
+  en: { mute: 'Mute', on: 'Sound on', off: 'radio off', radioOff: 'Radio: enter a flat or a car', tap: 'Tap to start the radio', prev: 'Previous station', next: 'Next station', fb: 'Radio fallback · no stream', scan: 'Scan' },
+  ro: { mute: 'Mut', on: 'Sunet pornit', off: 'radio oprit', radioOff: 'Radio: intră într-un apartament sau o mașină', tap: 'Atinge pentru a porni radioul', prev: 'Postul anterior', next: 'Postul următor', fb: 'Radio de rezervă · fără stream', scan: 'Caută' },
+  he: { mute: 'השתקה', on: 'הצליל פועל', off: 'הרדיו כבוי', radioOff: 'רדיו: היכנסו לדירה או לרכב', tap: 'לחצו כדי להפעיל את הרדיו', prev: 'התחנה הקודמת', next: 'התחנה הבאה', fb: 'רדיו גיבוי · בלי שידור חי', scan: 'סריקה' },
+  ru: { mute: 'Без звука', on: 'Звук включён', off: 'радио выключено', radioOff: 'Радио: войдите в квартиру или машину', tap: 'Нажмите, чтобы включить радио', prev: 'Предыдущая станция', next: 'Следующая станция', fb: 'Радио-резерв · без эфира', scan: 'Поиск' },
+  uk: { mute: 'Без звуку', on: 'Звук увімкнено', off: 'радіо вимкнено', radioOff: 'Радіо: увійдіть до квартири або авто', tap: 'Торкніться, щоб увімкнути радіо', prev: 'Попередня станція', next: 'Наступна станція', fb: 'Радіо-резерв · без ефіру', scan: 'Пошук' },
+  fr: { mute: 'Couper', on: 'Son activé', off: 'radio éteinte', radioOff: 'Radio : entrez dans un appartement ou une voiture', tap: 'Touchez pour lancer la radio', prev: 'Station précédente', next: 'Station suivante', fb: 'Radio de secours · sans flux', scan: 'Recherche' },
+  it: { mute: 'Muto', on: 'Audio attivo', off: 'radio spenta', radioOff: 'Radio: entra in un appartamento o in un’auto', tap: 'Tocca per avviare la radio', prev: 'Stazione precedente', next: 'Stazione successiva', fb: 'Radio di riserva · senza flusso', scan: 'Cerca' },
+  de: { mute: 'Stumm', on: 'Ton an', off: 'Radio aus', radioOff: 'Radio: Wohnung oder Auto betreten', tap: 'Tippen, um das Radio zu starten', prev: 'Vorheriger Sender', next: 'Nächster Sender', fb: 'Radio-Ersatz · ohne Stream', scan: 'Suchlauf' },
 };
 const ICON_ON = '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>';
 const ICON_OFF = '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>';
@@ -51,7 +51,9 @@ export function mountAvBar(parent, av, getLang = () => 'en') {
     const on = !!s.radio;
     prev.disabled = next.disabled = scan.disabled = !on;
     prev.setAttribute('aria-label', l.prev); next.setAttribute('aria-label', l.next); scan.title = l.scan;
-    if (on && s.station) { f.textContent = s.station.freq ? s.station.freq : ''; n.textContent = s.status === 'tap' ? l.tap : s.station.name; }
+    // a car that plays the generated programme says so: the fallback is never mistaken for a real station
+    const fallback = !!(s.station && s.station.synth && s.radio === 'car');
+    if (on && s.station) { f.textContent = s.station.freq ? s.station.freq : ''; n.textContent = s.status === 'tap' ? l.tap : fallback ? l.fb : s.station.name; }
     else { f.textContent = ''; n.textContent = s.status === 'tap' ? l.tap : l.radioOff; }
     last = s;
   }

@@ -213,7 +213,7 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     setCls('[data-a=lights]', s.lights); setCls('[data-a=high]', s.high); setCls('[data-a=wipers]', s.wipers); setCls('[data-a=indL]', s.indL); setCls('[data-a=indR]', s.indR); setCls('[data-a=hand]', s.hb); setCls('[data-a=start]', s.engine);
     const st = q('[data-a=start]'); if (st && s.engine !== last.engine) st.textContent = s.engine ? t('stop') : t('start');
     if (s.radio) {
-      const r = s.radio, nm = r.on ? r.name : t('rOff'), fq = r.on ? (r.freq ? r.freq + ' FM' : '') + (r.status === 'tuning' ? ' …' : '') : '—';
+      const r = s.radio, nm = r.on ? (r.synth ? t('rFallback') : r.name) : t('rOff'), fq = r.on ? (r.freq ? r.freq + ' FM' : '') + (r.status === 'tuning' ? ' …' : '') : '—';
       if (el.rnm.textContent !== nm) el.rnm.textContent = nm; if (el.rf.textContent !== fq) el.rf.textContent = fq;
       el.rbox.classList.toggle('on', !!r.on);
       const key = (r.on ? r.index : -1) + '|' + (r.stations || []).length + '|' + r.volume.toFixed(1);

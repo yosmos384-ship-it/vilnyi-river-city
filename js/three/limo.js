@@ -8,15 +8,15 @@
 //                       partition screen), a rear right door that swings, emissive lights — 12 draw calls
 //   createChauffeur()   an articulated 3D figure (suit, cap, gloves) with a walk cycle and a few gestures — 11 draw calls
 //   limoRoutes()        the two rides as arc-length paths with a speed profile
-//   LoungeMusic         synthesised lounge music (WebAudio only, nothing recorded)
+//   (no music in the car: the limousine plays only the car radio of the walkthrough, see walk.js and av/av.js)
 //   LimoExperience      the state machine, HUD and hooks for walk.js
 //
 // No lights are added to the scene: the walkthrough's one spot light (the fleet's headlights) is borrowed as the
 // canopy light, the cabin light and the quay light in turn; everything else is emissive.
 import * as THREE from 'three';
-import { carKit, carSpec } from './cars.js?v=3.12';
-import { LAKE } from '../data.js?v=3.12';
-import { ROADS, FORECOURTS, QUAY, ENTRANCES } from './environment.js?v=3.12';
+import { carKit, carSpec } from './cars.js?v=3.13';
+import { LAKE } from '../data.js?v=3.13';
+import { ROADS, FORECOURTS, QUAY, ENTRANCES } from './environment.js?v=3.13';
 
 const { kindGeometry, tint, glow, strip, flipWinding, gridSurface, project, lightMaterial, paintMaterial, shared, shadowGeometry, shadowLocal, mergeGeometries, RoundedBoxGeometry, mrMaterial } = carKit;
 const TAU = Math.PI * 2;
@@ -781,98 +781,6 @@ export function limoRoute(bId) {
   return (_routes[bId] = { id: bId, n, x, z, s, len, c0, c1, duration, cAt, vAt, pose, at, vertices: V });
 }
 
-// ------------------------------------------------------------------ lounge music (WebAudio synthesis only)
-// A slow four-chord vamp in D minor: electric-piano chords with a gentle tremolo, a round bass, brushed hats and a soft
-// kick, a sparse vibraphone line over the top, a little tape echo. Nothing recorded, nothing sampled.
-export class LoungeMusic {
-  constructor(getCtx) { this.getCtx = getCtx; this.on = false; this.vol = 0.6; this._timer = null; this._bar = 0; this._next = 0; this._seed = 7; this.road = null; }
-  _rnd() { this._seed = (Math.imul(this._seed, 1664525) + 1013904223) >>> 0; return this._seed / 4294967296; }
-  get playing() { return this.on; }
-  setVolume(v) { this.vol = clamp(v); if (this.master) try { this.master.gain.setTargetAtTime(this.on ? this.vol * 0.5 : 0, this.ac.currentTime, 0.08); } catch { /* */ } }
-  _build() {
-    const ac = this.getCtx(); if (!ac) return false;
-    if (this.ac === ac && this.master) return true;
-    this.ac = ac;
-    const master = ac.createGain(); master.gain.value = 0;
-    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; lp.Q.value = 0.4;
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.3;
-    const dry = ac.createGain(); dry.gain.value = 1;
-    const dl = ac.createDelay(1.2); dl.delayTime.value = 0.375; const fb = ac.createGain(); fb.gain.value = 0.3; const wet = ac.createGain(); wet.gain.value = 0.22;
-    const dlp = ac.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 2200;
-    dry.connect(lp); dry.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(wet); wet.connect(lp);
-    lp.connect(comp); comp.connect(master); master.connect(ac.destination);
-    this.master = master; this.bus = dry;
-    // one buffer of noise for the brushes and the road
-    const nb = ac.createBuffer(1, ac.sampleRate, ac.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    this.noise = nb;
-    return true;
-  }
-  _tone(f, t, dur, vol, type = 'sine', a = 0.012, dest = this.bus) {
-    const ac = this.ac, o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f;
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05); return { o, g };
-  }
-  _ep(f, t, dur, vol) {   // electric piano: fundamental + a bell partial that dies quickly, slow tremolo
-    const ac = this.ac, tr = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
-    tr.gain.value = 1; lfo.frequency.value = 4.6; lg.gain.value = 0.16; lfo.connect(lg).connect(tr.gain); lfo.start(t); lfo.stop(t + dur + 0.1);
-    tr.connect(this.bus);
-    this._tone(f, t, dur, vol, 'sine', 0.008, tr); this._tone(f * 2, t, dur * 0.5, vol * 0.3, 'triangle', 0.006, tr); this._tone(f * 4.01, t, 0.22, vol * 0.16, 'sine', 0.003, tr);
-  }
-  _hat(t, vol, dur = 0.05) {
-    const ac = this.ac, src = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
-    src.buffer = this.noise; src.playbackRate.value = 0.9 + this._rnd() * 0.3; hp.type = 'highpass'; hp.frequency.value = 6500;
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(hp).connect(g).connect(this.bus); src.start(t, this._rnd() * 0.5, dur + 0.02);
-  }
-  _kick(t, vol) { const { o } = this._tone(110, t, 0.28, vol, 'sine', 0.004); o.frequency.exponentialRampToValueAtTime(42, t + 0.16); }
-  _schedule() {
-    const ac = this.ac; if (!ac || !this.on) return;
-    const BPM = 84, beat = 60 / BPM, barLen = beat * 4, mtof = n => 440 * Math.pow(2, (n - 69) / 12);
-    // Dm9 · G13 · Cmaj9 · A7(b13): roots and rootless voicings (MIDI)
-    const CH = [[38, [60, 64, 65, 69]], [43, [59, 64, 65, 69]], [36, [59, 62, 64, 67]], [45, [55, 61, 65, 67]]];
-    const SCALE = [74, 77, 79, 81, 84, 86, 89];
-    if (this._next < ac.currentTime) this._next = ac.currentTime + 0.08;
-    while (this._next < ac.currentTime + 0.6) {
-      const t0 = this._next, [root, voic] = CH[this._bar % 4], sw = beat * 0.16;
-      for (const [k, nn] of voic.entries()) this._ep(mtof(nn), t0 + k * 0.018, barLen * 0.92, 0.075);
-      if (this._bar % 2 === 1) for (const [k, nn] of voic.entries()) this._ep(mtof(nn), t0 + beat * 2.5 + k * 0.014, beat * 1.3, 0.05);
-      // bass: root, a lift on the "and" of two, the fifth leading into the next bar
-      this._tone(mtof(root), t0, beat * 1.5, 0.26, 'sine', 0.02); this._tone(mtof(root) * 2, t0, beat * 0.6, 0.05, 'triangle', 0.02);
-      this._tone(mtof(root), t0 + beat * 1.5 + sw, beat * 0.9, 0.2, 'sine', 0.02); this._tone(mtof(root + 7), t0 + beat * 3 + sw, beat * 0.8, 0.18, 'sine', 0.02);
-      // drums: soft kick on one and three, brushed off-beats with a swung ghost
-      this._kick(t0, 0.3); this._kick(t0 + beat * 2, 0.24);
-      for (let b = 0; b < 4; b++) { this._hat(t0 + b * beat + beat / 2 + sw, 0.035, 0.07); if (b % 2) this._hat(t0 + b * beat, 0.05, 0.14); if (this._rnd() < 0.4) this._hat(t0 + b * beat + beat * 0.75 + sw, 0.016, 0.04); }
-      // vibraphone: a short phrase every other bar
-      if (this._bar % 2 === 0 || this._rnd() < 0.3) {
-        let idx = Math.floor(this._rnd() * SCALE.length), tt = t0 + beat * (this._rnd() < 0.5 ? 0.5 : 1) + sw;
-        const notes = 2 + Math.floor(this._rnd() * 3);
-        for (let k = 0; k < notes && tt < t0 + barLen - 0.2; k++) {
-          const f = mtof(SCALE[idx]); this._tone(f, tt, 1.3, 0.06, 'sine', 0.004); this._tone(f * 4, tt, 0.25, 0.012, 'sine', 0.002);
-          idx = clamp(idx + (this._rnd() < 0.5 ? -1 : 1) * (1 + Math.floor(this._rnd() * 2)), 0, SCALE.length - 1); tt += beat * (this._rnd() < 0.6 ? 0.5 : 1);
-        }
-      }
-      this._bar++; this._next += barLen;
-    }
-  }
-  play() {
-    if (!this._build()) return false;
-    this.on = true; this._next = 0;
-    try { this.master.gain.cancelScheduledValues(this.ac.currentTime); this.master.gain.setTargetAtTime(this.vol * 0.5, this.ac.currentTime, 0.6); } catch { /* */ }
-    clearInterval(this._timer); this._timer = setInterval(() => { try { this._schedule(); } catch (e) { console.warn('[limo] music', e); this.pause(); } }, 120);
-    this._schedule(); return true;
-  }
-  pause() { this.on = false; clearInterval(this._timer); this._timer = null; if (this.master) try { this.master.gain.setTargetAtTime(0, this.ac.currentTime, 0.15); } catch { /* */ } }
-  /** A whisper of tyre noise under the music, by speed (m/s). */
-  setRoad(v) {
-    if (!this.ac || !this.noise) return;
-    try {
-      if (!this.road) { const src = this.ac.createBufferSource(), f = this.ac.createBiquadFilter(), g = this.ac.createGain(); src.buffer = this.noise; src.loop = true; f.type = 'lowpass'; f.frequency.value = 240; g.gain.value = 0; src.connect(f).connect(g).connect(this.ac.destination); src.start(); this.road = { src, g }; }
-      this.road.g.gain.setTargetAtTime(Math.min(0.05, v * 0.0034), this.ac.currentTime, 0.3);
-    } catch { /* optional */ }
-  }
-  dispose() { this.pause(); try { if (this.road) { this.road.src.stop(); this.road = null; } if (this.master) this.master.disconnect(); } catch { /* */ } this.master = null; }
-}
-
 // ------------------------------------------------------------------ strings (8 languages)
 const TXT = {
   en: { banner: 'VILNYI Lifestyle — concept experience', chip: 'Limousine', cg: 'Limousine to the yacht', in: 'Get in', greetEve: 'Good evening. Your limousine is ready.', greetDay: 'Good day. Your limousine is ready.', seated: 'Make yourself comfortable.', skip: 'Skip ride', out: 'Step out', music: 'Music', vol: 'Volume', dest: 'Lacul Morii · yacht pier', arrive: 'We have arrived. The yacht is waiting for you.', board: 'Board the yacht', back: 'Back to the building', quay: 'Lacul Morii · quay', court: 'Drop-off court', hint: 'Drag to look around', eta: 'Arrival in' },
@@ -901,12 +809,6 @@ const LIMO_CSS = `
 .vw.limo-in .vl-bar{display:flex}
 .vl-bar .vw-btn{height:38px;flex-shrink:0}
 .vl-bar .vw-ico{width:38px;padding:0;justify-content:center}
-.vl-bar [data-limo=music] .pa{display:none}.vl-bar [data-limo=music].on .pa{display:inline}.vl-bar [data-limo=music].on .pl{display:none}
-.vl-vol{-webkit-appearance:none;appearance:none;width:84px;height:22px;background:transparent;margin:0;flex-shrink:1;min-width:48px;touch-action:none}
-.vl-vol::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:rgba(201,164,92,.38)}
-.vl-vol::-moz-range-track{height:3px;border-radius:2px;background:rgba(201,164,92,.38)}
-.vl-vol::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-6.5px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#f0d596,#a87c34);border:0}
-.vl-vol::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e6c987;border:0}
 .vl-bar [data-limo=out][hidden],.vl-bar [data-limo=skip][hidden]{display:none}
 .vl-eta{position:absolute;top:calc(96px + var(--st));left:50%;transform:translateX(-50%);padding:5px 13px;border-radius:999px;font-size:11.5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .3s;unicode-bidi:plaintext;z-index:2}
 .vw.limo-ride .vl-eta{opacity:1}
@@ -920,7 +822,6 @@ const LIMO_CSS = `
 .vl-banner span,.vl-go span,.vl-bar .lbl,.vl-quay .vw-btn{unicode-bidi:plaintext}
 `;
 const BIRD_SVG = '<svg width="18" height="16" viewBox="0 0 100 86" aria-hidden="true"><path d="M6 8l36-6 20 28-12 10z" fill="#d9b25f"/><path d="M42 2l20 28-12 10-3-22z" fill="#f0d596"/><path d="M50 40l12-10 16 8-18 12z" fill="#e6c987"/><path d="M62 30l10-16 12-2-6 26z" fill="#c9a45c"/><path d="M72 14l25-6-15 10z" fill="#f0d596"/><path d="M50 40l10 10-10 32z" fill="#b88a3c"/></svg>';
-const ICON_NOTE = '<svg class="pl" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg><svg class="pa" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 
@@ -932,8 +833,6 @@ export class LimoExperience {
     this.w = w; this.state = 'idle'; this.at = null; this._tok = 0; this._timers = []; this._t = 0; this.cam = null; this.armed = true;
     this.limo = createLimousine(); this.ch = createChauffeur();
     w.scene.add(this.limo.group, this.ch.group);
-    this.music = new LoungeMusic(() => w._audio());
-    { const v = parseFloat(lsGet('vrc.limo.vol')); this.music.vol = isFinite(v) ? clamp(v) : 0.6; }
     this.ride = null; this.rideT = 0; this.rideV = 0; this._avoid = { x: 0, z: 0, hx: 0, hz: 1, v: 0 };
     this._spot0 = null; this._light = null; this._eye = new THREE.Vector3(); this._v = new THREE.Vector3(); this._q = new THREE.Quaternion();
     // headlight pools on the road (additive, night only) — emissive stand-ins, no light is added
@@ -989,22 +888,18 @@ export class LimoExperience {
     this.el = {
       banner: mk('div', 'vl-banner vw-panel', BIRD_SVG + '<span></span>'),
       go: mk('button', 'vl-go vw-btn vw-gold', '<svg width="20" height="14" viewBox="0 0 40 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2 17v-5l4-1 5-6h17l5 6 5 1v5"/><path d="M2 17h36"/><circle cx="9" cy="18" r="3"/><circle cx="31" cy="18" r="3"/><path d="M16 5v6M24 5v6"/></svg><span class="lbl"></span>'),
-      bar: mk('div', 'vl-bar vw-panel', `<button class="vw-btn vw-ghost vw-ico" data-limo="music">${ICON_NOTE}</button><input class="vl-vol" type="range" min="0" max="100" step="1"><button class="vw-btn vw-ghost" data-limo="out"><span class="lbl"></span></button><button class="vw-btn vw-gold" data-limo="skip"><span class="lbl"></span><span aria-hidden="true">⏭︎</span></button>`),
+      bar: mk('div', 'vl-bar vw-panel', `<button class="vw-btn vw-ghost" data-limo="out"><span class="lbl"></span></button><button class="vw-btn vw-gold" data-limo="skip"><span class="lbl"></span><span aria-hidden="true">⏭︎</span></button>`),
       eta: mk('div', 'vl-eta vw-panel', '<span></span> · <b></b>'),
       quay: mk('div', 'vl-quay', '<button class="vw-btn vw-gold" data-limo="board"></button><button class="vw-btn vw-ghost" data-limo="back"></button>'),
     };
     this.el.go.dataset.limo = 'in';
-    this.el.vol = this.el.bar.querySelector('.vl-vol'); this.el.vol.value = String(Math.round(this.music.vol * 100));
-    this._onVol = () => { const v = clamp(+this.el.vol.value / 100); this.music.setVolume(v); lsSet('vrc.limo.vol', String(v)); };
-    this.el.vol.addEventListener('input', this._onVol);
     this.applyTexts();
   }
   applyTexts() {
     const e = this.el; if (!e) return;
     e.banner.querySelector('span').textContent = this.t('banner');
     e.go.querySelector('.lbl').textContent = this.t('in');
-    const [m, , o, s] = e.bar.children;
-    m.title = this.t('music'); m.setAttribute('aria-label', this.t('music')); e.vol.title = this.t('vol'); e.vol.setAttribute('aria-label', this.t('vol'));
+    const [o, s] = e.bar.children;
     o.querySelector('.lbl').textContent = this.t('out'); s.querySelector('.lbl').textContent = this.t('skip');
     e.eta.querySelector('span').textContent = this.t('dest');
     e.quay.children[0].textContent = this.t('board'); e.quay.children[1].textContent = this.t('back');
@@ -1018,8 +913,7 @@ export class LimoExperience {
     e.go.classList.toggle('show', s === 'open' && !!this._canBoard && !w.drive && !w.busy);
     w.root.classList.toggle('limo-in', this.seated);
     w.root.classList.toggle('limo-ride', s === 'ride');
-    const [m, , o, sk] = e.bar.children;
-    m.classList.toggle('on', this.music.playing); m.setAttribute('aria-pressed', String(this.music.playing));
+    const [o, sk] = e.bar.children;
     o.hidden = !(s === 'seated' && !this._leaving); sk.hidden = !(s === 'seated' || s === 'ride');
     e.quay.classList.toggle('show', s === 'quay' && !!this._atQuay && !w.drive && !aboard);
     e.quay.children[0].hidden = !(window.VRC && window.VRC.yacht && typeof window.VRC.yacht.board === 'function');
@@ -1027,18 +921,14 @@ export class LimoExperience {
   /** HUD buttons (walk.js routes clicks on [data-limo] here). */
   hud(key) {
     if (key === 'in') return this.board();
-    if (key === 'music') return this.toggleMusic();
     if (key === 'skip') return this.skip();
     if (key === 'out') return this.stepOut();
     if (key === 'back') return this.back();
     if (key === 'board') { try { window.VRC.yacht.board({ from: 'quay' }); } catch (e) { console.warn('[limo] yacht.board', e); } return; }
     if (key === 'start') return this.start();
   }
-  toggleMusic(v) {
-    const on = v == null ? !this.music.playing : !!v;
-    if (on) { if (!this.music.play()) return; } else this.music.pause();
-    lsSet('vrc.limo.music', on ? 'on' : 'off'); this._hudSync();
-  }
+  /** The visitor is in the car (seated, riding, or about to step out): the walkthrough plays the car radio then. */
+  inCar() { return this.state === 'seated' || this.state === 'ride' || this.state === 'arriving'; }
 
   // ---- little scheduler driven by update(dt) (so the whole sequence follows the walkthrough's clock)
   _wait(sec) { return new Promise(res => this._timers.push({ t: sec, T: sec, res })); }
@@ -1156,7 +1046,6 @@ export class LimoExperience {
     w.player.yaw = w.player.tYaw = 0; w.player.pitch = w.player.tPitch = -0.05;
     this.state = 'seated'; this._hudSync();
     w._toast(this.t('seated') + '  ·  ' + this.t('hint'), 3200);
-    if (lsGet('vrc.limo.music') !== 'off') this.toggleMusic(true);
     await this._wait(0.25); if (tok !== this._tok) return;
     await this._closeDoor(tok); if (tok !== this._tok) return;
     await this._chauffeurRound(tok, true); if (tok !== this._tok) return;
@@ -1183,7 +1072,7 @@ export class LimoExperience {
   async stepOut() {
     if (this.state !== 'seated' || this._leaving) return;
     const tok = this._cancel(), car = this.limo; this.state = 'arriving';
-    this.music.pause(); this._hudSync();
+    this._hudSync();
     // the chauffeur comes back to the door wherever he was
     if (this.ch.seated) this._seatDriver(false);
     const hd = this._local(car.chHandle); this.ch.setPose('stand'); await this.ch.walk([[hd.x, hd.z]], 2.2); if (tok !== this._tok) return;
@@ -1227,7 +1116,7 @@ export class LimoExperience {
   async _arrive() {
     const tok = this._cancel(), w = this.w; this.state = 'arriving'; this.rideV = 0;
     w.env && w.env.setTrafficAvoid && w.env.setTrafficAvoid(null);
-    this.music.setRoad(0); this.limo.setLights(w.envMode !== 'day', false); this._hudSync();
+    this.limo.setLights(w.envMode !== 'day', false); this._hudSync();
     w._toast(this.t('arrive'), 3600); this._speak(this.t('arrive'));
     await this._wait(0.7); if (tok !== this._tok) return;
     await this._chauffeurRound(tok, false); if (tok !== this._tok) return;
@@ -1247,7 +1136,6 @@ export class LimoExperience {
     const q = this.cam.q1, e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
     this.cam = null;
     w._place(new THREE.Vector3(si.x, 0, si.z), e.y, e.x); w.player.eye = 1.62; w._lastPlace = null; w._applyFov && w._applyFov();
-    this.music.pause();
     if (atQuay) {
       this.state = 'quay'; this._atQuay = true; this._hudSync(); w._updateHud(true);
       // stroll to the quay point in front of the pier (round the promenade lamp on the axis)
@@ -1282,7 +1170,7 @@ export class LimoExperience {
   /** From the quay (or anywhere): back at the entrance of the building, the limousine parked at its court again. */
   async back() {
     const w = this.w, id = this.at || 'C3', F = FORECOURTS[id];
-    const tok = this._cancel(); this.music.pause(); this.state = 'idle'; this._atQuay = false; this.cam = null; this.armed = false; this._canBoard = false;
+    const tok = this._cancel(); this.state = 'idle'; this._atQuay = false; this.cam = null; this.armed = false; this._canBoard = false;
     w.env && w.env.setTrafficAvoid && w.env.setTrafficAvoid(null);
     await w._fade(true);
     try {
@@ -1334,7 +1222,6 @@ export class LimoExperience {
     const blink = (performance.now() % 760) < 400, turn = Math.abs(p.steer) > 0.14 && v < 8 ? Math.sign(p.steer) : 0;
     car.setIndicators(blink && turn > 0, blink && turn < 0);
     const dv = c + 14 < R.c1 ? R.vAt(c + 6) - v : -1; car.setLights(w.envMode !== 'day', dv < -0.5 && v > 0.3);
-    this.music.setRoad(v);
     w.player.pos.set(p.x, 0, p.z);
     if (this.rideT >= R.duration && this.state === 'ride') this._arrive();
   }
@@ -1456,7 +1343,6 @@ export class LimoExperience {
     this._cancel(); const w = this.w;
     try { w.env && w.env.setTrafficAvoid && w.env.setTrafficAvoid(null); } catch { /* */ }
     if (this._spot0 && w.headSpot) { Object.assign(w.headSpot, this._spot0); w.headSpot.intensity = 0; }
-    this.music.dispose();
     try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch { /* */ }
     w._unregister && ['limo', 'limo-court', 'limo-pier'].forEach(s => w._unregister(s));
     this.el.vol.removeEventListener('input', this._onVol);

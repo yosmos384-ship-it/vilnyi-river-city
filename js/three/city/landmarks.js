@@ -4,7 +4,7 @@
 // and the Arcul de Triumf on its roundabout. Dimensions are the published ones (≈ 240 × 270 m, ≈ 84 m above ground);
 // the outline is a simplified massing, no logos or signage. Uses the city's own materials (geo.js): 2–3 draw calls.
 import * as THREE from 'three';
-import { Geo } from './geo.js?v=3.12';
+import { Geo } from './geo.js?v=3.13';
 
 export function buildLandmarks(map, M) {
   const group = new THREE.Group(); group.name = 'city-landmarks'; const solids = [];
