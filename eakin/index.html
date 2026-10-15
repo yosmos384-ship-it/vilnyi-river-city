@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f16">
+<title>3351 Eakin Rd — סיור 3D</title>
+<meta name="description" content="סיור תלת-ממדי אינטראקטיבי בבית ב-3351 Eakin Rd, Columbus OH — אחרי שיפוץ: הליכה, 360°, דולהאוס ותוכנית קומה.">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js",
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.23/build/index.module.js"
+  }
+}
+</script>
+<style>
+:root{
+  --bg:#0b0f16;
+  --glass:rgba(14,19,28,.58);
+  --glass-strong:rgba(12,16,24,.82);
+  --line:rgba(255,255,255,.12);
+  --line-strong:rgba(255,255,255,.22);
+  --text:#eef3f8;
+  --muted:rgba(225,235,245,.66);
+  --accent:#43e0ff;
+  --accent-2:#7cf3c8;
+  --accent-ink:#04212a;
+  --danger:#ff6b6b;
+  --radius:14px;
+  --gut:16px;
+  --blur:saturate(150%) blur(16px);
+  --shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  --font: system-ui, -apple-system, "Segoe UI", "Noto Sans Hebrew", "Arial Hebrew", Arial, sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-text-size-adjust:100%;}
+@supports (height:100dvh){html,body{height:100dvh}}
+body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:manipulation;-webkit-touch-callout:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#stage{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0%, #1a2433 0%, #0b0f16 70%);}
+#gl{display:block;width:100%;height:100%;touch-action:none;outline:none}
+body.mode-pano #gl{cursor:grab}
+body.mode-pano #gl:active{cursor:grabbing}
+body.mode-plan #gl{cursor:crosshair}
+
+.glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.ui{position:fixed;z-index:10;transition:opacity .35s ease, transform .35s ease}
+body.loading .ui{opacity:0;pointer-events:none}
+
+/* ---------- top mode bar ---------- */
+#topbar{top:calc(var(--gut) + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:5px;max-width:calc(100vw - 2*var(--gut));overflow-x:auto;scrollbar-width:none}
+#topbar::-webkit-scrollbar{display:none}
+.mode{display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;white-space:nowrap;font-size:14px;font-weight:600;color:var(--muted);transition:background .2s,color .2s}
+.mode .ico{font-size:16px;line-height:1}
+.mode:hover{background:rgba(255,255,255,.07);color:var(--text)}
+.mode.on{background:linear-gradient(180deg,rgba(67,224,255,.95),rgba(42,190,230,.95));color:var(--accent-ink);box-shadow:0 4px 16px rgba(67,224,255,.35)}
+
+/* ---------- tools column ---------- */
+#tools{top:calc(var(--gut) + env(safe-area-inset-top,0px));right:calc(var(--gut) + env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:8px;align-items:stretch;width:150px}
+#toolsInner{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+#btnMore{display:none}
+#btnStyle{display:none}
+body.has-styles #btnStyle{display:flex}
+body.touch #btnDpad{display:none}
+.seg{display:flex;padding:4px;gap:3px}
+.seg button{flex:1;padding:7px 4px;border-radius:9px;font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px}
+.seg button .ico{font-size:15px}
+.seg button.on{background:rgba(255,255,255,.14);color:var(--text)}
+.tbtn{display:flex;align-items:center;gap:9px;padding:9px 12px;font-size:13.5px;font-weight:600;color:var(--text)}
+.tbtn .ico{font-size:16px;width:20px;text-align:center}
+.tbtn:hover{background:rgba(30,40,56,.7)}
+.tbtn.on{border-color:rgba(67,224,255,.7);box-shadow:0 0 0 1px rgba(67,224,255,.4) inset, var(--shadow);color:#bff6ff}
+.tbtn.off{opacity:.65}
+#btnFlash{display:none}
+body.mode-walk #btnFlash{display:flex}
+#btnErr{display:none;border-color:rgba(255,107,107,.5)}
+body.has-errors #btnErr{display:flex}
+
+/* ---------- minimap + room hud + radio chip (V3: half-size map, tap to enlarge) ---------- */
+#leftStack{top:calc(var(--gut) + env(safe-area-inset-top,0px));left:calc(var(--gut) + env(safe-area-inset-left,0px));display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:46vw;direction:ltr}
+#leftStack>*{direction:rtl}
+#mapCard{padding:5px;cursor:pointer;max-width:100%}
+#minimap{display:block;width:100px;height:80px;border-radius:7px;background:rgba(0,0,0,.18)}
+#mapCard.big #minimap{width:200px;height:160px}
+#roomHud{display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:4px 2px 1px;max-width:100px}
+#mapCard.big #roomHud{max-width:200px;flex-direction:row;align-items:baseline;justify-content:space-between;gap:8px}
+#roomName{font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#floorName{font-size:10.5px;color:var(--accent);white-space:nowrap}
+body.mode-dollhouse #minimap, body.mode-plan #minimap{display:none}
+body.mode-dollhouse #roomHud, body.mode-plan #roomHud{max-width:none;min-width:110px}
+#radioChip{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:999px;font-size:12px;max-width:190px;color:var(--text);text-align:right}
+#radioChip:not(.on){opacity:.78}
+#radioChip:hover{background:rgba(30,40,56,.7)}
+#radioChip .rc-ico{font-size:15px;line-height:1}
+#radioChip .rc-txt{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+#radioChip .rc-txt b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#radioChip .rc-txt small{font-size:10px;color:var(--accent);white-space:nowrap;direction:ltr;text-align:right}
+#radioChip .rc-eq{display:none;align-items:flex-end;gap:2px;height:12px}
+#radioChip.on .rc-eq{display:inline-flex}
+#radioChip .rc-eq i{display:block;width:3px;height:100%;border-radius:2px;background:var(--accent);transform-origin:bottom;animation:eq .8s ease-in-out infinite alternate}
+#radioChip .rc-eq i:nth-child(2){animation-delay:-.35s}#radioChip .rc-eq i:nth-child(3){animation-delay:-.6s}
+#radioChip.tuning .rc-eq i{animation-duration:.25s;background:#ffd68c}
+@keyframes eq{0%{transform:scaleY(.25)}100%{transform:scaleY(1)}}
+
+/* ---------- sheets / popovers (radio, style) ---------- */
+.sheet{position:fixed;z-index:16;display:none;flex-direction:column;gap:10px;padding:12px 12px 14px;background:var(--glass-strong);width:min(360px,calc(100vw - 2*var(--gut)));max-height:min(72vh,600px);overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.sheet.show{display:flex}
+#radioPanel{top:calc(var(--gut) + 190px + env(safe-area-inset-top,0px));left:calc(var(--gut) + env(safe-area-inset-left,0px))}
+#stylePanel{top:calc(var(--gut) + 64px + env(safe-area-inset-top,0px));right:calc(var(--gut) + 162px)}
+.sh-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:15px}
+.sh-dim{font-weight:400;color:var(--muted);font-size:12px;direction:ltr;unicode-bidi:isolate}
+.sh-x{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.1);font-size:18px;flex:0 0 auto}
+.rp-name{font-weight:700;font-size:14px}
+.rp-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.rp-ctrl{display:flex;gap:8px;align-items:center}
+.rp-ctrl button{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.1);font-size:17px;flex:0 0 auto}
+.rp-ctrl button:hover{background:rgba(255,255,255,.18)}
+.rp-ctrl .rp-play.on{background:var(--accent);color:var(--accent-ink)}
+.rp-vol{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
+.rp-vol input{flex:1;min-width:0;accent-color:var(--accent);height:28px}
+.rp-list,.sp-list{display:flex;flex-direction:column;gap:5px}
+.rp-st,.sp-it{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.05);text-align:right;width:100%;border:1px solid transparent;min-height:48px}
+.rp-st:hover,.sp-it:hover{background:rgba(255,255,255,.1)}
+.rp-st.on,.sp-it.on{background:rgba(67,224,255,.15);border-color:rgba(67,224,255,.7)}
+.sp-it.busy{opacity:.6;cursor:wait}
+.rp-f{font-variant-numeric:tabular-nums;font-weight:800;min-width:44px;direction:ltr;color:#ffd68c;font-size:13px}
+.rp-t,.sp-t{display:flex;flex-direction:column;min-width:0}
+.rp-t b,.sp-t b{font-size:13.5px}
+.rp-t small,.sp-t small{font-size:11.5px;color:var(--muted);line-height:1.35}
+.sp-sw{display:flex;gap:3px;flex:0 0 auto}.sp-sw i{display:block;width:14px;height:28px;border-radius:4px;border:1px solid rgba(255,255,255,.25)}
+.rp-foot{font-size:11px;color:var(--muted);line-height:1.4}
+/* V4: real American stations (links, open in a new tab — live audio can't run inside the page) */
+.rp-sec{display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:12px;background:rgba(255,214,140,.07);border:1px solid rgba(255,214,140,.25)}
+.rp-h{font-weight:700;font-size:13px;color:#ffe2b0;line-height:1.35}
+#rpHome{color:var(--accent);margin-top:2px}
+.rp-lvlist{display:flex;flex-direction:column;gap:4px}
+.rp-lv{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:9px;background:rgba(255,255,255,.05);min-height:48px}
+.rp-live{flex:0 0 auto;display:inline-flex;align-items:center;min-height:36px;padding:6px 11px;border-radius:999px;background:linear-gradient(180deg,rgba(255,214,140,.95),rgba(232,176,92,.95));color:#2a1a04;font-weight:800;font-size:12px;text-decoration:none;white-space:nowrap}
+.rp-live:hover{filter:brightness(1.08)}
+/* V5: in-page live playback rows (own host) */
+.rp-lvb{width:100%;text-align:right;color:var(--text);border:1px solid transparent}
+.rp-lvb:hover{background:rgba(255,255,255,.1)}
+.rp-lvb.on{background:rgba(255,214,140,.16);border-color:rgba(255,214,140,.75)}
+.rp-lvs{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(180deg,rgba(255,214,140,.95),rgba(232,176,92,.95));color:#2a1a04;font-weight:800;font-size:14px}
+.rp-lvb.busy .rp-lvs{background:transparent;border:3px solid rgba(255,214,140,.3);border-top-color:#ffd68c;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rp-badge{font-size:11.5px;font-weight:700;color:#2a1a04;background:rgba(255,214,140,.85);border-radius:8px;padding:4px 8px;align-self:flex-start}
+#radioChip.live .rc-txt small{color:#ffd68c}
+#radioChip.live .rc-eq i{background:#ffd68c}
+
+/* ---------- info chip ---------- */
+#info{bottom:calc(var(--gut) + env(safe-area-inset-bottom,0px));left:var(--gut);padding:9px 14px;font-size:12.5px;color:var(--muted);max-width:min(460px,calc(100vw - 2*var(--gut)));line-height:1.45}
+#info b{color:var(--text);font-weight:700;direction:ltr;unicode-bidi:isolate}
+body.mode-pano #info{display:none}
+
+/* ---------- crosshair ---------- */
+#crosshair{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 0 0 2px rgba(0,0,0,.35);z-index:9;pointer-events:none;display:none;transition:all .15s ease}
+body.mode-walk #crosshair{display:block}
+body.hovering #crosshair{width:30px;height:30px;margin:-15px 0 0 -15px;background:transparent;border:2px solid var(--accent);box-shadow:0 0 14px rgba(67,224,255,.6), inset 0 0 8px rgba(67,224,255,.4)}
+body.measuring #crosshair{width:22px;height:22px;margin:-11px 0 0 -11px;background:transparent;border:2px dashed var(--accent-2);box-shadow:none}
+#hoverLabel{position:fixed;left:50%;top:calc(50% + 26px);transform:translateX(-50%);z-index:9;pointer-events:none;padding:7px 12px;text-align:center;display:none;white-space:nowrap}
+body.mode-walk.hovering #hoverLabel{display:block}
+#hoverTitle{font-weight:700;font-size:14.5px}
+#hoverHint{font-size:11.5px;color:var(--accent);margin-top:2px}
+
+/* ---------- hint / toast ---------- */
+#hint,#toast{position:fixed;left:50%;transform:translate(-50%,10px);z-index:12;padding:10px 16px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;max-width:calc(100vw - 2*var(--gut));text-align:center}
+#hint{bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+#toast{top:calc(76px + env(safe-area-inset-top,0px));background:var(--glass-strong)}
+#hint.show,#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- floor chips ---------- */
+#floorChips{bottom:calc(var(--gut) + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:none;gap:6px;padding:6px;max-width:calc(100vw - 2*var(--gut));overflow-x:auto;scrollbar-width:none}
+body.mode-dollhouse #floorChips, body.mode-plan #floorChips{display:flex}
+.chip{padding:8px 14px;border-radius:999px;font-size:13.5px;font-weight:600;color:var(--muted);white-space:nowrap;border:1px solid transparent}
+.chip:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.chip.on{background:var(--accent);color:var(--accent-ink)}
+.chip.ghost{border-color:var(--line)}
+.chip.ghost.on{background:rgba(124,243,200,.18);color:var(--accent-2);border-color:rgba(124,243,200,.5)}
+body.mode-dollhouse #info, body.mode-plan #info{bottom:calc(var(--gut) + 64px + env(safe-area-inset-bottom,0px))}
+
+/* ---------- measure bar ---------- */
+#measureBar{top:calc(var(--gut) + 64px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;padding:7px 8px 7px 14px;font-size:13.5px}
+body.measuring #measureBar{display:flex}
+#measureBar button{padding:6px 12px;border-radius:9px;background:rgba(255,255,255,.1);font-weight:600;font-size:13px}
+#measureBar button:hover{background:rgba(255,255,255,.18)}
+
+/* ---------- labels layer ---------- */
+#labels{position:fixed;inset:0;pointer-events:none;z-index:8;overflow:hidden}
+#labels>div{position:absolute;left:0;top:0;will-change:transform}
+.mlabel{padding:4px 9px;border-radius:8px;background:rgba(4,30,40,.85);border:1px solid rgba(67,224,255,.7);color:#dffbff;font-size:13px;font-weight:700;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.plabel{text-align:center;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9),0 0 10px rgba(0,0,0,.6);white-space:nowrap}
+.plabel b{display:block;font-size:14px}
+.plabel span{display:block;font-size:11px;opacity:.85;direction:rtl}
+body:not(.mode-plan) .plabel{display:none}
+
+/* ---------- pano UI ---------- */
+#panoUI{bottom:calc(var(--gut) + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;width:min(980px,calc(100vw - 2*var(--gut)));padding:8px}
+body.mode-pano #panoUI{display:flex}
+#panoActions{display:flex;gap:6px;justify-content:space-between;align-items:center;padding:0 2px}
+#panoActions .ttl{font-size:12.5px;color:var(--muted)}
+#panoActions .acts{display:flex;gap:6px}
+#panoActions button{padding:7px 12px;border-radius:9px;background:rgba(255,255,255,.08);font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+#panoActions button:hover{background:rgba(255,255,255,.15)}
+#panoActions button.on{background:var(--accent);color:var(--accent-ink)}
+#panoActions button:disabled{opacity:.5;cursor:wait}
+#panoRow{display:flex;gap:6px;align-items:stretch;min-width:0}
+#btnPanoMore{display:none;flex:0 0 auto;width:40px;border-radius:10px;background:rgba(255,255,255,.08);font-size:18px;font-weight:800}
+#btnPanoMore.on{background:var(--accent);color:var(--accent-ink)}
+#panoList{display:flex;gap:6px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:2px;scrollbar-width:thin;flex:1;min-width:0}
+.pnode{flex:0 0 auto;scroll-snap-align:center;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid transparent;min-width:96px}
+.pnode:hover{background:rgba(255,255,255,.12)}
+.pnode.on{border-color:var(--accent);background:rgba(67,224,255,.16)}
+.pn-name{font-weight:700;font-size:13.5px;white-space:nowrap}
+.pn-floor{font-size:11px;color:var(--muted)}
+/* photoreal render (core-pathtrace.js) */
+#panoActions .acts{flex-wrap:wrap;justify-content:flex-end}
+#panoActions button.pt-main{background:linear-gradient(180deg,rgba(255,214,140,.95),rgba(232,176,92,.95));color:#2a1a04}
+#panoActions button.pt-main:hover{background:linear-gradient(180deg,rgba(255,224,160,1),rgba(240,186,102,1))}
+.pt-run,.pt-view{display:none!important}
+body.pt-running .pt-run{display:flex!important}
+body.pt-viewing .pt-view{display:flex!important}
+body.pt-running .pt-idle{display:none!important}
+#ptProg{display:none;align-items:center;gap:10px;padding:2px 4px;font-size:12.5px;font-weight:600;color:#ffe2b0}
+body.pt-running #ptProg{display:flex}
+#ptTxt{white-space:nowrap;min-width:110px;font-variant-numeric:tabular-nums}
+#ptTrack{flex:1;height:5px;border-radius:9px;background:rgba(255,255,255,.1);overflow:hidden}
+#ptBar{height:100%;background:linear-gradient(90deg,#ffd68c,#ffb35c);transform-origin:right center;transform:scaleX(.02);transition:transform .3s ease}
+#ptOverlay{position:fixed;inset:0;z-index:9;display:none;background:#05070b}
+#ptOverlay.show{display:block}
+#ptOverlay canvas{display:block;width:100%;height:100%;object-fit:cover}
+body:not(.mode-pano) #ptOverlay{display:none}
+#panoTip{position:fixed;left:0;top:0;z-index:13;pointer-events:none;padding:5px 10px;border-radius:8px;background:var(--glass-strong);border:1px solid rgba(67,224,255,.5);font-size:13px;font-weight:600;display:none;white-space:nowrap}
+
+/* ---------- mobile controls: arrow D-pad (V3, replaces the joystick) + action button ---------- */
+#dpad,#btnAct{display:none}
+body.touch.mode-walk #dpad, body.dpad-on.mode-walk #dpad{display:grid}
+body.touch.mode-walk #btnAct{display:flex}
+body:has(#intro.show) #dpad{display:none}
+#dpad{position:fixed;z-index:11;left:calc(var(--gut) + env(safe-area-inset-left,0px));bottom:calc(var(--gut) + env(safe-area-inset-bottom,0px));grid-template-columns:repeat(3,54px);grid-template-rows:repeat(3,54px);gap:3px;touch-action:none;-webkit-user-select:none;user-select:none}
+#dpad button{width:54px;height:54px;border-radius:15px;background:rgba(14,19,28,.36);border:1px solid rgba(255,255,255,.24);color:rgba(255,255,255,.92);font-size:19px;line-height:1;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);touch-action:none;box-shadow:0 4px 14px rgba(0,0,0,.22);transition:background .12s,transform .12s}
+#dpad button.on{background:rgba(67,224,255,.62);color:var(--accent-ink);transform:scale(.95)}
+#dpad [data-d=f]{grid-column:2;grid-row:1}#dpad [data-d=l]{grid-column:1;grid-row:2}#dpad [data-d=r]{grid-column:3;grid-row:2}#dpad [data-d=b]{grid-column:2;grid-row:3}
+#btnAct{position:fixed;z-index:11;right:calc(var(--gut) + env(safe-area-inset-right,0px));bottom:calc(var(--gut) + 24px + env(safe-area-inset-bottom,0px));width:68px;height:68px;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:14px;background:linear-gradient(180deg,rgba(67,224,255,.82),rgba(30,170,210,.82));color:var(--accent-ink);box-shadow:0 8px 24px rgba(67,224,255,.3);touch-action:manipulation}
+body.touch.hovering #btnAct{box-shadow:0 0 0 4px rgba(255,255,255,.6),0 8px 24px rgba(67,224,255,.55)}
+
+/* ---------- intro ---------- */
+#intro{position:fixed;z-index:14;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s;padding:22px 26px;text-align:center;width:min(440px,calc(100vw - 2*var(--gut)));background:var(--glass-strong)}
+#intro.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#intro h1{margin:0 0 4px;font-size:24px;letter-spacing:.2px;direction:ltr}
+#intro p{margin:0 0 16px;color:var(--muted);font-size:14px}
+#btnEnter{padding:14px 34px;border-radius:999px;font-size:17px;font-weight:800;background:linear-gradient(180deg,#5ff0ff,#22bfe6);color:var(--accent-ink);box-shadow:0 10px 30px rgba(67,224,255,.4);transition:transform .15s}
+#btnEnter:hover{transform:translateY(-1px) scale(1.02)}
+#intro small{display:block;margin-top:12px;color:var(--muted);font-size:12px}
+body:has(#intro.show) #info{display:none}
+
+/* ---------- help ---------- */
+#help{position:fixed;z-index:20;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,6,10,.5);padding:var(--gut)}
+#help.show{display:flex}
+#help .panel{width:min(620px,100%);max-height:calc(100vh - 2*var(--gut));overflow:auto;padding:20px 22px;background:var(--glass-strong)}
+#help h2{margin:0 0 12px;font-size:20px}
+#help h3{margin:16px 0 6px;font-size:14px;color:var(--accent)}
+#help ul{margin:0;padding:0 18px 0 0;line-height:1.75;font-size:14px}
+#help kbd{display:inline-block;min-width:22px;padding:1px 6px;border-radius:6px;border:1px solid var(--line-strong);background:rgba(255,255,255,.08);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-align:center;direction:ltr}
+#helpClose{position:sticky;top:0;float:left;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);font-size:18px}
+
+/* ---------- loader ---------- */
+#loader{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:var(--gut);background:radial-gradient(120% 80% at 50% 10%,#16253a 0%,#0b0f16 65%);transition:opacity .8s ease, visibility .8s}
+#loader.done{opacity:0;visibility:hidden;pointer-events:none}
+#loader .card{width:min(440px,100%);padding:26px 24px}
+#loader .brand{direction:ltr;text-align:right;font-size:26px;font-weight:800;letter-spacing:.3px}
+#loader .sub{color:var(--muted);font-size:14px;margin:4px 0 18px}
+#loader .scanviz{position:relative;height:84px;border-radius:12px;overflow:hidden;margin-bottom:18px;background:
+  linear-gradient(rgba(67,224,255,.08) 1px,transparent 1px) 0 0/14px 14px,
+  linear-gradient(90deg,rgba(67,224,255,.08) 1px,transparent 1px) 0 0/14px 14px, rgba(0,0,0,.25);border:1px solid var(--line)}
+#loader .scanviz svg{position:absolute;inset:0;margin:auto;height:70px;width:auto;opacity:.85}
+#loader .scanviz::after{content:"";position:absolute;left:0;right:0;height:2px;background:var(--accent);box-shadow:0 0 14px 4px rgba(67,224,255,.6);animation:sweep 2.2s ease-in-out infinite}
+@keyframes sweep{0%{top:100%}50%{top:0}100%{top:100%}}
+#loaderTrack{height:6px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden}
+#loaderBar{height:100%;background:linear-gradient(90deg,var(--accent-2),var(--accent));transform-origin:right center;transform:scaleX(.02);transition:transform .4s ease}
+#loaderStep{font-size:12.5px;color:var(--muted);margin:8px 0 12px;min-height:1.2em}
+#loaderList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+#loaderList li{display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.04)}
+#loaderList .dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.25)}
+#loaderList .nm{flex:1}
+#loaderList .st{font-size:12px;color:var(--muted)}
+#loaderList li.loading .dot,#loaderList li.building .dot{background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse 1s infinite}
+#loaderList li.done .dot{background:var(--accent-2)}
+#loaderList li.done .st{color:var(--accent-2)}
+#loaderList li.failed .dot{background:var(--danger)}
+#loaderList li.failed .st{color:var(--danger)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* ---------- errors ---------- */
+#errors{position:fixed;z-index:40;top:calc(var(--gut) + env(safe-area-inset-top,0px));left:50%;transform:translate(-50%,-12px);width:min(560px,calc(100vw - 2*var(--gut)));padding:14px 16px;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;background:rgba(40,12,14,.88);border-color:rgba(255,107,107,.5)}
+#errors.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#errors h4{margin:0 0 6px;font-size:15px;color:#ffb3b3}
+#errors p{margin:0 0 8px;font-size:12.5px;color:rgba(255,220,220,.8)}
+#errorsList{margin:0;padding:0 18px 0 0;font-size:12.5px;line-height:1.5;max-height:34vh;overflow:auto}
+#errorsList b{display:block;color:#fff}
+#errorsList span{direction:ltr;unicode-bidi:plaintext;color:rgba(255,220,220,.85);word-break:break-word}
+#errorsClose{position:absolute;top:10px;left:10px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.12)}
+
+#fade{position:fixed;inset:0;z-index:15;background:#05070b;opacity:0;pointer-events:none}
+
+/* ---------- visibility per mode ---------- */
+body.mode-transition .ui-modal{pointer-events:none}
+body.mode-plan #btnFlash, body.mode-pano #btnFlash{display:none}
+
+/* ---------- phone ---------- */
+@media (max-width: 900px){
+  #topbar{left:var(--gut);right:var(--gut);transform:none;justify-content:space-between}
+  .mode{padding:8px 10px;font-size:12.5px;gap:5px;flex:1;justify-content:center}
+  .mode .lbl-long{display:none}
+  #tools{top:calc(var(--gut) + 58px + env(safe-area-inset-top,0px));width:auto;gap:6px;align-items:flex-end}
+  #btnMore{display:flex}
+  #toolsInner{display:none;gap:6px}
+  body.tools-open #toolsInner{display:flex}
+  body.tools-open #btnMore{border-color:rgba(67,224,255,.7);color:#bff6ff}
+  .seg{flex-direction:column;padding:3px}
+  .seg button{padding:6px;font-size:0;gap:0}
+  .seg button .ico{font-size:17px}
+  .tbtn{padding:0;width:42px;height:42px;justify-content:center}
+  .tbtn .lbl{display:none}
+  .tbtn .ico{width:auto;font-size:18px}
+  #leftStack{top:calc(var(--gut) + 58px + env(safe-area-inset-top,0px));gap:5px}
+  #mapCard{padding:4px}
+  #minimap{width:66px;height:52px;border-radius:6px}
+  #mapCard.big #minimap{width:132px;height:104px}
+  #roomHud{max-width:66px;padding:3px 1px 0}
+  #mapCard.big #roomHud{max-width:132px}
+  #roomName{font-size:10.5px}
+  #floorName{display:none;font-size:10px}
+  #mapCard.big #floorName, body.mode-dollhouse #floorName, body.mode-plan #floorName{display:inline}
+  #radioChip{max-width:150px;padding:4px 9px 4px 7px;gap:5px}
+  #radioChip .rc-txt b{font-size:11px}
+  #radioChip .rc-txt small{font-size:9.5px}
+  .sheet,#radioPanel,#stylePanel{left:calc(var(--gut) + env(safe-area-inset-left,0px));right:calc(var(--gut) + env(safe-area-inset-right,0px));top:auto;bottom:calc(var(--gut) + env(safe-area-inset-bottom,0px));width:auto;max-height:62vh;border-radius:18px}
+  #btnPanoMore{display:block}
+  #panoUI{padding:6px;gap:6px}
+  #panoActions{display:none}
+  body.pano-more #panoActions, body.pt-running #panoActions, body.pt-viewing #panoActions{display:flex}
+  #panoActions button{padding:6px 9px;font-size:12px}
+  .pnode{padding:5px 10px;min-width:0;border-radius:9px}
+  .pn-name{font-size:12.5px}
+  .pn-floor{display:none}
+  #info{display:none}
+  body.mode-dollhouse #info, body.mode-plan #info{display:block;bottom:calc(var(--gut) + 60px + env(safe-area-inset-bottom,0px));font-size:11.5px;left:var(--gut);right:var(--gut);max-width:none}
+  #measureBar{top:auto;bottom:calc(170px + env(safe-area-inset-bottom,0px));font-size:12.5px}
+  #hint{bottom:calc(196px + env(safe-area-inset-bottom,0px));font-size:13px}
+  body.mode-pano #hint{bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+  #toast{top:calc(64px + env(safe-area-inset-top,0px))}
+  #panoActions .ttl{display:none}
+  #panoActions{justify-content:center}
+  #intro{bottom:calc(76px + env(safe-area-inset-bottom,0px));padding:18px}
+  #intro h1{font-size:20px}
+}
+@media (max-width: 900px) and (max-height: 520px){
+  #mapCard:not(.big) #roomHud{display:none}
+  #dpad{grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px)}
+  #dpad button{width:48px;height:48px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body class="loading mode-intro">
+<div id="stage"></div>
+<div id="labels"></div>
+<div id="fade"></div>
+
+<!-- Top: modes -->
+<nav id="topbar" class="ui glass" aria-label="מצבי תצוגה">
+  <button class="mode" data-mode="walk" title="הליכה בגוף ראשון (1)"><span class="ico">🚶</span><span>הליכה<span class="lbl-long"> 3D</span></span></button>
+  <button class="mode" data-mode="pano" title="סיור פנורמי 360° (2)"><span class="ico">◎</span><span>סיור 360°</span></button>
+  <button class="mode" data-mode="dollhouse" title="סריקה / דולהאוס (3)"><span class="ico">⬡</span><span><span class="lbl-long">סריקה / </span>דולהאוס</span></button>
+  <button class="mode" data-mode="plan" title="תוכנית קומה (4)"><span class="ico">▦</span><span>תוכנית<span class="lbl-long"> קומה</span></span></button>
+</nav>
+
+<!-- Tools -->
+<aside id="tools" class="ui" aria-label="כלים">
+  <button id="btnMore" class="tbtn glass" title="כלים" aria-label="כלים נוספים" aria-expanded="false"><span class="ico">⋯</span></button>
+  <div id="toolsInner">
+  <div class="seg glass" role="group" aria-label="יום / ערב / לילה">
+    <button data-tod="day" class="on" title="יום"><span class="ico">☀️</span>יום</button>
+    <button data-tod="evening" title="ערב"><span class="ico">🌇</span>ערב</button>
+    <button data-tod="night" title="לילה"><span class="ico">🌙</span>לילה</button>
+  </div>
+  <button id="btnMeasure" class="tbtn glass" title="מדידה (M)"><span class="ico">📏</span><span class="lbl">מדידה</span></button>
+  <button id="btnFlash" class="tbtn glass" title="פנס (Q / F)"><span class="ico">🔦</span><span class="lbl">פנס</span></button>
+  <button id="btnQuality" class="tbtn glass" title="איכות גרפיקה"><span class="ico">✦</span><span class="lbl">איכות גבוהה</span></button>
+  <button id="btnSound" class="tbtn glass" title="שמע"><span class="ico">🔊</span><span class="lbl">שמע</span></button>
+  <button id="btnErr" class="tbtn glass" title="רכיבים שנכשלו"><span class="ico">⚠️</span><span class="lbl">שגיאות</span></button>
+  <button id="btnStyle" class="tbtn glass" title="סגנון השיפוץ — אפשרויות חומרים וצבעים" aria-haspopup="dialog"><span class="ico">🎨</span><span class="lbl">סגנון שיפוץ</span></button>
+  <button id="btnDpad" class="tbtn glass" title="חצי תנועה על המסך"><span class="ico">✥</span><span class="lbl">חצי תנועה</span></button>
+  <button id="btnHelp" class="tbtn glass" title="עזרה"><span class="ico">?</span><span class="lbl">עזרה</span></button>
+  </div>
+</aside>
+
+<!-- Minimap + current room -->
+<div id="leftStack" class="ui">
+  <section id="mapCard" class="glass" aria-label="מפה — איפה אנחנו">
+    <canvas id="minimap" width="100" height="80"></canvas>
+    <div id="roomHud"><span id="roomName">—</span><span id="floorName"></span></div>
+  </section>
+  <button id="radioChip" class="glass" aria-label="רדיו"></button>
+</div>
+<div id="radioPanel" class="sheet glass" role="dialog" aria-label="רדיו — בחירת תחנה"></div>
+<div id="stylePanel" class="sheet glass" role="dialog" aria-label="סגנון השיפוץ"></div>
+
+<div id="info" class="ui glass"><b>3351 Eakin Rd, Columbus OH</b> · <bdi>Cape Cod 1956</bdi> · 4 חדרי שינה · 2 חדרי רחצה (אחרי שיפוץ)</div>
+
+<div id="crosshair"></div>
+<div id="hoverLabel" class="glass"><div id="hoverTitle"></div><div id="hoverHint"></div></div>
+<div id="hint" class="glass"></div>
+<div id="toast" class="glass"></div>
+
+<div id="measureBar" class="ui glass"><span>📏 מדידה — סמן שתי נקודות על משטחים</span><button id="btnMeasureClear">נקה</button><button onclick="document.getElementById('btnMeasure').click()">סיום</button></div>
+
+<div id="floorChips" class="ui glass" role="group" aria-label="סינון קומות"></div>
+
+<section id="panoUI" class="ui glass" aria-label="נקודות 360">
+  <div id="panoActions">
+    <span class="ttl">גרור כדי להסתכל · גלגלת / צביטה לזום · הקלק על טבעת כדי לעבור</span>
+    <div class="acts">
+      <button id="btnPT" class="pt-main pt-idle" title="הדמיה מציאותית במעקב קרניים (path tracing) של כל ה-360°">✨ הדמיה מציאותית</button>
+      <button id="btnPTView" class="pt-idle" title="הדמיה מציאותית ברזולוציה גבוהה של המבט הנוכחי">📷 הדמיה של המבט הנוכחי</button>
+      <button id="btnPTStop" class="pt-run" title="עצור את ההדמיה">⏹ עצור</button>
+      <button id="btnPTDl" class="pt-view" title="הורדת ההדמיה כ-PNG">⤓ הורד PNG</button>
+      <button id="btnPTBack" class="pt-view" title="חזרה לתצוגה החיה">↩ חזרה לתצוגה חיה</button>
+      <button id="btnAutoRot" class="pt-idle" title="סיבוב אוטומטי">⟳ סיבוב אוטומטי</button>
+      <button id="btnPanoDl" class="pt-idle" title="הורדת תמונה פנורמית 4096×2048">⤓ הורד תמונת 360</button>
+    </div>
+  </div>
+  <div id="ptProg" aria-live="polite"><span id="ptTxt">מכין…</span><div id="ptTrack"><div id="ptBar"></div></div></div>
+  <div id="panoRow"><button id="btnPanoMore" title="כלי 360" aria-label="כלי 360">⋯</button><div id="panoList"></div></div>
+</section>
+<div id="panoTip"></div>
+<div id="ptOverlay" aria-label="הדמיה מציאותית"></div>
+
+<div id="dpad" dir="ltr" role="group" aria-label="חצי תנועה">
+  <button data-d="f" aria-label="קדימה">▲</button>
+  <button data-d="l" aria-label="סיבוב שמאלה">◀</button>
+  <button data-d="r" aria-label="סיבוב ימינה">▶</button>
+  <button data-d="b" aria-label="אחורה">▼</button>
+</div>
+<button id="btnAct" aria-label="פעולה">פעולה</button>
+
+<div id="intro" class="glass">
+  <h1>3351 Eakin Rd</h1>
+  <p>Columbus, Ohio · Cape Cod 1956 · סיור בבית אחרי שיפוץ</p>
+  <button id="btnEnter">כניסה לסיור</button>
+  <small>או בחרו מצב תצוגה בסרגל העליון</small>
+</div>
+
+<div id="help" role="dialog" aria-modal="true" aria-label="עזרה">
+  <div class="panel glass">
+    <button id="helpClose" aria-label="סגור">×</button>
+    <h2>איך מסיירים בבית</h2>
+    <h3>הליכה 3D — מחשב</h3>
+    <ul>
+      <li>הקליקו על המסך כדי לשלוט במבט עם העכבר (<kbd>Esc</kbd> משחרר).</li>
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> או <kbd>↑</kbd><kbd>↓</kbd> לתנועה, <kbd>←</kbd><kbd>→</kbd> לסיבוב, <kbd>Shift</kbd> לריצה.</li>
+      <li><kbd>E</kbd> או קליק — פעולה על מה שבמרכז המסך: לפתוח דלתות, מגירות וארונות, להדליק אור, להפעיל ברזים, רדיו וטלוויזיה.</li>
+      <li><kbd>Q</kbd> / <kbd>F</kbd> — פנס (שימושי במרתף). גלגלת / צביטה במשטח המגע — זום.</li>
+    </ul>
+    <h3>הליכה 3D — טלפון</h3>
+    <ul>
+      <li>חצים בפינה השמאלית התחתונה: ▲ קדימה, ▼ אחורה, ◀ ▶ סיבוב. לחיצה ממושכת = תנועה רציפה שמאיצה, הקשה = צעד קצר.</li>
+      <li>גרירה על המסך להסתכלות, צביטה בשתי אצבעות לזום, הקשה כפולה על הרצפה = הליכה לשם.</li>
+      <li>הקישו על אובייקט, או לחצו על הכפתור "פעולה". הכפתור ⋯ פותח את הכלים.</li>
+    </ul>
+    <h3>מצבים</h3>
+    <ul>
+      <li><b>סיור 360°</b> — עמידה בנקודות קבועות, גרירה להסתכלות, טבעות על הרצפה למעבר בין נקודות, הורדת תמונה פנורמית.</li>
+      <li><b>✨ הדמיה מציאותית</b> (במצב 360°) — רינדור במעקב קרניים של כל הסביבה; אפשר להסתכל מסביב בתוצאה ולהוריד PNG. <b>📷 הדמיה של המבט הנוכחי</b> — תמונה אחת ברזולוציה גבוהה.</li>
+      <li><b>סריקה / דולהאוס</b> — מבט "בית בובות" מסתובב; סינון לפי קומה; לחיצה כפולה על רצפה נכנסת לשם.</li>
+      <li><b>תוכנית קומה</b> — מבט מלמעלה; גרירה להזזה, גלגלת לזום, הקשה על חדר נכנסת אליו.</li>
+    </ul>
+    <h3>כלים</h3>
+    <ul>
+      <li><b>יום / ערב / לילה</b> — בלילה האורות בבית נדלקים אוטומטית; מתגי הקיר עדיין עובדים.</li>
+      <li><b>📻 רדיו</b> — תחנה אקראית מתחילה לנגן בכניסה; הקישו על השבב 📻 כדי לבחור תחנה, להחליף, לעצור או לשנות עוצמה. הרדיו הישן בסלון מסונכרן איתו.</li>
+      <li><b>🎨 סגנון שיפוץ</b> — החלפת אפשרויות השיפוץ (חומרים וצבעים) בזמן אמת.</li>
+      <li><b>המפה הקטנה</b> — הקישו עליה כדי להגדיל לרגע.</li>
+      <li><b>📏 מדידה</b> — סמנו שתי נקודות כדי לקבל מרחק במטרים וברגל-אינץ׳. <kbd>Esc</kbd> מנקה.</li>
+      <li>קיצורים: <kbd>1</kbd> הליכה · <kbd>2</kbd> 360° · <kbd>3</kbd> דולהאוס · <kbd>4</kbd> תוכנית · <kbd>M</kbd> מדידה.</li>
+    </ul>
+  </div>
+</div>
+
+<div id="errors" class="glass" role="alert">
+  <button id="errorsClose" aria-label="סגור">×</button>
+  <h4>חלק מהרכיבים לא נטענו</h4>
+  <p>הסיור ממשיך לעבוד עם שאר החלקים.</p>
+  <ul id="errorsList"></ul>
+</div>
+
+<div id="loader">
+  <div class="card glass">
+    <div class="brand">3351 Eakin Rd</div>
+    <div class="sub">סיור תלת-ממדי · Columbus, OH · אחרי שיפוץ</div>
+    <div class="scanviz" aria-hidden="true">
+      <svg viewBox="0 0 120 70" fill="none" stroke="rgba(67,224,255,.9)" stroke-width="1.6" stroke-linejoin="round">
+        <path d="M10 64 V32 L60 8 L110 32 V64 Z"/><path d="M48 64 V44 H62 V64"/><path d="M72 40 H94 V54 H72 Z"/><path d="M20 40 H38 V54 H20 Z"/><path d="M30 20 L60 6 L90 20"/>
+      </svg>
+    </div>
+    <div id="loaderTrack"><div id="loaderBar"></div></div>
+    <div id="loaderStep">מאתחל מנוע תלת-ממד…</div>
+    <ul id="loaderList"></ul>
+  </div>
+</div>
+
+<noscript><div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b0f16;color:#fff;font-family:sans-serif">יש להפעיל JavaScript כדי לצפות בסיור.</div></noscript>
+
+<script type="module">
+  const fatal = (msg, err) => {
+    console.error(msg, err);
+    const step = document.getElementById('loaderStep');
+    if (step) { step.textContent = msg; step.style.color = '#ff8a8a'; }
+    const list = document.getElementById('errorsList');
+    if (list) {
+      const li = document.createElement('li');
+      const b = document.createElement('b'); b.textContent = msg;
+      const s = document.createElement('span'); s.textContent = (err && (err.message || String(err))) || '';
+      li.append(b, s); list.appendChild(li);
+    }
+    document.getElementById('errors')?.classList.add('show');
+  };
+  try {
+    const gl = document.createElement('canvas');
+    if (!(gl.getContext('webgl2') || gl.getContext('webgl'))) throw new Error('WebGL unavailable');
+  } catch (e) { fatal('הדפדפן אינו תומך ב-WebGL', e); }
+  import('./js/core.js')
+    .then((m) => m.boot())
+    .catch((e) => fatal('טעינת מנוע התלת-ממד נכשלה (three.js / core.js) — בדקו חיבור לאינטרנט ורעננו', e));
+</script>
+<div id="ver-tag" style="position:fixed;left:max(8px,env(safe-area-inset-left,0px));bottom:max(6px,env(safe-area-inset-bottom,0px));z-index:50;font:600 11px/1.4 system-ui,sans-serif;color:rgba(255,255,255,.75);background:rgba(20,24,30,.45);padding:2px 8px;border-radius:9px;pointer-events:none">גרסה 5</div>
+</body>
+</html>
