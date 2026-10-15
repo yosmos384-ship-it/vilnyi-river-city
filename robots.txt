@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /crm.html
-Disallow: /eakin/
 
 Sitemap: https://www.vilnyirivercity.com/sitemap.xml
