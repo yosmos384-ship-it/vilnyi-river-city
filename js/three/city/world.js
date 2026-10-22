@@ -37,7 +37,7 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }` }));
-  sky.renderOrder = -10; sky.frustumCulled = false; group.add(sky);
+  sky.renderOrder = -10; sky.frustumCulled = false; sky.name = 'city-sky'; group.add(sky);
   const groundG = new Geo(true); groundG.attr(3, 0, 0, 0).col(0.5, 0.5, 0.5).poly([[-2600, -2600], [2600, -2600], [2600, 2600], [-2600, 2600]], -0.04);
   const ground = new THREE.Mesh(groundG.build(), M.groundBase); ground.frustumCulled = false; group.add(ground);
   { const g = new Geo(true); g.attr(5, 0, 0, 0).col(1, 1, 1);
@@ -72,17 +72,19 @@ export function createWorld(map, scene, { renderer = null, mode = 'day' } = {}) 
     dirtyPools = true;
   }
   // ---- the site: VILNYI RIVER CITY and its neighbours as massing, the plot, the garage ramp portal
-  { const g = new Geo(true), S = map.site;
-    for (const b of S.boxes) { const vrc = b.tag === 'C3' || b.tag === 'C4'; g.attr(vrc ? 6 : 0, vrc ? 2 : 7, 0, 3.0).col(vrc ? '#efece4' : b.tag === 'ctxD' ? '#5d5f63' : '#cdbd9f'); g.box(b.x, b.z, b.ux, b.uz, b.hw, b.hd, 0, b.h, false); g.attr(4, 0, 0, 3).col('#4a4c50'); const c = obbCorners(b); g.quad([c[0][0], b.h, c[0][1]], [c[3][0], b.h, c[3][1]], [c[2][0], b.h, c[2][1]], [c[1][0], b.h, c[1][1]], [0, 1, 0], [0, 0], [1, 0], [1, 1], [0, 1]); }
-    const R = S.garage.ramp;   // ramp mouth: side walls, roof slab, dark opening
+  // (google3d.js: the project's own massing 'city-site' stays in the Google 3D city; the neighbours 'city-site-ctx' are hidden there)
+  { const gv = new Geo(true), gc = new Geo(true), S = map.site;
+    for (const b of S.boxes) { const vrc = b.tag === 'C3' || b.tag === 'C4', g = vrc ? gv : gc; g.attr(vrc ? 6 : 0, vrc ? 2 : 7, 0, 3.0).col(vrc ? '#efece4' : b.tag === 'ctxD' ? '#5d5f63' : '#cdbd9f'); g.box(b.x, b.z, b.ux, b.uz, b.hw, b.hd, 0, b.h, false); g.attr(4, 0, 0, 3).col('#4a4c50'); const c = obbCorners(b); g.quad([c[0][0], b.h, c[0][1]], [c[3][0], b.h, c[3][1]], [c[2][0], b.h, c[2][1]], [c[1][0], b.h, c[1][1]], [0, 1, 0], [0, 0], [1, 0], [1, 1], [0, 1]); }
+    const R = S.garage.ramp, g = gv;   // ramp mouth: side walls, roof slab, dark opening
     g.attr(4, 0, 0, 3).col('#9a9a96'); for (const sd of [-1, 1]) g.box(R.x + R.ux * sd * (R.hw + 0.2), R.z + R.uz * sd * (R.hw + 0.2), R.ux, R.uz, 0.2, R.hd, 0, 3.1, true);
     g.box(R.x, R.z, R.ux, R.uz, R.hw + 0.4, R.hd, 2.7, 3.1, true); g.col('#0a0b0d'); g.box(R.x - R.uz * 1.0, R.z + R.ux * 1.0, R.ux, R.uz, R.hw, R.hd - 1.0, 0, 2.7, false);
-    const m = new THREE.Mesh(g.build(), M.bld); m.name = 'city-site'; group.add(m);
-    const gg = new Geo(true); gg.attr(4, 0, 0, 0).col('#8f8b82').poly(S.plot, 0.01); const m2 = new THREE.Mesh(gg.build(), M.ground); group.add(m2);
+    const m = new THREE.Mesh(gv.build(), M.bld); m.name = 'city-site'; group.add(m);
+    if (gc.count) { const mc = new THREE.Mesh(gc.build(), M.bld); mc.name = 'city-site-ctx'; group.add(mc); }
+    const gg = new Geo(true); gg.attr(4, 0, 0, 0).col('#8f8b82').poly(S.plot, 0.01); const m2 = new THREE.Mesh(gg.build(), M.ground); m2.name = 'city-plot'; group.add(m2);
     // signs: the name over the ramp, "P GARAJ"
     const sg = new Geo(); const sx = R.x + R.uz * (R.hd + 0.05), sz = R.z - R.ux * (R.hd + 0.05);
     signQuad(sg, sx, 3.5, sz, R.uz, -R.ux, 4.4, 0.55, atlas.uv(atlas.index('poi', 'VILNYI RIVER CITY')));
-    const sm = new THREE.Mesh(sg.build(), M.sign); group.add(sm); }
+    const sm = new THREE.Mesh(sg.build(), M.sign); sm.name = 'city-site-sign'; group.add(sm); }
   // landmarks of the real map (Palace of the Parliament, Arcul de Triumf): built once, seen from afar
   const LM = buildLandmarks(map, M); group.add(LM.group);
   function signQuad(g, x, y, z, nx, nz, w, h, uv) {

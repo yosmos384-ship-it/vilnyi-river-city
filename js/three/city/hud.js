@@ -44,7 +44,7 @@ const CSS = `
 .cg-map.big{position:fixed;inset:auto;top:calc(56px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(92vw,420px);height:min(92vw,420px);z-index:5;opacity:1;margin:0}
 .cg-map canvas{width:100%;height:100%;display:block}
 .cg-osm{display:block;margin-top:2px;font:500 7.5px/1.2 Manrope,Arial,sans-serif;color:rgba(236,232,222,.9);text-shadow:0 0 3px #000,0 0 2px #000;direction:ltr;white-space:nowrap}
-.cg-map.big~.cg-osm{display:none}
+.cg-map.big~.cg-osm{display:none}.g3d-on .cg-osm{display:none}
 .cg-colL{position:absolute;inset-inline-start:8px;top:calc(104px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .cg-colR{position:absolute;inset-inline-end:8px;top:calc(146px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .cg-menu{position:absolute;inset-inline-start:70px;top:0;display:none;flex-direction:column;gap:5px;pointer-events:none}
@@ -259,6 +259,9 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
     const { map, x, z, yaw } = D, k = W / (2 * D.range), c = Math.cos(yaw), s = Math.sin(yaw);
     const X = (wx, wz) => W / 2 - ((wx - x) * c - (wz - z) * s) * k, Y = (wx, wz) => H / 2 - ((wx - x) * s + (wz - z) * c) * k;
     g.fillStyle = '#12171c'; g.fillRect(0, 0, W, H);
+    // D.bare (Google 3D city on screen, google3d.js): no OpenStreetMap streets / water / route on the map — Google's terms do not
+    // allow another map next to its tiles; the home marker, police and the player's arrow stay (compass-style)
+    if (!D.bare) {
     g.fillStyle = '#1b3f5a'; g.beginPath(); map.lake.forEach(([wx, wz], i) => (i ? g.lineTo(X(wx, wz), Y(wx, wz)) : g.moveTo(X(wx, wz), Y(wx, wz)))); g.closePath(); g.fill();
     if (map.river && map.river.length) { g.strokeStyle = '#1b3f5a'; g.lineWidth = Math.max(2, map.riverHW * 1.6 * k); g.lineJoin = 'round'; g.beginPath(); map.river.forEach(([wx, wz], i) => (i ? g.lineTo(X(wx, wz), Y(wx, wz)) : g.moveTo(X(wx, wz), Y(wx, wz)))); g.stroke(); }
     g.fillStyle = '#2a2a22'; g.beginPath(); map.site.plot.forEach(([wx, wz], i) => (i ? g.lineTo(X(wx, wz), Y(wx, wz)) : g.moveTo(X(wx, wz), Y(wx, wz)))); g.closePath(); g.fill();
@@ -271,12 +274,13 @@ export function createHud(container, { t, dir = 'ltr', lang = 'en', settings, on
         g.strokeStyle = e.exit ? '#c9a659' : e.cls >= 3 ? '#8b93a0' : e.cls >= 2 ? '#6d7580' : '#4b525b'; g.lineWidth = Math.max(1.2, e.hw * 2 * k); g.beginPath(); g.moveTo(X(a.x, a.z), Y(a.x, a.z)); g.lineTo(X(b.x, b.z), Y(b.x, b.z)); g.stroke(); }
     }
     if (D.route && D.route.length > 1) { g.strokeStyle = '#e2c078'; g.lineWidth = Math.max(2.5, 5 * k); g.setLineDash([6, 5]); g.beginPath(); g.moveTo(W / 2, H / 2); for (const id of D.route) { const n = map.nodes[id]; g.lineTo(X(n.x, n.z), Y(n.x, n.z)); } g.stroke(); g.setLineDash([]); }
+    }
     { const G0 = map.site.garage; let hx = X(G0.x, G0.z), hy = Y(G0.x, G0.z); const dx = hx - W / 2, dy = hy - H / 2, m = Math.max(Math.abs(dx) / (W / 2 - 10), Math.abs(dy) / (H / 2 - 10)); if (m > 1) { hx = W / 2 + dx / m; hy = H / 2 + dy / m; }
       g.fillStyle = '#e2c078'; g.strokeStyle = '#14100a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(hx, hy - 8); g.lineTo(hx + 7, hy - 1); g.lineTo(hx + 5, hy + 7); g.lineTo(hx - 5, hy + 7); g.lineTo(hx - 7, hy - 1); g.closePath(); g.fill(); g.stroke(); }
-    if (big || D.labels) { g.font = '600 11px Manrope, Arial, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#d8d2c4'; for (const p of map.pois) { if (p.kind === 'home') continue; const px = X(p.x, p.z), py = Y(p.x, p.z); if (px < 0 || py < 0 || px > W || py > H) continue; g.beginPath(); g.arc(px, py, 2.5, 0, 7); g.fill(); g.fillText(D.label(p), px, py - 6); } }
+    if ((big || D.labels) && !D.bare) { g.font = '600 11px Manrope, Arial, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#d8d2c4'; for (const p of map.pois) { if (p.kind === 'home') continue; const px = X(p.x, p.z), py = Y(p.x, p.z); if (px < 0 || py < 0 || px > W || py > H) continue; g.beginPath(); g.arc(px, py, 2.5, 0, 7); g.fill(); g.fillText(D.label(p), px, py - 6); } }
     for (const p of D.police || []) { const px = X(p.x, p.z), py = Y(p.x, p.z); g.fillStyle = p.amb ? '#ff5a48' : (Math.floor(D.time * 5) % 2 ? '#4f8dff' : '#ff4040'); g.beginPath(); g.arc(Math.max(6, Math.min(W - 6, px)), Math.max(6, Math.min(H - 6, py)), 5, 0, 7); g.fill(); }
     g.fillStyle = '#ffffff'; g.strokeStyle = '#14100a'; g.lineWidth = 2; g.beginPath(); g.moveTo(W / 2, H / 2 - 9); g.lineTo(W / 2 + 6.5, H / 2 + 7); g.lineTo(W / 2, H / 2 + 3); g.lineTo(W / 2 - 6.5, H / 2 + 7); g.closePath(); g.fill(); g.stroke();
-    if (map.real && W >= 300) { g.font = '500 11px Manrope, Arial, sans-serif'; g.textAlign = 'right'; g.fillStyle = 'rgba(230,226,214,.75)'; g.fillText('© OpenStreetMap contributors', W - 6, H - 6); }
+    if (map.real && W >= 300 && !D.bare) { g.font = '500 11px Manrope, Arial, sans-serif'; g.textAlign = 'right'; g.fillStyle = 'rgba(230,226,214,.75)'; g.fillText('© OpenStreetMap contributors', W - 6, H - 6); }
   }
   return {
     root, pad, look, set, toast, banner, fade, panel, showSettings, showStarts, showLocate, showRadio, reveal, drawMap, mapCtx: mctx,

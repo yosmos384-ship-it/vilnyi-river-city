@@ -4,7 +4,7 @@
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
 import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.16';
-import { buildMap, BOUNDS } from './map.js?v=3.16';
+import { buildMap, BOUNDS, inPoly, PROJECT_LL, llToG } from './map.js?v=3.16';
 import { buildRealMap } from './osm.js?v=3.16';
 import { createWorld } from './world.js?v=3.16';
 import { createTraffic } from './traffic.js?v=3.16';
@@ -49,6 +49,9 @@ export async function startCityDrive(host) {
   muteB.addEventListener('click', ev => { ev.stopPropagation(); setMute(!muted); });
   for (const n of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'dblclick']) muteB.addEventListener(n, ev => ev.stopPropagation());
   hud.addTop(muteB); paintMute(); if (muted) setMute(true);
+  // Google Photorealistic 3D Tiles (google3d.js): only with GOOGLE_3D_KEY in js/maps-config.js and the real (OSM) street map
+  const g3d = map.real ? await attachGoogleCity(G, { renderer, camera, hud, lang: host.lang }) : null;
+  const g3dOn = () => !!(g3d && g3d.active);
 
   // ------------------------------------------------------------------ player
   const P = { mode: 'car', car: null, body: null, extras: null, foot: { x: 0, z: 0, yaw: 0, pitch: 0, onFoot: true, vx: 0, vz: 0, isPlayer: true, mode: 'player' }, view: ls.get('vrc.city.view', 'fp') === 'chase' ? 'chase' : 'fp',
@@ -214,7 +217,7 @@ export async function startCityDrive(host) {
     traffic.remove(c); mountCar(c.kind, c.colour, c.x, c.z, c.yaw, c.dmg, c.id % 61 + 3);
     P.mode = 'car'; carRadio(true); P.cam = null; P.engine = false; hud.toast(t('taken'), 1600);
   }
-  function setTime(m) { world.setTime(m); setCarEnvScale(m === 'night' ? 0.32 : m === 'dusk' ? 0.7 : 1, scene.environment); if (host.onTime) host.onTime(m); }
+  function setTime(m) { world.setTime(m); if (g3d && g3d.fog) g3d.fog(); setCarEnvScale(m === 'night' ? 0.32 : m === 'dusk' ? 0.7 : 1, scene.environment); if (host.onTime) host.onTime(m); }
   function act(a, v) {
     audio.resume();
     if (a === 'tap') { if (v && P.mode === 'car' && P.view === 'fp' && tapScreen(v.x, v.y)) return hud.showRadio(); return hud.reveal(); }
@@ -355,9 +358,18 @@ export async function startCityDrive(host) {
   function mapData(range) {
     const E = active();
     if (time - routeT > 2) { routeT = time; const a = map.nearestNode(E.x, E.z), goal = map.site.exitNode != null && Math.hypot(E.x - G0.x, E.z - G0.z) < 420 ? map.site.exitNode : G0.node; route = a ? (map.route(a.id, goal, true) || map.route(a.id, goal)) : null; }
-    return { map, x: E.x, z: E.z, yaw: P.mode === 'car' ? E.yaw : E.yaw, range, route, time, police: traffic.units.map(u => ({ x: u.x, z: u.z, amb: u.unit.kind === 'amb' })), label: p => (p.kind === 'metro' ? 'M ' + p.name : poiSign(p)) };
+    return { map, x: E.x, z: E.z, yaw: P.mode === 'car' ? E.yaw : E.yaw, range, route, time, bare: g3dOn(), police: traffic.units.map(u => ({ x: u.x, z: u.z, amb: u.unit.kind === 'amb' })), label: p => (p.kind === 'metro' ? 'M ' + p.name : poiSign(p)) };
   }
 
+  // Google 3D city on: the car / walker stays within the street corridor (OSM carriageway + pavement), except on the project's
+  // plot and its driveway; a push back to the edge and the outward speed taken off (no damage, no sound)
+  function keepOnRoad(o, margin) {
+    const G = map.site.garage; if (Math.hypot(o.x - G.x, o.z - G.z) < 90 || inPoly(map.site.plot, o.x, o.z)) return;
+    const ne = map.nearestEdge(o.x, o.z, 90); if (!ne) return;
+    const lim = ne.e.hw + margin; if (ne.d <= lim || ne.d < 1e-6) return;
+    const nx = (o.x - ne.px) / ne.d, nz = (o.z - ne.pz) / ne.d; o.x = ne.px + nx * lim; o.z = ne.pz + nz * lim;
+    const vn = (o.vx || 0) * nx + (o.vz || 0) * nz; if (vn > 0) { o.vx -= vn * nx * 1.2; o.vz -= vn * nz * 1.2; }
+  }
   // ------------------------------------------------------------------ the frame
   const inp = { gas: 0, brake: 0, steer: 0, hb: false }; let gasA = 0, brakeA = 0;
   // autopilot for the automated tests: pure pursuit along the route polyline on the right-hand lane, slowing for bends and
@@ -413,6 +425,7 @@ export async function startCityDrive(host) {
       if ((P.surfT -= dt) <= 0) { P.surfT = 0.12; const ne = map.nearestEdge(b.x, b.z, 40); const on = ne && ne.d < ne.e.hw + 0.6, pave = ne && ne.d < ne.e.hw + 6; P.surf.grip = on ? 1 : pave ? 0.94 : 0.74; P.surf.drag = on ? 1 : pave ? 1.05 : 1.7; P.off = !pave; }
       const n = Math.max(1, Math.min(8, Math.ceil(dt * 120)));
       for (let i = 0; i < n; i++) { stepBody(b, inp, dt / n, P.surf); collideStatic(b, world, impact, true); traffic.carHits(b, (o, sp, m) => impact('car', sp, m.px, m.pz, m.nx, m.nz, o)); }
+      if (g3dOn()) keepOnRoad(b, 3.2);   // Google 3D city: the generated plot buildings are not drawn, so the road's edge is the wall
       const sp = Math.hypot(b.vx, b.vz);
       if (map.inWater(b.x, b.z)) { fx.emit('steam', b.x, 0.5, b.z, 0, 3, 0, 20, 3); respawnOnRoad(t('water')); }
       if (b.x < BOUNDS.x0 + 60 || b.x > BOUNDS.x1 - 60 || b.z < BOUNDS.z0 + 60 || b.z > BOUNDS.z1 - 60) { if (time - edgeT > 5) { edgeT = time; hud.toast(t('edge'), 2200); } }
@@ -423,6 +436,7 @@ export async function startCityDrive(host) {
       const f = P.foot, mv = (gas - brake) * 4.6; f.yaw += steer * 2.4 * dt + L.yaw; L.yaw = 0;
       const nx = f.x + Math.sin(f.yaw) * mv * dt, nz = f.z + Math.cos(f.yaw) * mv * dt;
       if (!world.inSolid(nx, f.z, 0.35) && !map.inWater(nx, f.z)) f.x = nx; if (!world.inSolid(f.x, nz, 0.35) && !map.inWater(f.x, nz)) f.z = nz;
+      if (g3dOn()) keepOnRoad(f, 9);
       f.vx = Math.sin(f.yaw) * mv; f.vz = Math.cos(f.yaw) * mv;
       if (b) { b.vx *= 0.9; b.vz *= 0.9; }
     }
@@ -487,7 +501,8 @@ export async function startCityDrive(host) {
     if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * clamp(dt * 6 + (P.cam ? 0 : 1)); camera.updateProjectionMatrix(); }
     { const nr = P.mode === 'car' ? (P.view === 'fp' ? 0.07 : 0.35) : 0.12; if (camera.near !== nr) { camera.near = nr; camera.updateProjectionMatrix(); } }
     camera.updateMatrixWorld();
-    world.update(E.x, E.z, dt, camera, state === 'load' ? 40 : 6);
+    world.update(E.x, E.z, dt, camera, state === 'load' ? 40 : g3dOn() ? 1 : 6);
+    if (g3d) g3d.update(camera, dt);
     if (P.noRender) { fx.update(dt, 400); return; }
     traffic.draw(camera); peds.draw(camera); fx.update(dt, h * renderer.getPixelRatio() * 0.5);
     audio.setListener(camera.position.x, camera.position.z);
@@ -539,6 +554,7 @@ export async function startCityDrive(host) {
   function dispose() {
     game.active = false; try { muteB.remove(); } catch { /* */ } window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); document.removeEventListener('visibilitychange', onVis);
     try { radio.dispose(); audio.dispose(); } catch (e) { console.warn(e); }
+    if (g3d) { try { g3d.dispose(); } catch (e) { console.warn('[city] g3d', e); } }
     unmountCar(); traffic.dispose(); peds.dispose(); fx.dispose(); world.dispose(); hud.dispose();
     if (crackTex) crackTex.dispose();
     renderer.toneMappingExposure = saved.exposure; setCarEnvScale(1, null);
@@ -561,5 +577,59 @@ export async function startCityDrive(host) {
     get heat() { return heat; }, set heat(v) { heat = v; G.wanted = Math.ceil(v); }, get state() { return state; }, get time() { return time; }, keys, inp, hudState,
     info() { const i = renderer.info; return { calls: i.render.calls, tris: i.render.triangles, geos: i.memory.geometries, tex: i.memory.textures, chunks: world.loaded.size, cars: traffic.cars.length, peds: peds.list.length }; },
   };
+  if (g3d) g3d.game = game;   // tests (?g3ddebug): window.__vrcG3d.drive.game.api
   return game;
+}
+
+// ---------------------------------------------------------------- Google Photorealistic 3D Tiles (optional, js/three/google3d.js)
+// Off (null) unless js/maps-config.js has GOOGLE_3D_KEY. On: the Google city replaces the drawn streets, plots, landmarks, lake,
+// trees and street furniture (Google's terms: no other map data mixed in); the project's own massing and plot, the cars, the
+// people, the sky and the lights stay. Driving keeps the OSM street graph (invisible): collisions, AI traffic, the road corridor.
+async function attachGoogleCity(G, { renderer, camera, hud, lang }) {
+  let M; try { M = await import('../google3d.js?v=3.16'); } catch (e) { console.warn('[city] google3d unavailable', e); return null; }
+  if (!M.google3dConfigured()) return null;
+  const { map, world, scene } = G;
+  // frame G: x = metres east, z = metres south of PROJECT_LL with constant metres per degree (map.js llToG)
+  const mLon = llToG([PROJECT_LL[0], PROJECT_LL[1] + 1])[0], mLat = -llToG([PROJECT_LL[0] + 1, PROJECT_LL[1]])[1];
+  const frame = { toLL: (x, z) => [PROJECT_LL[0] - z / mLat, PROJECT_LL[1] + x / mLon], fromLL: (la, lo) => llToG([la, lo]), h0: 112 };   // Giulești ≈ 80 m ASL + geoid ≈ 32 m
+  // the plot as one box along the site axes (map.wax = world x axis in G)
+  const P = map.site.plot, ux = map.wax[0], uz = map.wax[1], L = Math.hypot(ux, uz) || 1, ax = ux / L, az = uz / L;
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (const [x, z] of P) { const a = x * ax + z * az, b = -x * az + z * ax; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+  const ca = (a0 + a1) / 2, cb = (b0 + b1) / 2, clip = [{ x: ca * ax - cb * az, z: ca * az + cb * ax, ux: ax, uz: az, hw: (a1 - a0) / 2 + 1, hd: (b1 - b0) / 2 + 1, top: 400 }];
+  const KEEP = new Set(['city-sky', 'city-site', 'city-plot', 'city-site-sign']), hidden = new Map();
+  const origProps = world.propsNear;
+  let on = false;
+  const hideNow = () => { for (const c of world.group.children) { if (c.isLight || KEEP.has(c.name) || c.name === 'g3d-wrap') continue; if (!hidden.has(c)) hidden.set(c, c.visible); c.visible = false; } };
+  const fog = () => {   // the Google city reaches the horizon: longer view and haze while it is on
+    if (!scene.fog) return; world.setTime(world.time);
+    if (on) { scene.fog.near *= 2.6; scene.fog.far *= 4.2; camera.far = 3200; } else camera.far = 1000;
+    camera.updateProjectionMatrix();
+  };
+  const ctl = M.attachGoogle3D(THREE, {
+    id: 'drive', lang, renderer, camera, parent: scene, host: hud.root, frame, clip, padColor: '#8f8b82',
+    hideClassic(h) {
+      on = h; map.g3d = h; hud.root.classList.toggle('g3d-on', h);
+      world.propsNear = h ? () => {} : origProps;   // the (hidden) lamps, bins, fences and signals are not obstacles then
+      if (!h) { for (const [c, v] of hidden) c.visible = v; hidden.clear(); }
+      fog(); if (h) hideNow();
+    },
+    refPoints(x, z) {   // centre line of the nearest street ± 24 m, and a lane line beside it (surface = y 0)
+      const ne = map.nearestEdge(x, z, 70); if (!ne) return [];
+      const e = ne.e, a = map.nodes[e.a], out = [];
+      for (let k = -3; k <= 3; k++) { const t = Math.max(0, Math.min(e.len, ne.t + k * 8)); for (const l of [0, e.hw * 0.45]) out.push([a.x + e.ux * t - e.uz * l, a.z + e.uz * t + e.ux * l]); }
+      return out;
+    },
+    mountButton(btn) { hud.addTop(btn); return true; },
+    tint: () => (world.time === 'night' ? 0.3 : world.time === 'dusk' ? 0.62 : 1),
+    say: (t, ms) => hud.toast(t, ms),
+    cls: 'g3d-city',
+    css: '.g3d-wrap.g3d-city{left:50%;transform:translateX(-50%);top:calc(58px + env(safe-area-inset-top,0px))}@media (max-width:759px){.g3d-wrap.g3d-city{top:calc(132px + env(safe-area-inset-top,0px));max-width:calc(100vw - 150px)}.g3d-wrap.g3d-city .g3d-data{max-width:calc(100vw - 260px)}}.cg-top .g3d-btn{flex:0 0 auto}',
+  });
+  // chunks streamed in while Google is shown are hidden too (checked a few times a second)
+  let t = 0; const up = ctl.update;
+  ctl.update = (cam, dt) => { if (on && (t += dt) > 0.25) { t = 0; hideNow(); } up(cam, dt); };
+  ctl.fog = () => { if (on) fog(); };
+  ctl.enter();
+  return ctl;
 }
