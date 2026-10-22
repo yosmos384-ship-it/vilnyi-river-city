@@ -1,6 +1,6 @@
 // VILNYI RIVER CITY — strings for the "Location on Google Maps" section (js/maps.js), all 8 site languages.
 // Kept apart from i18n.js so the maps module stays self-contained. Falls back to English, then to the key.
-import { lang } from './i18n.js?v=3.15';
+import { lang } from './i18n.js?v=3.16';
 
 // Language passed to Google (map labels, place names and type names). Fixed when the API loads.
 export const GOOGLE_LANG = { he: 'iw', en: 'en', ro: 'ro', ru: 'ru', uk: 'uk', fr: 'fr', it: 'it', de: 'de' };

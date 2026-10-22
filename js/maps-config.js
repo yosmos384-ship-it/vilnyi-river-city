@@ -10,8 +10,8 @@
 export const GOOGLE_MAPS_API_KEY = 'AIzaSyCHgOe-pPX_LfL55bMqher0fP77McLCzL4';
 
 // Map ID (Google Cloud Console → Map management). Needed for the branded markers (Advanced Markers) and the dark,
-// tilted vector map. 'DEMO_MAP_ID' is Google's public test ID; replace it with your own Map ID (free) for production.
-export const GOOGLE_MAP_ID = 'DEMO_MAP_ID';
+// tilted vector map. The owner's own Map ID (vector). Its look (dark/gold) is set in Cloud Console → Map Styles for this ID.
+export const GOOGLE_MAP_ID = '6d106ba3d67a6540b64ed508';
 
 // Flyover: 'auto' = Photorealistic 3D (Map3DElement) when available, otherwise a tilted satellite map turning slowly;
 // '3d' = 3D only (the poster stays if it fails); 'tilt' = always the tilted satellite map; 'off' = poster only.
