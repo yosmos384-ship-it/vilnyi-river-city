@@ -91,14 +91,22 @@
 /* markers drawn into the Google map */
 .gm-pin { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 7px; background: #0b0a08; border: 1px solid var(--gold); border-radius: 30px; box-shadow: 0 8px 22px -6px rgba(0, 0, 0, .7); position: relative; transform: translateY(-6px); }
 .gm-pin::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; background: #0b0a08; border-right: 1px solid var(--gold); border-bottom: 1px solid var(--gold); transform: translateX(-50%) rotate(45deg); }
-.gm-pin img { width: 22px; height: auto; }
+.gm-pin img { width: 30px; height: auto; }
 .gm-pin-t { font: 600 10.5px/1 var(--f-body); letter-spacing: .16em; color: var(--gold-hi); white-space: nowrap; }
 .gm-pin.big { padding: 7px 14px 7px 9px; } .gm-pin.big img { width: 28px; } .gm-pin.big .gm-pin-t { font-size: 12px; }
-.gm-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: #17140f; color: var(--gold-hi); border: 1.5px solid var(--gold); font: 700 11px/1 Manrope, system-ui, sans-serif; box-shadow: 0 4px 12px rgba(0, 0, 0, .55); transition: transform .2s; }
-.gm-dot.lake { border-color: var(--r1); color: #cfe3e5; }
-.gm-dot.is-sel { transform: scale(1.3); background: var(--gold); color: #17130c; }
+.gm-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #17130c; border: 1.5px solid #17130c; font: 700 11px/1 Manrope, system-ui, sans-serif; box-shadow: 0 4px 12px rgba(0, 0, 0, .55); transition: transform .2s; }
+.gm-dot.lake { border-color: #17130c; }
+.gm-dot.is-sel { transform: scale(1.3); background: #17130c; color: var(--gold-hi); outline: 2px solid var(--gold); }
 
 /* ---------- 4. Street View */
 .gm-sv-stage { margin-top: 18px; width: 100%; aspect-ratio: 1 / 1; max-height: 70vh; border: 1px solid var(--line); background: #0d0c0a; overflow: hidden; }
 @media (min-width: 640px) { .gm-sv-stage { aspect-ratio: 16 / 9; } }
 .gm-note { margin: 0; }
+
+/* Optional satellite flyover: native disclosure supports keyboard and touch. */
+.gm-extra { min-width: 0; border: 1px solid var(--line); }
+.gm-extra > summary { cursor: pointer; min-height: 48px; padding: 14px 18px; color: var(--gold-hi); font: 600 15px/1.4 var(--f-body); }
+.gm-extra > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.gm-extra[open] > summary { border-bottom: 1px solid var(--line); }
+
+.gm-map { color-scheme: light; }

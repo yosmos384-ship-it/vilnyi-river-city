@@ -150,6 +150,14 @@ function createMaps(sec) {
     </div>
     <p class="fine gm-note" data-m="note"></p>`;
 
+  // Keep the readable neighborhood map first; start the flyover only when requested.
+  const flyBlock = $('.gm-fly', app), flyDetails = document.createElement('details');
+  flyDetails.className = 'gm-extra';
+  flyDetails.innerHTML = '<summary data-m="flyLabel"></summary>';
+  flyDetails.append(flyBlock);
+  $('.gm-nav', app).after(flyDetails);
+  app.prepend($('#gmNear', app));
+
   const stage = $('#gmStage', app), host = $('#gmFlyHost', app), state = $('#gmState', app), pp = $('#gmPP', app), hint = $('#gmHint', app);
   const chips = $('#gmChips', app), list = $('#gmList', app), src = $('#gmSrc', app), mapEl = $('#gmMap', app), mapOff = $('#gmMapOff', app);
   const sv = $('#gmSv', app), svStage = $('#gmSvStage', app);
@@ -308,9 +316,10 @@ function createMaps(sec) {
     if (S.off) return goMapOff();
     try {
       const { Map } = await lib('maps');
-      const opts = { center: CENTER, zoom: 14.6, gestureHandling: 'cooperative', clickableIcons: false, mapTypeControl: false,
+      const opts = { center: CENTER, zoom: 14.6, gestureHandling: 'cooperative', clickableIcons: false, mapTypeId: 'roadmap', mapTypeControl: true,
+        mapTypeControlOptions: { mapTypeIds: ['roadmap', 'hybrid'] },
         streetViewControl: false, fullscreenControl: true, isFractionalZoomEnabled: true };
-      if (CFG.GOOGLE_MAP_ID) { opts.mapId = CFG.GOOGLE_MAP_ID; opts.colorScheme = google.maps.ColorScheme?.DARK ?? 'DARK'; }
+      if (CFG.GOOGLE_MAP_ID) { opts.mapId = CFG.GOOGLE_MAP_ID; opts.colorScheme = google.maps.ColorScheme?.LIGHT ?? 'LIGHT'; }
       S.map = new Map(mapEl, opts);
       S.projMarker = await addProjectMarker(S.map, false);
       loadCat();
@@ -375,7 +384,7 @@ function createMaps(sec) {
         mk = new Adv({ map: S.map, position: pos, content: el, title: nameOf(p), gmpClickable: true });
         mk.addListener('click', () => select(p.key, false));
       } else {
-        mk = new google.maps.Marker({ map: S.map, position: pos, title: nameOf(p), label: { text: String(i + 1), color: '#17130c', fontSize: '11px', fontWeight: '700' } });
+        mk = new google.maps.Marker({ map: S.map, position: pos, title: nameOf(p), icon: { path: google.maps.SymbolPath.CIRCLE, scale: 14, fillColor: '#c9a96a', fillOpacity: 1, strokeColor: '#17130c', strokeWeight: 1.5 }, label: { text: String(i + 1), color: '#17130c', fontSize: '11px', fontWeight: '700' } });
         mk.addListener('click', () => select(p.key, false));
       }
       mk._key = p.key; S.markers.push(mk); bounds.extend(pos);
@@ -425,12 +434,17 @@ function createMaps(sec) {
   renderText();
   setState(S.off ? 'off' : 'poster');
   let flyStarted = false, mapStarted = false;
+  flyDetails.addEventListener('toggle', () => {
+    S.onScreen = flyDetails.open;
+    if (flyDetails.open && !flyStarted) { flyStarted = true; startFlyover(); }
+    else if (flyDetails.open) startOrbit(); else stopOrbit();
+  });
   const io = new IntersectionObserver(es => {
     for (const e of es) {
       if (e.target === stage) {
-        S.onScreen = e.isIntersecting;
-        if (e.isIntersecting && !flyStarted) { flyStarted = true; startFlyover(); }
-        else if (e.isIntersecting) startOrbit(); else stopOrbit();
+        S.onScreen = flyDetails.open && e.isIntersecting;
+        if (S.onScreen && !flyStarted) { flyStarted = true; startFlyover(); }
+        else if (S.onScreen) startOrbit(); else stopOrbit();
       }
       if (e.target === mapEl && e.isIntersecting && !mapStarted) { mapStarted = true; S.off ? goMapOff() : startMap(); }
     }
