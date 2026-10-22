@@ -7,8 +7,8 @@ export const GOOGLE_LANG = { he: 'iw', en: 'en', ro: 'ro', ru: 'ru', uk: 'uk', f
 
 const M = {
   en: {
-    eyebrow: 'Location · Google Maps', title: 'See the site from the air',
-    lead: 'Fly around the project in Google’s photorealistic 3D, check what is within walking distance and set off with one tap.',
+    eyebrow: 'Location · Google Maps', title: 'Explore the neighbourhood',
+    lead: 'Find nearby places on the map and start navigation with one tap. Open the aerial view for a different perspective.',
     flyLabel: '3D flyover of the project site', pause: 'Pause the flyover', play: 'Resume the flyover',
     loading: 'Loading the 3D view…', poster: 'Illustrative render — the live 3D view opens here',
     hint: 'Drag to look around · scroll to zoom', hintTouch: 'Two fingers to move · pinch to zoom',
@@ -30,8 +30,8 @@ const M = {
     note: 'Map data, 3D imagery and Street View © Google. Imagery may predate the current construction.',
   },
   he: {
-    eyebrow: 'מיקום · Google Maps', title: 'הפרויקט ממבט אווירי',
-    lead: 'טוסו סביב הפרויקט בתלת‑ממד הפוטו‑ריאליסטי של גוגל, בדקו מה נמצא במרחק הליכה וצאו לדרך בלחיצה אחת.',
+    eyebrow: 'מיקום · Google Maps', title: 'הכירו את הסביבה',
+    lead: 'גלו מה נמצא בקרבת הפרויקט על המפה וצאו לדרך בלחיצה אחת. למבט נוסף, פתחו את התצוגה האווירית.',
     flyLabel: 'טיסת תלת‑ממד מעל אתר הפרויקט', pause: 'השהיית הטיסה', play: 'המשך הטיסה',
     loading: 'טוען את תצוגת התלת‑ממד…', poster: 'הדמיה להמחשה — תצוגת התלת‑ממד החיה נפתחת כאן',
     hint: 'גררו כדי להסתכל מסביב · גלגלת לזום', hintTouch: 'שתי אצבעות להזזה · צביטה לזום',
@@ -53,8 +53,8 @@ const M = {
     note: 'נתוני מפה, תלת‑ממד ו‑Street View © Google. ייתכן שהצילומים קודמים לבנייה הנוכחית.',
   },
   ro: {
-    eyebrow: 'Locație · Google Maps', title: 'Proiectul văzut din aer',
-    lead: 'Zburați în jurul proiectului în 3D fotorealist Google, vedeți ce aveți la câțiva pași și porniți la drum cu o singură atingere.',
+    eyebrow: 'Locație · Google Maps', title: 'Descoperiți împrejurimile',
+    lead: 'Găsiți locurile din apropiere pe hartă și porniți navigația cu o singură atingere. Deschideți vederea aeriană pentru o altă perspectivă.',
     flyLabel: 'Zbor 3D deasupra amplasamentului', pause: 'Pauză zbor', play: 'Reia zborul',
     loading: 'Se încarcă vederea 3D…', poster: 'Randare ilustrativă — vederea 3D live se deschide aici',
     hint: 'Trageți pentru a privi în jur · rotița pentru zoom', hintTouch: 'Două degete pentru mutare · ciupiți pentru zoom',
@@ -76,8 +76,8 @@ const M = {
     note: 'Date de hartă, imagini 3D și Street View © Google. Imaginile pot fi anterioare construcției actuale.',
   },
   ru: {
-    eyebrow: 'Расположение · Google Maps', title: 'Проект с высоты',
-    lead: 'Облетите проект в фотореалистичном 3D от Google, посмотрите, что рядом в пешей доступности, и проложите маршрут одним касанием.',
+    eyebrow: 'Расположение · Google Maps', title: 'Познакомьтесь с районом',
+    lead: 'Найдите места рядом на карте и постройте маршрут одним касанием. Откройте вид с воздуха, чтобы увидеть район с другого ракурса.',
     flyLabel: '3D-облёт площадки проекта', pause: 'Пауза облёта', play: 'Продолжить облёт',
     loading: 'Загружается 3D-вид…', poster: 'Иллюстративная визуализация — живой 3D-вид откроется здесь',
     hint: 'Перетаскивайте, чтобы осмотреться · колесо — масштаб', hintTouch: 'Двумя пальцами — перемещение · щипок — масштаб',
@@ -99,8 +99,8 @@ const M = {
     note: 'Картографические данные, 3D-снимки и Street View © Google. Снимки могут быть сделаны до начала текущего строительства.',
   },
   uk: {
-    eyebrow: 'Розташування · Google Maps', title: 'Проєкт з висоти',
-    lead: 'Облетіть проєкт у фотореалістичному 3D від Google, перегляньте, що поруч у пішій доступності, і прокладіть маршрут одним дотиком.',
+    eyebrow: 'Розташування · Google Maps', title: 'Дізнайтеся більше про район',
+    lead: 'Знайдіть місця поруч на карті й прокладіть маршрут одним дотиком. Відкрийте вигляд з повітря, щоб побачити район з іншого ракурсу.',
     flyLabel: '3D-обліт майданчика проєкту', pause: 'Пауза обльоту', play: 'Продовжити обліт',
     loading: 'Завантажується 3D-вигляд…', poster: 'Ілюстративна візуалізація — живий 3D-вигляд відкриється тут',
     hint: 'Перетягуйте, щоб роззирнутися · коліщатко — масштаб', hintTouch: 'Двома пальцями — переміщення · щипок — масштаб',
@@ -122,8 +122,8 @@ const M = {
     note: 'Картографічні дані, 3D-знімки та Street View © Google. Знімки можуть передувати поточному будівництву.',
   },
   fr: {
-    eyebrow: 'Situation · Google Maps', title: 'Le site vu du ciel',
-    lead: 'Survolez le projet en 3D photoréaliste Google, découvrez ce qui est à quelques pas et lancez l’itinéraire d’un simple geste.',
+    eyebrow: 'Situation · Google Maps', title: 'Découvrez le quartier',
+    lead: 'Repérez les lieux à proximité sur la carte et lancez votre itinéraire en un geste. Ouvrez la vue aérienne pour une autre perspective.',
     flyLabel: 'Survol 3D du site du projet', pause: 'Mettre le survol en pause', play: 'Reprendre le survol',
     loading: 'Chargement de la vue 3D…', poster: 'Rendu indicatif — la vue 3D en direct s’ouvre ici',
     hint: 'Faites glisser pour regarder autour · molette pour zoomer', hintTouch: 'Deux doigts pour déplacer · pincez pour zoomer',
@@ -145,8 +145,8 @@ const M = {
     note: 'Données cartographiques, images 3D et Street View © Google. Les images peuvent être antérieures au chantier actuel.',
   },
   it: {
-    eyebrow: 'Posizione · Google Maps', title: 'Il progetto visto dall’alto',
-    lead: 'Volate intorno al progetto nel 3D fotorealistico di Google, scoprite cosa c’è a pochi passi e partite con un solo tocco.',
+    eyebrow: 'Posizione · Google Maps', title: 'Scoprite il quartiere',
+    lead: 'Trovate i luoghi vicini sulla mappa e avviate la navigazione con un tocco. Aprite la vista aerea per una prospettiva diversa.',
     flyLabel: 'Sorvolo 3D dell’area del progetto', pause: 'Metti in pausa il sorvolo', play: 'Riprendi il sorvolo',
     loading: 'Caricamento della vista 3D…', poster: 'Render illustrativo — la vista 3D dal vivo si apre qui',
     hint: 'Trascina per guardarti intorno · rotellina per lo zoom', hintTouch: 'Due dita per spostare · pizzica per lo zoom',
@@ -168,8 +168,8 @@ const M = {
     note: 'Dati cartografici, immagini 3D e Street View © Google. Le immagini possono essere precedenti al cantiere attuale.',
   },
   de: {
-    eyebrow: 'Lage · Google Maps', title: 'Das Projekt aus der Luft',
-    lead: 'Umfliegen Sie das Projekt im fotorealistischen 3D von Google, sehen Sie, was zu Fuß erreichbar ist, und starten Sie die Route mit einem Tipp.',
+    eyebrow: 'Lage · Google Maps', title: 'Entdecken Sie die Umgebung',
+    lead: 'Finden Sie Orte in der Nähe auf der Karte und starten Sie die Navigation mit einem Tipp. Öffnen Sie die Luftansicht für eine andere Perspektive.',
     flyLabel: '3D-Rundflug über das Projektgelände', pause: 'Rundflug anhalten', play: 'Rundflug fortsetzen',
     loading: '3D-Ansicht wird geladen…', poster: 'Illustratives Rendering — die Live-3D-Ansicht öffnet sich hier',
     hint: 'Ziehen zum Umsehen · Mausrad zum Zoomen', hintTouch: 'Zwei Finger zum Bewegen · Spreizen zum Zoomen',

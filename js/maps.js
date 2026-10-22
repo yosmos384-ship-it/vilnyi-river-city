@@ -10,7 +10,7 @@
 // Google Maps Platform terms: the Google logo / attribution inside the map is never hidden; Places results are kept in
 // memory for this page view only (no storage); the list carries the "Google Maps" attribution next to the map.
 import { lang, onLangChange } from './i18n.js?v=3.16';
-import { mt, GOOGLE_LANG } from './i18n-maps.js?v=3.16';
+import { mt, GOOGLE_LANG } from './i18n-maps.js?v=light-map-1';
 import { CARD, poiName, pt } from './i18n-panorama.js?v=3.16';
 import { PROJECT } from './data.js?v=3.16';
 import { PROJECT_LL, POIS, haversine, trueBearing } from './panorama.js?v=3.16';
