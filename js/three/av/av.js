@@ -10,10 +10,10 @@
 //    phrases), never a melody; the flats keep the VRC FM music programme;
 //  · one mute for all of it, kept between visits.
 // Browsers play no sound before a gesture: whatever is due waits for the next tap (sync() runs again then).
-import { createAudio } from '../city/audio.js?v=3.17';
-import { STATIONS } from '../city/radio.js?v=3.17';
-import { createSurround } from './surround.js?v=3.17';
-import { createLiftMusic } from './music.js?v=3.17';
+import { createAudio } from '../city/audio.js?v=3.17.1';
+import { STATIONS } from '../city/radio.js?v=3.17.1';
+import { createSurround } from './surround.js?v=3.17.1';
+import { createLiftMusic } from './music.js?v=3.17.1';
 
 const VOL = 0.62;
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };

@@ -7,14 +7,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   UNITS, TYPES, CORES, CORRIDORS, BUILDINGS, GEOM, LEVELS, FOOTPRINT, TOP_FLOOR, coresOf, corridorsOf, footprintOf, BASEMENT,
   floorY, unitById, unitsOn, blocksOn, unitLabel, unitToLocal, unitToWorld, unitYaw, money,
-} from '../data.js?v=3.17';
-import { I18N } from '../i18n.js?v=3.17';
-import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.17';   // post-processing + adaptive quality (Graphics setting)
-import { PbrAssets } from './pbr.js?v=3.17';                     // CC0 HDRI lighting + detail maps (Medium / High only)
-import './bake.js?v=3.17';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
-import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.17';
-import { createAV } from './av/av.js?v=3.17';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
-import { mountAvBar } from './av/bar.js?v=3.17';     // the always-visible sound bar (mute + scanner)
+} from '../data.js?v=3.17.1';
+import { I18N } from '../i18n.js?v=3.17.1';
+import { PostFX, GFX_MODES, gfxText } from './postfx.js?v=3.17.1';   // post-processing + adaptive quality (Graphics setting)
+import { PbrAssets } from './pbr.js?v=3.17.1';                     // CC0 HDRI lighting + detail maps (Medium / High only)
+import './bake.js?v=3.17.1';   // baked apartment lighting: registers window.VRC.bakedLighting (settings row + time of day)
+import { createFleet, buildOutdoorColliders, createDriveArea, carSpec, CarController, carGeometryXForward, pickCar, carRng, inLake, nearPlot, RAMP, seesOutside } from './cars.js?v=3.17.1';
+import { createAV } from './av/av.js?v=3.17.1';        // the building's sound: radio scanner, 5.1 flats, lift music, car radio
+import { mountAvBar } from './av/bar.js?v=3.17.1';     // the always-visible sound bar (mute + scanner)
 
 const EYE = 1.62, EYE_360 = 1.55, SPEED = 1.4, RUN = 2.4, RADIUS = 0.28, STEP_UP = 0.45, STEP_DOWN = 1.1;
 const RAY_HEIGHTS = [0.3, 1.0, 1.6];
@@ -255,8 +255,8 @@ async function loadModules(injected = {}) {
     try { out[key] = await import(path); } catch (e) { console.warn(`[walk] ${path} unavailable — continuing without it`, e); out[key] = null; }
   };
   await Promise.all([
-    tryImport('environment', './environment.js?v=3.17'), tryImport('exterior', './exterior.js?v=3.17'),
-    tryImport('apartment', './apartment.js?v=3.17'), tryImport('commons', './commons.js?v=3.17'), tryImport('materials', './materials.js?v=3.17'),
+    tryImport('environment', './environment.js?v=3.17.1'), tryImport('exterior', './exterior.js?v=3.17.1'),
+    tryImport('apartment', './apartment.js?v=3.17.1'), tryImport('commons', './commons.js?v=3.17.1'), tryImport('materials', './materials.js?v=3.17.1'),
   ]);
   return out;
 }
@@ -2012,7 +2012,7 @@ export class Walkthrough {
     this._panoProbe = (async () => {
       try {
         const inj = this.mods && this.mods.panoTour;
-        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.17');
+        if (!window.VRC_PANO && !inj) this.mods.panoTour = await import('./pano-tour.js?v=3.17.1');
         const reg = window.VRC_PANO;
         if (reg && reg.ready && typeof reg.ready.then === 'function') await reg.ready;
       } catch (e) { console.info('[walk] photoreal tour not deployed yet', e && e.message); this._panoFailed = true; }
@@ -2023,7 +2023,7 @@ export class Walkthrough {
   // The pano manifest (same file pano-tour.js reads) — fetched only once a type/style is known to exist.
   async _panoManifest() {
     if (!this._panoMan) {
-      const url = new URL('../../assets/pano/index.json?v=3.17', import.meta.url);
+      const url = new URL('../../assets/pano/index.json?v=3.17.1', import.meta.url);
       this._panoMan = fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return this._panoMan;
@@ -2058,7 +2058,7 @@ export class Walkthrough {
     this._panoBusy = true;
     let mod = this.mods.panoTour;
     try {
-      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.17');
+      if (!mod || typeof (mod.openPanoTour || mod.default) !== 'function') mod = this.mods.panoTour = await import('./pano-tour.js?v=3.17.1');
     } catch (e) {
       console.warn('[walk] pano-tour.js unavailable', e);
       this._panoFailed = true; this._panoBusy = false; this._renderModes(); this._soonTip(); return;
@@ -3747,7 +3747,7 @@ export class Walkthrough {
 
   // GT VILNYI (app.js): City Drive from the walkthrough. opts.startId: where the car starts (osm.js STARTS); no chooser then.
   async startCity(opts = {}) {
-    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.17'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
+    if (!this._cityHook && !this._cityTried) { this._cityTried = true; const m = await import('./city/hook.js?v=3.17.1'); if (!this.disposed) this._cityHook = m.createCityHook(this); }
     for (let k = 0; k < 50 && !this._cityHook && !this.disposed; k++) await new Promise(r => setTimeout(r, 100));
     return this._cityHook ? this._cityHook.start(opts) : undefined;
   }
@@ -4189,7 +4189,7 @@ export class Walkthrough {
     // 'parking' source as taken, so the real cars were refused later and their instances hidden — an empty car park.)
     if (!c || !Array.isArray(c.parkedCars) || !c.parkedCars.length) return;
     // the car park's exit gate + the opt-in "City Drive" game mode: fetched the first time the −1 level is on screen
-    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.17').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
+    if (!this._cityTried) { this._cityTried = true; import('./city/hook.js?v=3.17.1').then(m => { if (!this.disposed) this._cityHook = m.createCityHook(this); }).catch(e => console.warn('[walk] city', e)); }
     if (!this.fleet && !this._carsTried) { this._carsTried = true; this._initCars(); }   // in the car park before the world finished streaming
     if (!this.fleet) return;
     if (this.fleet.add(c.parkedCars, 'parking').length) this._registerCars();
@@ -4825,7 +4825,7 @@ Object.assign(Walkthrough.prototype, {
       if (veil) { if (lt) lt.textContent = this.t('walk.yachtLoading'); this._showLoading(true); }
       this._yachtP = (async () => {
         await this._ready; await (this._worldP || this._streamWorld());
-        const mod = await import('./yacht.js?v=3.17');
+        const mod = await import('./yacht.js?v=3.17.1');
         if (this.disposed) return null;
         return (this.yacht = mod.createYacht(this));
       })().catch(e => { console.warn('[walk] yacht', e); this._yachtP = null; return null; }).finally(() => { if (veil) { this._showLoading(false); setTimeout(() => { if (lt && !this.disposed && this.el.loading.classList.contains('hide')) lt.textContent = this.t('walk.loading'); }, 600); } });
@@ -4874,7 +4874,7 @@ Object.assign(Walkthrough.prototype, {
   async _initLimo() {
     if (this.limo || this.disposed || !this.fleet || !this.headSpot) return;   // needs the streets and the fleet's materials
     try {
-      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.17'));
+      const mod = this.mods.limo || (this.mods.limo = await import('./limo.js?v=3.17.1'));
       if (this.disposed || this.limo) return;
       this.limo = new mod.LimoExperience(this);
       (window.VRC = window.VRC || {}).PIER = mod.PIER;

@@ -3,15 +3,15 @@
 // One Casino object per yacht (yacht.casino); the room attaches its live meshes to it whenever the zone is (re)built.
 // PLAY MONEY ONLY: the chips are fictional, there is no purchase, deposit, cash-out or prize anywhere in this code.
 import * as THREE from 'three';
-import { SPEECH_LANG } from '../yacht-i18n.js?v=3.17';
-import { seededRng, cryptoRng } from './rng.js?v=3.17';
-import { Bank, fmt, chipsFor, CHIPS } from './bank.js?v=3.17';
-import { CT } from './i18n.js?v=3.17';
-import * as ART from './art.js?v=3.17';
-import { CardBatch, ChipBatch, CHIP_T } from './batches.js?v=3.17';
-import { createSound } from './sound.js?v=3.17';
-import { TOP, RL_TABLE, MACHINE, STATIONS } from './layout.js?v=3.17';
-import { GAMES } from './games.js?v=3.17';
+import { SPEECH_LANG } from '../yacht-i18n.js?v=3.17.1';
+import { seededRng, cryptoRng } from './rng.js?v=3.17.1';
+import { Bank, fmt, chipsFor, CHIPS } from './bank.js?v=3.17.1';
+import { CT } from './i18n.js?v=3.17.1';
+import * as ART from './art.js?v=3.17.1';
+import { CardBatch, ChipBatch, CHIP_T } from './batches.js?v=3.17.1';
+import { createSound } from './sound.js?v=3.17.1';
+import { TOP, RL_TABLE, MACHINE, STATIONS } from './layout.js?v=3.17.1';
+import { GAMES } from './games.js?v=3.17.1';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x)), lerp = (a, b, t) => a + (b - a) * t, DEG = Math.PI / 180;
 const ease = (k) => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;

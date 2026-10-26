@@ -3,19 +3,19 @@
 // Stages: the car (cockpit, instruments, lights, wipers, horn, handbrake, reversing camera, sat-nav, radio),
 // the streamed city (world.js), traffic and police (traffic.js), people (peds.js), damage, carjacking, wanted level.
 import * as THREE from 'three';
-import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.17';
-import { buildMap, BOUNDS, inPoly, PROJECT_LL, llToG } from './map.js?v=3.17';
-import { buildRealMap } from './osm.js?v=3.17';
-import { createWorld } from './world.js?v=3.17';
-import { createTraffic } from './traffic.js?v=3.17';
-import { createPeds } from './peds.js?v=3.17';
-import { createFx } from './fx.js?v=3.17';
-import { createAudio } from './audio.js?v=3.17';
-import { createRadio } from './radio.js?v=3.17';
-import { createHud } from './hud.js?v=3.17';
-import { cityT, cityDir } from './i18n.js?v=3.17';
-import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.17';
-import { poiSign } from './gen.js?v=3.17';
+import { createCar, cockpitSurface, setCarEnvScale, CAR_COLOURS } from '../cars.js?v=3.17.1';
+import { buildMap, BOUNDS, inPoly, PROJECT_LL, llToG } from './map.js?v=3.17.1';
+import { buildRealMap } from './osm.js?v=3.17.1';
+import { createWorld } from './world.js?v=3.17.1';
+import { createTraffic } from './traffic.js?v=3.17.1';
+import { createPeds } from './peds.js?v=3.17.1';
+import { createFx } from './fx.js?v=3.17.1';
+import { createAudio } from './audio.js?v=3.17.1';
+import { createRadio } from './radio.js?v=3.17.1';
+import { createHud } from './hud.js?v=3.17.1';
+import { cityT, cityDir } from './i18n.js?v=3.17.1';
+import { makeBody, stepBody, collideStatic, bodyBox } from './vehicle.js?v=3.17.1';
+import { poiSign } from './gen.js?v=3.17.1';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -586,7 +586,7 @@ export async function startCityDrive(host) {
 // trees and street furniture (Google's terms: no other map data mixed in); the project's own massing and plot, the cars, the
 // people, the sky and the lights stay. Driving keeps the OSM street graph (invisible): collisions, AI traffic, the road corridor.
 async function attachGoogleCity(G, { renderer, camera, hud, lang }) {
-  let M; try { M = await import('../google3d.js?v=3.17'); } catch (e) { console.warn('[city] google3d unavailable', e); return null; }
+  let M; try { M = await import('../google3d.js?v=3.17.1'); } catch (e) { console.warn('[city] google3d unavailable', e); return null; }
   if (!M.google3dConfigured()) return null;
   const { map, world, scene } = G;
   // frame G: x = metres east, z = metres south of PROJECT_LL with constant metres per degree (map.js llToG)

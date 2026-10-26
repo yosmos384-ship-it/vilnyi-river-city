@@ -27,7 +27,7 @@
 //  • EEA: a key of a Cloud billing account with an EEA billing address gets 403 "…not available for your account and
 //    region" → the classic world comes back with a short note, as for 401/403/429, offline, no tiles, no 3D coverage.
 // The key is never logged: Google's error text is shown with key=… masked.
-import { GOOGLE_3D_KEY, GOOGLE_3D_MIN_DETAIL_M } from '../maps-config.js?v=3.17';
+import { GOOGLE_3D_KEY, GOOGLE_3D_MIN_DETAIL_M } from '../maps-config.js?v=3.17.1';
 
 const ROOT_HOST = 'tile.googleapis.com';
 const START_TIMEOUT = 22000;        // no tile at all after this → classic
@@ -121,7 +121,7 @@ export function attachGoogle3D(THREE, o = {}) {
     mode: google3dConfigured() && saved !== 'classic' ? 'google' : 'classic',
     active: false, status: google3dConfigured() ? 'idle' : 'off', reason: '', entered: false, disposed: false,
   };
-  let lib = null, libP = null, tiles = null, auth = null, draco = null, t0 = 0, models = 0, lastOk = 0, failedSeen = 0, firstAt = 0, covChecked = false;
+  let rootFailed = false, rootFailedAt = 0, lib = null, libP = null, tiles = null, auth = null, draco = null, t0 = 0, models = 0, lastOk = 0, failedSeen = 0, firstAt = 0, covChecked = false;
   let anchor = null, dy = 0, dyTarget = null, lockT = 0, attrT = 0, resT = 0, btnT = 0, attrText = '', tintNow = 1, locked = false, frames = 0, firstFrame = 0;
   const jobs = [];   // the download / parse queues run from update() (the world's own frame), not from extra rAF callbacks
   const camP = new THREE.Vector3(), v3 = new THREE.Vector3(), m4 = new THREE.Matrix4(), RY = new THREE.Matrix4().makeRotationY(Math.PI), size = new THREE.Vector2(), DOWN = new THREE.Vector3(0, -1, 0);
@@ -243,8 +243,8 @@ export function attachGoogle3D(THREE, o = {}) {
       name: 'VRC_G3D_WATCH', priority: -2,
       async fetchData(uri, opts) {
         if (auth._tokenRefreshPromise === null && /\/3dtiles\/root\.json/.test(String(uri))) {
-          let res; try { res = await fetch(uri, opts); } catch (e) { failedSeen++; if (!ctl.reason) ctl.reason = 'network: ' + (e && e.message ? e.message : e); throw quiet('root: ' + ctl.reason); }
-          if (!res.ok) { failedSeen++; noteError(res); throw quiet('root: HTTP ' + res.status); }
+          let res; try { res = await fetch(uri, opts); } catch (e) { failedSeen++; rootFailed = true; if (!ctl.reason) ctl.reason = 'network: ' + (e && e.message ? e.message : e); throw quiet('root: ' + ctl.reason); }
+          if (!res.ok) { failedSeen++; noteError(res); rootFailed = true; throw quiet('root: HTTP ' + res.status); }
           lastOk = performance.now(); return res;
         }
         return auth.fetchData(uri, opts).then((res) => {
@@ -276,7 +276,7 @@ export function attachGoogle3D(THREE, o = {}) {
     });
     holder.add(tiles.group);
     tiles.setCamera(o.camera || new THREE.PerspectiveCamera());
-    resT = 0; anchor = null; t0 = performance.now(); models = 0; failedSeen = 0; firstAt = 0; covChecked = false; dyTarget = null; locked = false; frames = 0; firstFrame = 0; jobs.length = 0;
+    rootFailed = false; rootFailedAt = 0; resT = 0; anchor = null; t0 = performance.now(); models = 0; failedSeen = 0; firstAt = 0; covChecked = false; dyTarget = null; locked = false; frames = 0; firstFrame = 0; jobs.length = 0;
     ctl.status = 'loading'; ctl.reason = '';
   }
   function stopTiles() {
@@ -359,12 +359,18 @@ export function attachGoogle3D(THREE, o = {}) {
     locked = true;
   }
   // no photorealistic coverage: the finest tile on screen stays coarse once the downloads have settled
+  // finest geometric error among the tiles in view (Infinity before any)
+  function finest() { let min = Infinity; for (const t of tiles.visibleTiles || []) if (t && isFinite(t.geometricError)) min = Math.min(min, t.geometricError); return min; }
+  // While Google is not yet shown (the classic city stays on screen) the verdict comes as soon as the downloads have settled
+  // (≥ 3 s after the first tile) — coarse globe tiles are never revealed; once shown, the original settle time applies.
   function coverageCheck(now) {
-    if (covChecked || !firstAt || now - firstAt < COVER_WAIT || frames - firstFrame < 30) return;
-    const st = tiles.stats; if (st.downloading > 0 || st.parsing > 0) { if (now - firstAt < COVER_WAIT * 3 || frames - firstFrame < 90) return; }
+    if (covChecked || !firstAt) return;
+    const st = tiles.stats, busy = st.downloading > 0 || st.parsing > 0, early = !ctl.active;
+    const min = finest(); ctl.finestError = isFinite(min) ? +min.toFixed(2) : null;
+    if (isFinite(min) && min <= minDetail) { if (ctl.active) covChecked = true; return; }   // photoreal detail on screen
+    if (early) { if (now - firstAt < 3000 || frames - firstFrame < 8 || (busy && now - firstAt < COVER_WAIT * 2)) return; }
+    else if (now - firstAt < COVER_WAIT || frames - firstFrame < 30 || (busy && (now - firstAt < COVER_WAIT * 3 || frames - firstFrame < 90))) return;
     covChecked = true;
-    let min = Infinity; for (const t of tiles.visibleTiles || []) if (t && isFinite(t.geometricError)) min = Math.min(min, t.geometricError);
-    ctl.finestError = isFinite(min) ? +min.toFixed(2) : null;
     if (isFinite(min) && min > minDetail) { ctl.reason = 'no photorealistic 3D coverage (finest tile ' + min.toFixed(1) + ' m)'; fail('coverage', S.noCov); }
   }
   const worldShown = () => { if (o.visible) { try { if (!o.visible()) return false; } catch (_) { /* */ } } for (let p = wrap; p; p = p.parent) if (!p.visible) return false; return true; };
@@ -390,6 +396,7 @@ export function attachGoogle3D(THREE, o = {}) {
     if (!tiles) return;
     if (ctl.status === 'loading') {
       if (tiles.rootLoadingState === lib.FAILED) fail('root tileset');
+      else if (rootFailed) { if (!rootFailedAt) rootFailedAt = now; else if (ctl.reason || now - rootFailedAt > 1500) fail(ctl.reason || 'root tileset'); }
       else if (now - t0 > START_TIMEOUT && frames > 60 && models === 0) fail(ctl.reason || 'timeout');
       else if (failedSeen >= 6 && models === 0) fail(ctl.reason || 'tiles failed');
       if (!tiles) return;
@@ -398,7 +405,7 @@ export function attachGoogle3D(THREE, o = {}) {
       coverageCheck(now); if (!tiles) return;
     }
     lockT -= dt; if (lockT <= 0 && models > 0) { lockT = locked ? 0.6 : 0.25; lockGround(camP.x, camP.z); }
-    if (wanting() && ctl.status === 'ok' && (locked || (now - firstAt > 4000 && frames - firstFrame > 20))) reveal();
+    if (wanting() && ctl.status === 'ok' && finest() <= minDetail && (locked || (now - firstAt > 4000 && frames - firstFrame > 20))) reveal();
     attrT -= dt; if (attrT <= 0) { attrT = 1; updateAttr(); }
   };
   // the data attributions of the tiles in view (Google's asset.copyright, aggregated by the auth plugin)

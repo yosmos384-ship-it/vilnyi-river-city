@@ -9,12 +9,12 @@
 // Nothing from Google is requested until the section approaches the viewport. The key lives in js/maps-config.js only.
 // Google Maps Platform terms: the Google logo / attribution inside the map is never hidden; Places results are kept in
 // memory for this page view only (no storage); the list carries the "Google Maps" attribution next to the map.
-import { lang, onLangChange } from './i18n.js?v=3.17';
+import { lang, onLangChange } from './i18n.js?v=3.17.1';
 import { mt, GOOGLE_LANG } from './i18n-maps.js?v=light-map-1';
-import { CARD, poiName, pt } from './i18n-panorama.js?v=3.17';
-import { PROJECT } from './data.js?v=3.17';
-import { PROJECT_LL, POIS, haversine, trueBearing } from './panorama.js?v=3.17';
-import CFG from './maps-config.js?v=3.17';
+import { CARD, poiName, pt } from './i18n-panorama.js?v=3.17.1';
+import { PROJECT } from './data.js?v=3.17.1';
+import { PROJECT_LL, POIS, haversine, trueBearing } from './panorama.js?v=3.17.1';
+import CFG from './maps-config.js?v=3.17.1';
 
 const [LAT, LNG] = PROJECT_LL;                       // 44.4639, 26.0347 — see panorama.js for the sources
 const CENTER = { lat: LAT, lng: LNG };
