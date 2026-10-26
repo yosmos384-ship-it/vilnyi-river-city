@@ -1,6 +1,6 @@
 // CRM helpers: escaping, formatting, dates, ids, icons, toasts, modal/drawer shells, confirm-in-UI.
-import { lang } from '../i18n.js?v=3.16';
-import { tc } from './i18n-crm.js?v=3.16';
+import { lang } from '../i18n.js?v=3.17';
+import { tc } from './i18n-crm.js?v=3.17';
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const $ = (sel, root = document) => root.querySelector(sel);

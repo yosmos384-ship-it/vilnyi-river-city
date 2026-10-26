@@ -27,7 +27,7 @@
 //  • EEA: a key of a Cloud billing account with an EEA billing address gets 403 "…not available for your account and
 //    region" → the classic world comes back with a short note, as for 401/403/429, offline, no tiles, no 3D coverage.
 // The key is never logged: Google's error text is shown with key=… masked.
-import { GOOGLE_3D_KEY, GOOGLE_3D_MIN_DETAIL_M } from '../maps-config.js';
+import { GOOGLE_3D_KEY, GOOGLE_3D_MIN_DETAIL_M } from '../maps-config.js?v=3.17';
 
 const ROOT_HOST = 'tile.googleapis.com';
 const START_TIMEOUT = 22000;        // no tile at all after this → classic
