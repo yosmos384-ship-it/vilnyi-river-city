@@ -3,11 +3,11 @@
 // snapshot so the PDF can be re-rendered identically later. All documents are PRO-FORMA / INTERNAL.
 import { unitById, TYPES, PROJECT } from '../data.js?v=3.14';
 import { LANGS } from '../i18n.js?v=3.14';
-import { tc, tcL } from './i18n-crm.js?v=3.14';
-import { S, entries, get, setDoc, patchDoc, settings, nextNumber, dealFinance, clientName, addTimeline, DOC_TYPES } from './store.js?v=3.14';
-import { esc, icon, eur, fmtDate, today, addDays, uid, openModal, confirmUI, formData, toast, $, $$, round2 } from './util.js?v=3.14';
-import { pageHead, clientOptions, fld, empty, tabs, langOptions } from './ui.js?v=3.14';
-import { documentPdf, renderDocument, unitLabelDoc } from './pdf.js?v=3.14';
+import { tc, tcL } from './i18n-crm.js?v=3.15';
+import { S, entries, get, setDoc, patchDoc, settings, nextNumber, dealFinance, clientName, addTimeline, DOC_TYPES } from './store.js?v=3.15';
+import { esc, icon, eur, fmtDate, today, addDays, uid, openModal, confirmUI, formData, toast, $, $$, round2 } from './util.js?v=3.15';
+import { pageHead, clientOptions, fld, empty, tabs, langOptions } from './ui.js?v=3.15';
+import { documentPdf, renderDocument, unitLabelDoc } from './pdf.js?v=3.15';
 
 const F = { type: 'all', q: '' };
 export const VAT_PRESETS = [0, 5, 11, 19, 21, 23];   // shortcuts only; labels say whose rate it is
@@ -41,7 +41,7 @@ async function renderDoc(root, id) {
   <div class="legal sm" role="note">${icon('shield')}<p>${esc(tc('legal.short'))}</p></div>
   <div class="doc-prev" aria-busy="true"><p class="muted">${esc(tc('rendering'))}</p></div>`;
   $('[data-act=dl]', root).onclick = () => downloadDoc(d);
-  $('[data-act=mail]', root).onclick = async () => (await import('./v-email.js?v=3.14')).sendSingle({ clientId: d.clientId, docId: d.id });
+  $('[data-act=mail]', root).onclick = async () => (await import('./v-email.js?v=3.15')).sendSingle({ clientId: d.clientId, docId: d.id });
   $('[data-act=void]', root)?.addEventListener('click', async () => {
     if (!await confirmUI({ title: tc('doc.void'), text: tc('doc.voidQ', { n: d.number }), danger: true, ok: tc('doc.void') })) return;
     await patchDoc('documents', id, { status: 'void', voidedAt: new Date().toISOString(), snapshot: { ...d.snapshot, status: 'void' } }, `document ${d.number} voided`); toast(tc('saved'));
@@ -65,12 +65,10 @@ export async function downloadDoc(d) {
     catch (e) { if (e?.code === 'declined') return; toast(tc('doc.saveErr', { c: e?.code || '' }), 'err', 5000); }
     return;
   }
-  if (S.mode === 'local') {  // outside claude.ai a normal browser download works
+  {  // a normal browser download (the CRM runs on its own site now, not in the artifact runtime)
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
-    return;
   }
-  toast(tc('doc.noDownloads'), 'err', 6000);
 }
 
 // ---------------- create ----------------

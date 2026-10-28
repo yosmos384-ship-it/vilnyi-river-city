@@ -4,8 +4,8 @@
 // The PDF is image-based (text not selectable) — a deliberate trade for exact multilingual rendering.
 import { I18N } from '../i18n.js?v=3.14';
 import { PROJECT, TYPES, TOP_FLOOR, unitById } from '../data.js?v=3.14';
-import { tcL } from './i18n-crm.js?v=3.14';
-import { eurL, fmtDate } from './util.js?v=3.14';
+import { tcL } from './i18n-crm.js?v=3.15';
+import { eurL, fmtDate } from './util.js?v=3.15';
 
 const PT_W = 595.28, PT_H = 841.89;        // A4 in PDF points
 const DPI_SCALE = 2.75;                     // ≈ 198 dpi

@@ -2,13 +2,13 @@
 // email signature & sending, users/roles, CSV import/export, audit log, local-demo reset.
 import { UNITS, TYPES, unitById } from '../data.js?v=3.14';
 import { unitLabelL } from '../i18n.js?v=3.14';
-import { tc } from './i18n-crm.js?v=3.14';
-import { S, entries, get, setDoc, settings, DOC_TYPES, clientName, clientIdForEmail, splitName, unitState, dealFinance, all, STAGES } from './store.js?v=3.14';
-import { esc, icon, fmtDateTime, toCSV, parseCSV, toast, $, formData, uid, isEmail, confirmUI, openModal } from './util.js?v=3.14';
-import { pageHead, fld, tabs, empty } from './ui.js?v=3.14';
+import { tc } from './i18n-crm.js?v=3.15';
+import { S, entries, get, setDoc, settings, countersView, DOC_TYPES, clientName, clientIdForEmail, splitName, unitState, dealFinance, all, STAGES } from './store.js?v=3.15';
+import { esc, icon, fmtDateTime, toCSV, parseCSV, toast, $, formData, uid, isEmail, confirmUI, openModal } from './util.js?v=3.15';
+import { pageHead, fld, tabs, empty } from './ui.js?v=3.15';
 import { planText } from '../i18n.js?v=3.14';
-import { planOf } from './store.js?v=3.14';
-import { VAT_PRESETS } from './v-documents.js?v=3.14';
+import { planOf } from './store.js?v=3.15';
+import { VAT_PRESETS } from './v-documents.js?v=3.15';
 
 const F = { tab: 'company' };
 const ENT_FIELDS = ['name', 'address', 'city', 'country', 'regNo', 'taxId', 'vatNo', 'email', 'phone', 'beneficiary', 'iban', 'bic', 'bank', 'footer', 'prefix'];
@@ -33,7 +33,7 @@ export function render(root) {
       await setDoc('settings', 'main', { ...(get('settings', 'main') || {}), entities: ents, defaultEntity: def, vatRate: Number(g.vatRate) || 0, paymentTermsDays: Number(g.paymentTermsDays) || 0, vatNote: g.vatNote }, 'settings: company updated'); toast(tc('saved'));
     };
   } else if (F.tab === 'numbering') {
-    const ctr = get('settings', 'counters') || {}; const y = new Date().getFullYear();
+    const ctr = countersView(); const y = new Date().getFullYear();
     body.innerHTML = `<div class="card"><p class="muted">${esc(tc('set.numInfo'))}</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(tc('type'))}</th><th>${esc(tc('set.prefix'))}</th><th>${esc(tc('set.pad'))}</th><th>${esc(tc('set.yearly'))}</th><th>${esc(tc('set.start'))}</th><th>${esc(tc('set.nextCy'))}</th><th>${esc(tc('set.nextPt'))}</th></tr></thead><tbody>
       ${DOC_TYPES.map(t => { const s = st.series[t]; const nx = e => { const key = `${e}.${t}.${s.yearly === false ? 'all' : y}`; const n = Math.max((ctr[key] || 0) + 1, Number(s.start || 1)); return `${st.entities[e].prefix}-${s.prefix}-${s.yearly === false ? '' : y + '-'}${String(n).padStart(s.pad || 4, '0')}`; }; return `<tr data-t="${t}"><td>${esc(tc('dt.' + t))}</td><td><input name="prefix" value="${esc(s.prefix)}" size="4" dir="ltr" aria-label="${esc(tc('set.prefix'))}"></td><td><input name="pad" type="number" min="2" max="8" value="${esc(s.pad || 4)}" aria-label="${esc(tc('set.pad'))}"></td><td><input type="checkbox" name="yearly" ${s.yearly !== false ? 'checked' : ''} aria-label="${esc(tc('set.yearly'))}"></td><td><input name="start" type="number" min="1" value="${esc(s.start || 1)}" aria-label="${esc(tc('set.start'))}"></td><td dir="ltr" class="mono">${esc(nx('cy'))}</td><td dir="ltr" class="mono">${esc(nx('pt'))}</td></tr>`; }).join('')}
     </tbody></table></div><p class="fine">${icon('info')}${esc(tc('set.numNote'))}</p><div class="row-end"><button class="btn primary" data-act="saveNum">${esc(tc('save'))}</button></div></div>`;
@@ -48,32 +48,26 @@ export function render(root) {
       <div class="card"><h2>${esc(tc('set.gmailT'))}</h2><p class="muted">${esc(tc('set.gmailText'))}</p></div>`;
     $('[data-act=saveMail]', body).onclick = async () => { const x = formData(body); await setDoc('settings', 'main', { ...(get('settings', 'main') || {}), senderName: x.senderName, signature: x.signature, throttleMs: Number(x.throttleMs) }, 'settings: email updated'); toast(tc('saved')); };
   } else if (F.tab === 'users') {
-    body.innerHTML = `<div class="card"><h2>${esc(tc('set.rolesT'))}</h2><p class="muted">${esc(tc('set.rolesIntro'))}</p>
-      <table class="tbl roles"><thead><tr><th>${esc(tc('set.role'))}</th><th>${esc(tc('set.crm'))}</th><th>${esc(tc('set.site'))}</th></tr></thead><tbody>
-      ${['owner', 'editor', 'contributor', 'viewer'].map(r => `<tr><th>${esc(tc('role.' + r))}</th><td>${esc(tc('role.' + r + '.crm'))}</td><td>${esc(tc('role.' + r + '.site'))}</td></tr>`).join('')}</tbody></table>
-      <p class="fine">${icon('lock')}${esc(tc('set.rolesNote'))}</p>
-      <dl class="kv"><dt>${esc(tc('set.you'))}</dt><dd>${esc(S.me.name || '—')} · ${esc(S.me.isOwner ? tc('role.owner') : S.me.canEdit ? tc('role.editor') : '—')}</dd><dt>${esc(tc('set.mode'))}</dt><dd>${esc(tc(S.mode === 'local' ? 'mode.local' : 'mode.live'))}</dd></dl></div>`;
+    body.innerHTML = `<div class="card"><h2>${icon('shield')}${esc(tc('set.usersT'))}</h2><p class="muted">${esc(tc('set.usersText'))}</p><a class="btn primary" href="#/users">${icon('users')}${esc(tc('set.usersGo'))}</a>
+      <dl class="kv"><dt>${esc(tc('set.you'))}</dt><dd>${esc(S.me.name || '—')} · ${esc(tc('role.' + (S.me.role || 'admin')))}</dd><dt>${esc(tc('set.mode'))}</dt><dd>${esc(tc(S.mode === 'local' ? 'mode.local' : 'mode.live'))}</dd></dl></div>`;
   } else if (F.tab === 'data') {
     body.innerHTML = `<div class="grid2"><div class="card"><h2>${esc(tc('set.export'))}</h2><p class="muted">${esc(tc('set.exportNote'))}</p>
-      <div class="btn-col"><button class="btn ghost" data-x="clients">${icon('down')}${esc(tc('nav.clients'))} (CSV)</button><button class="btn ghost" data-x="deals">${icon('down')}${esc(tc('nav.deals'))} (CSV)</button><button class="btn ghost" data-x="payments">${icon('down')}${esc(tc('payments'))} (CSV)</button><button class="btn ghost" data-x="units">${icon('down')}${esc(tc('nav.units'))} (CSV)</button><button class="btn ghost" data-x="documents">${icon('down')}${esc(tc('nav.documents'))} (CSV)</button></div></div>
+      <div class="btn-col"><button class="btn ghost" data-x="clients">${icon('down')}${esc(tc('nav.clients'))} (CSV)</button><button class="btn ghost" data-x="deals">${icon('down')}${esc(tc('nav.deals'))} (CSV)</button><button class="btn ghost" data-x="payments">${icon('down')}${esc(tc('payments'))} (CSV)</button><button class="btn ghost" data-x="units">${icon('down')}${esc(tc('nav.units'))} (CSV)</button><button class="btn ghost" data-x="documents">${icon('down')}${esc(tc('nav.documents'))} (CSV)</button><button class="btn ghost" data-x="json">${icon('down')}${esc(tc('set.exportJson'))}</button></div></div>
     <div class="card"><h2>${esc(tc('set.import'))}</h2><p class="muted">${esc(tc('set.importNote'))}</p><p class="mono sm" dir="ltr">firstName,lastName,email,phone,country,lang,stage,source,tags,notes</p>
       <label class="btn ghost file">${icon('up')}${esc(tc('set.chooseCsv'))}<input type="file" accept=".csv,text/csv" hidden></label><div class="imp-res"></div></div></div>
     ${S.mode === 'local' ? `<div class="card"><h2>${esc(tc('set.demoT'))}</h2><p class="muted">${esc(tc('set.demoText'))}</p><button class="btn ghost danger" data-act="reset">${icon('trash')}${esc(tc('set.reset'))}</button></div>` : ''}`;
-    body.querySelectorAll('[data-x]').forEach(b => b.onclick = () => ({ clients: () => exportClients(entries('clients')), deals: exportDeals, payments: exportPayments, units: () => exportUnits(UNITS), documents: exportDocuments })[b.dataset.x]());
+    body.querySelectorAll('[data-x]').forEach(b => b.onclick = () => ({ clients: () => exportClients(entries('clients')), deals: exportDeals, payments: exportPayments, units: () => exportUnits(UNITS), documents: exportDocuments, json: exportAllJson })[b.dataset.x]());
     $('input[type=file]', body).onchange = e => importClients(e.target.files[0], $('.imp-res', body));
-    $('[data-act=reset]', body)?.addEventListener('click', async () => { if (!await confirmUI({ title: tc('set.reset'), text: tc('set.resetQ'), danger: true, ok: tc('set.reset') })) return; try { localStorage.removeItem('vrc.crm.localdb.v1'); } catch (e) { /* ignore */ } location.reload(); });
+    $('[data-act=reset]', body)?.addEventListener('click', async () => { if (!await confirmUI({ title: tc('set.reset'), text: tc('set.resetQ'), danger: true, ok: tc('set.reset') })) return; try { localStorage.removeItem('vrc.crm.localdb.v2'); } catch (e) { /* ignore */ } location.reload(); });
   } else {
-    const days = entries('audit').sort((a, b) => String(b.day).localeCompare(String(a.day)));
-    const rows = days.flatMap(d => [...(d.entries || [])].reverse()).slice(0, 400);
-    body.innerHTML = rows.length ? `<div class="card"><p class="muted">${esc(tc('set.auditNote'))}</p><ol class="audit">${rows.map(r => `<li><time>${esc(fmtDateTime(r.at))}</time><span>${esc(r.text)}</span>${r.by && r.by !== S.me.id ? `<small>${esc(tc('set.byOther'))}</small>` : ''}</li>`).join('')}</ol></div>` : empty(tc('set.noAudit'));
+    body.innerHTML = `<div class="card"><p class="muted">${esc(tc('set.auditNote'))}</p><a class="btn ghost" href="#/users">${icon('doc')}${esc(tc('set.auditGo'))}</a></div>`;
   }
 }
 
 // ---------------- CSV ----------------
-async function saveFile(filename, text) {
-  if (S.downloads) { try { await S.downloads.save({ filename, data: text }); toast(tc('doc.saved')); } catch (e) { if (e?.code !== 'declined') toast(tc('doc.saveErr', { c: e?.code || '' }), 'err'); } return; }
-  if (S.mode === 'local') { const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000); return; }
-  toast(tc('doc.noDownloads'), 'err', 6000);
+function saveFile(filename, text, mime = 'text/csv;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type: mime })); const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 const stamp = () => new Date().toISOString().slice(0, 10);
 export function exportClients(rows) {
@@ -91,6 +85,11 @@ export function exportUnits(rows) {
 }
 function exportDocuments() {
   saveFile(`vrc-documents-${stamp()}.csv`, toCSV(entries('documents'), [{ key: 'number' }, { key: 'type' }, { key: 'entityId' }, { key: 'date' }, { key: 'client', get: d => d.client?.name || '' }, { key: 'unit', get: d => d.unit?.id || '' }, { key: 'subtotal' }, { key: 'vatRate' }, { key: 'vat' }, { key: 'total' }, { key: 'status' }]));
+}
+// Full export of every collection as JSON. Input for scripts/migrate-crm.mjs and for backups.
+function exportAllJson() {
+  const collections = Object.fromEntries(['units', 'reservations', 'leads', 'clients', 'deals', 'tasks', 'documents', 'emails', 'templates', 'settings', 'counters'].map(c => [c, entries(c)]));
+  saveFile(`vrc-crm-export-${stamp()}.json`, JSON.stringify({ format: 'vrc-crm-export', version: 1, exportedAt: new Date().toISOString(), collections }, null, 2), 'application/json');
 }
 async function importClients(file, out) {
   if (!file) return;
@@ -113,7 +112,7 @@ async function importClients(file, out) {
     const notes = pick(r, 'notes'); if (notes && !cur) body.timeline.unshift({ id: uid('t'), type: 'note', at: new Date().toISOString(), text: notes });
     await setDoc('clients', id, body); cur ? updated++ : added++;
   }
-  (await import('./store.js?v=3.14')).audit(`CSV import: +${added}, ~${updated}, skipped ${skipped}`);
+  (await import('./store.js?v=3.15')).audit(`CSV import: +${added}, ~${updated}, skipped ${skipped}`);
   out.innerHTML = `<p class="ok">${icon('check')}${esc(tc('set.importDone', { a: added, u: updated, s: skipped }))}</p>`;
 }
 void unitById; void all; void openModal;

@@ -2,11 +2,11 @@
 // floor-matrix and table views, bulk status changes. Writes units/{unitId} = {status, clientId, dealId, updatedAt}.
 import { UNITS, TYPES, unitById, money } from '../data.js?v=3.14';
 import { unitLabelL } from '../i18n.js?v=3.14';
-import { tc } from './i18n-crm.js?v=3.14';
-import { unitState, setUnitStatus, get, entries, clientName, UNIT_STATUSES, all, patchDoc } from './store.js?v=3.14';
-import { esc, icon, eur, fmtDate, openModal, toast, $, $$, formData } from './util.js?v=3.14';
-import { pageHead, statusChip, statusOptions, clientOptions, fld, empty } from './ui.js?v=3.14';
-import { STATUS_COLORS, legend } from './charts.js?v=3.14';
+import { tc } from './i18n-crm.js?v=3.15';
+import { unitState, setUnitStatus, get, entries, clientName, UNIT_STATUSES, all, patchDoc } from './store.js?v=3.15';
+import { esc, icon, eur, fmtDate, openModal, toast, $, $$, formData } from './util.js?v=3.15';
+import { pageHead, statusChip, statusOptions, clientOptions, fld, empty } from './ui.js?v=3.15';
+import { STATUS_COLORS, legend } from './charts.js?v=3.15';
 
 const F = { view: 'grid', b: '', floor: '', rooms: '', status: '', q: '' };
 try { F.view = localStorage.getItem('vrc.crm.unitView') || 'grid'; } catch (e) { /* ignore */ }
@@ -35,7 +35,7 @@ export function render(root, name, params) {
   root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { F.view = b.dataset.view; try { localStorage.setItem('vrc.crm.unitView', F.view); } catch (e) { /* ignore */ } render(root, name, []); });
   root.querySelectorAll('[data-status]').forEach(b => b.onclick = () => { F.status = F.status === b.dataset.status ? '' : b.dataset.status; render(root, name, []); });
   root.querySelectorAll('[data-unit]').forEach(b => b.onclick = e => { if (e.target.closest('input')) return; editUnit(b.dataset.unit); });
-  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.14')).exportUnits(rows);
+  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.15')).exportUnits(rows);
   // bulk
   const bulk = $('.bulk', root);
   if (bulk) {
@@ -43,7 +43,7 @@ export function render(root, name, params) {
     const upd = () => { const n = sel().length; bulk.hidden = !n; $('.bulk-n', root).textContent = tc('nSelected', { n }); };
     root.querySelectorAll('[data-sel]').forEach(cb => cb.addEventListener('change', upd));
     $('[data-all]', root)?.addEventListener('change', e => { $$('[data-sel]', root).forEach(cb => { cb.checked = e.target.checked; }); upd(); });
-    $('[name=bulkStatus]', bulk).addEventListener('change', async e => { const st = e.target.value; if (!st) return; const ids = sel(); for (const id of ids) await setUnitStatus(id, st); toast(tc('un.bulkDone', { n: ids.length, s: tc('st.' + st) })); });
+    $('[name=bulkStatus]', bulk).addEventListener('change', async e => { const st = e.target.value; if (!st) return; const ids = sel(); let refused = 0; for (const id of ids) { try { await setUnitStatus(id, st); } catch (err) { if (err.code === 'unit_taken') refused++; else throw err; } } toast(tc('un.bulkDone', { n: ids.length - refused, s: tc('st.' + st) })); if (refused) toast(tc('users.refusedN', { n: refused }), 'err', 6000); });
   }
   if (params?.[0] && unitById(params[0]) && !document.querySelector('dialog[open]')) { editUnit(params[0]); history.replaceState(null, '', '#/units'); }
 }
@@ -78,13 +78,19 @@ export function editUnit(id) {
     onMount: (d, close) => {
       d.querySelector('[data-save]').onclick = async () => {
         const f = formData(d);
-        await setUnitStatus(id, f.status, { clientId: f.clientId || null, dealId: deal?.id || null });
+        try { await setUnitStatus(id, f.status, { clientId: f.clientId || null, dealId: deal?.id || null }); }
+        catch (err) {
+          if (err.code !== 'unit_taken') throw err;
+          toast(err.message, 'err', 6000);
+          if (await (await import('./v-users.js?v=3.15')).askOverride(id, f.status, f.clientId || null, deal?.id || null).catch(() => false)) close();
+          return;
+        }
         if (f.note !== (cur.note || '')) await patchDoc('units', id, { note: f.note });
         // releasing a unit cancels its web reservation marker so the public site shows it free again
         if (f.status === 'available') for (const r of res.filter(r => r.status !== 'cancelled')) await patchDoc('reservations', r.resNo, { status: 'cancelled', cancelledAt: new Date().toISOString() }, `web reservation ${r.resNo} cancelled`);
         toast(tc('saved')); close();
       };
-      d.querySelector('[data-deal]')?.addEventListener('click', async () => { close(); (await import('./v-deals.js?v=3.14')).newDeal({ unitId: id, clientId: d.querySelector('[name=clientId]').value || undefined }); });
+      d.querySelector('[data-deal]')?.addEventListener('click', async () => { close(); (await import('./v-deals.js?v=3.15')).newDeal({ unitId: id, clientId: d.querySelector('[name=clientId]').value || undefined }); });
       d.querySelector('[href^="#/deal"]')?.addEventListener('click', close);
     },
   });

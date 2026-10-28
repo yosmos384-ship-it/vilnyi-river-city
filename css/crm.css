@@ -646,3 +646,25 @@ p.ok { color: var(--ok); display: flex; gap: 6px; align-items: center; }
   .who { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---- CRM v3.15: sign-in, users & access, read-only viewers ---- */
+.login-card { text-align: start; justify-items: stretch; }
+.login-card > img, .login-card > .bw, .login-card .lang-sw { justify-self: center; }
+.login-card h1 { text-align: center; }
+.login-card > p:not(.bw) { text-align: center; }
+.login-form { display: grid; gap: 14px; margin-top: 6px; }
+.login-form .f { display: grid; gap: 6px; }
+.login-form .f > span { color: var(--muted); font-size: 12.5px; }
+.login-form input { height: 42px; padding: 0 12px; background: rgba(243,237,225,.03); border: 1px solid var(--line-2); border-radius: var(--r-s); color: var(--ivory); outline: none; }
+.login-form input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,169,106,.12); }
+.login-form .btn:disabled { opacity: .6; cursor: progress; }
+.login-err { color: var(--bad); font-size: 13px; margin: 0; }
+.perms { border: 1px solid var(--line); border-radius: var(--r-s); padding: 12px 14px; margin-top: 12px; min-width: 0; }
+.perms legend { color: var(--gold); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 0 6px; }
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 16px; }
+.row-acts { white-space: nowrap; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.audit-filters { margin-bottom: 14px; }
+.audit-tbl td.sm, .users td.sm { font-size: 12px; color: var(--muted); }
+/* viewers see the data but nothing that changes it */
+.ro [data-act]:not([data-act=nav]):not([data-act=signout]) { display: none !important; }
+.ro .newmenu { display: none; }

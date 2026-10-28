@@ -1,10 +1,10 @@
 // Deals / reservations: unit sale per client, payment plan (PROJECT.terms), instalment schedule, payments register.
 import { UNITS, TYPES, unitById, PROJECT } from '../data.js?v=3.14';
 import { unitLabelL, planText } from '../i18n.js?v=3.14';
-import { tc } from './i18n-crm.js?v=3.14';
-import { S, entries, get, setDoc, patchDoc, all, dealFinance, buildSchedule, clientName, unitState, setUnitStatus, setStage, addTimeline, STAGES, settings, planOf } from './store.js?v=3.14';
-import { esc, icon, eur, fmtDate, relDays, uid, today, addMonths, openModal, confirmUI, formData, toast, $, round2 } from './util.js?v=3.14';
-import { pageHead, clientOptions, fld, empty, tabs, stageChip } from './ui.js?v=3.14';
+import { tc } from './i18n-crm.js?v=3.15';
+import { S, entries, get, setDoc, patchDoc, all, dealFinance, buildSchedule, clientName, unitState, setUnitStatus, setStage, addTimeline, STAGES, settings, planOf } from './store.js?v=3.15';
+import { esc, icon, eur, fmtDate, relDays, uid, today, addMonths, openModal, confirmUI, formData, toast, $, round2 } from './util.js?v=3.15';
+import { pageHead, clientOptions, fld, empty, tabs, stageChip } from './ui.js?v=3.15';
 
 const F = { status: 'active', q: '' };
 const METHODS = ['bank', 'card', 'cash', 'other'];
@@ -30,7 +30,7 @@ export function render(root, name, params) {
   root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { F.status = b.dataset.tab; render(root, name, []); });
   root.querySelectorAll('tr[data-href]').forEach(tr => tr.onclick = e => { if (!e.target.closest('a')) location.hash = tr.dataset.href; });
   $('[data-act=new]', root).onclick = () => newDeal({});
-  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.14')).exportDeals();
+  $('[data-act=csv]', root).onclick = async () => (await import('./v-settings.js?v=3.15')).exportDeals();
   root.querySelectorAll('[data-convert]').forEach(b => b.onclick = () => {
     const r = get('reservations', b.dataset.convert); const lead = all('leads').find(l => l.resNo === r.resNo);
     const cid = lead?.email ? entries('clients').find(c => (c.email || '').toLowerCase() === lead.email.toLowerCase())?.id : undefined;
@@ -78,8 +78,8 @@ export function newDeal({ clientId, unitId, planId, resNo, start }) {
         const id = uid('d_'); const resNo2 = f.resNo || `VRC-${u.id.replace(/-/g, '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
         const deal = { clientId: f.clientId, unitId: u.id, price, discount: disc, planId: f.planId, entity: f.entity, status: 'active', resNo: resNo2, schedule: buildSchedule(price - disc, f.planId, f.start, { split: f.split, signDate: f.signDate, deliveryDate: f.deliveryDate }), payments: [], reservedAt: f.start, createdAt: new Date().toISOString() };
         try {
+          await setUnitStatus(u.id, 'reserved', { clientId: f.clientId, dealId: id });   // refused if someone else holds it
           await setDoc('deals', id, deal, `deal created ${u.id} for ${clientName(get('clients', f.clientId))}`);
-          await setUnitStatus(u.id, 'reserved', { clientId: f.clientId, dealId: id });
           if (!get('reservations', resNo2)) await setDoc('reservations', resNo2, { resNo: resNo2, unitId: u.id, status: 'reserved', plan: f.planId, createdAt: new Date().toISOString(), source: 'crm' });
           const c = get('clients', f.clientId);
           if (c) { await setDoc('clients', f.clientId, { ...c, unitIds: [...new Set([...(c.unitIds || []), u.id])] }); await addTimeline(f.clientId, { type: 'reservation', text: `${tc('dl.created')} · ${u.id} · ${eur(price - disc)}` }); if (STAGES.indexOf(c.stage) < STAGES.indexOf('reserved')) await setStage(f.clientId, 'reserved'); }
@@ -131,8 +131,9 @@ function renderDeal(root, id) {
     const v = e.target.value;
     if (v === 'cancelled') {
       if (!await confirmUI({ title: tc('dl.cancelT'), text: tc('dl.cancelQ', { u: d.unitId }), danger: true, ok: tc('dl.cancelOk') })) { e.target.value = d.status || 'active'; return; }
+      try { await setUnitStatus(d.unitId, 'available', { clientId: d.clientId }); }
+      catch (err) { toast(err.message, 'err', 6000); e.target.value = d.status || 'active'; return; }
       await save({ status: 'cancelled', cancelledAt: new Date().toISOString() }, `deal ${d.unitId} cancelled`);
-      await setUnitStatus(d.unitId, 'available');
       for (const r of all('reservations').filter(r => r.unitId === d.unitId && r.status !== 'cancelled')) await patchDoc('reservations', r.resNo, { status: 'cancelled', cancelledAt: new Date().toISOString() });
       await addTimeline(d.clientId, { type: 'system', text: `${tc('dstatus.cancelled')} · ${d.unitId}` });
     } else await save({ status: v }, `deal ${d.unitId} → ${v}`);
@@ -146,9 +147,9 @@ function renderDeal(root, id) {
   };
   $('[data-act=addInst]', root).onclick = () => editInst(id, null);
   root.querySelectorAll('[data-inst]').forEach(b => b.onclick = () => editInst(id, b.dataset.inst));
-  root.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.14')).newDocument({ type: b.dataset.doc, dealId: id, clientId: d.clientId, instId: b.dataset.doc === 'proforma' ? f.next?.id : undefined }));
-  root.querySelectorAll('[data-pf]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.14')).newDocument({ type: 'proforma', dealId: id, clientId: d.clientId, instId: b.dataset.pf }));
-  root.querySelectorAll('[data-receipt]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.14')).newDocument({ type: 'receipt', dealId: id, clientId: d.clientId, paymentId: b.dataset.receipt }));
+  root.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.15')).newDocument({ type: b.dataset.doc, dealId: id, clientId: d.clientId, instId: b.dataset.doc === 'proforma' ? f.next?.id : undefined }));
+  root.querySelectorAll('[data-pf]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.15')).newDocument({ type: 'proforma', dealId: id, clientId: d.clientId, instId: b.dataset.pf }));
+  root.querySelectorAll('[data-receipt]').forEach(b => b.onclick = async () => (await import('./v-documents.js?v=3.15')).newDocument({ type: 'receipt', dealId: id, clientId: d.clientId, paymentId: b.dataset.receipt }));
   root.querySelectorAll('[data-delpay]').forEach(b => b.onclick = async () => {
     if (!await confirmUI({ title: tc('delete'), text: tc('dl.delPayQ'), danger: true, ok: tc('delete') })) return;
     await save({ payments: (d.payments || []).filter(p => p.id !== b.dataset.delpay) }, `payment removed on ${d.unitId}`); toast(tc('saved'));
@@ -192,7 +193,7 @@ export function addPayment(dealId) {
         if (target && STAGES.indexOf(c.stage) < STAGES.indexOf(target)) await setStage(d.clientId, target);
       }
       toast(tc('saved')); close();
-      if (x.receipt) (await import('./v-documents.js?v=3.14')).newDocument({ type: 'receipt', dealId, clientId: d.clientId, paymentId: p.id });
+      if (x.receipt) (await import('./v-documents.js?v=3.15')).newDocument({ type: 'receipt', dealId, clientId: d.clientId, paymentId: p.id });
     },
   });
 }
